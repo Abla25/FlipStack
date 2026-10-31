@@ -20,22 +20,19 @@ public enum CUPSOptionBuilder {
     public static func optionPairs(for request: PrintRequest) -> [(String, String)] {
         var pairs: [(String, String)] = []
 
-        if request.pageSet != .all {
-            pairs.append(("page-set", request.pageSet.cupsValue))
-        }
+        // These are request-owned values, not queue defaults. Emit them even
+        // when they equal the common default: a configured CUPS queue may
+        // otherwise add copies, 2-up, rotation, or a page subset to a job that
+        // must produce exactly one deterministic pass.
+        pairs.append(("page-set", request.pageSet.cupsValue))
 
         if !request.pageRanges.isEmpty {
             let value = request.pageRanges.map(\.cupsValue).joined(separator: ",")
             pairs.append(("page-ranges", value))
         }
 
-        if request.numberUp > 1 {
-            pairs.append(("number-up", String(request.numberUp)))
-        }
-
-        if request.orientation != .portrait {
-            pairs.append(("orientation-requested", request.orientation.cupsValue))
-        }
+        pairs.append(("number-up", String(max(1, request.numberUp))))
+        pairs.append(("orientation-requested", request.orientation.cupsValue))
 
         if request.fitToPage {
             pairs.append(("fit-to-page", "true"))
@@ -56,10 +53,10 @@ public enum CUPSOptionBuilder {
     public static func arguments(for request: PrintRequest) -> [String] {
         var arguments = ["-d", request.printerID, "-t", request.title]
 
-        if request.copies > 1 {
-            arguments.append("-n")
-            arguments.append(String(request.copies))
-        }
+        // Always make the copy count explicit so a queue default cannot turn a
+        // single manual pass into multiple physical copies.
+        arguments.append("-n")
+        arguments.append(String(max(1, request.copies)))
 
         for (key, value) in optionPairs(for: request) {
             arguments.append("-o")

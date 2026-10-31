@@ -157,6 +157,10 @@ public struct BookletImposer: BookletImposing {
                 withIntermediateDirectories: true,
                 attributes: nil
             )
+            try? fileManager.setAttributes(
+                [.posixPermissions: 0o700],
+                ofItemAtPath: workingDirectory.path
+            )
         } catch {
             throw BookletError.cannotCreateWorkingDirectory(error.localizedDescription)
         }
@@ -249,6 +253,10 @@ public struct BookletImposer: BookletImposing {
         guard output.write(to: url) else {
             throw BookletError.cannotWrite("Could not write \(url.lastPathComponent).")
         }
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: url.path
+        )
     }
 }
 

@@ -113,7 +113,7 @@ struct QueueSection: View {
                 .frame(width: 6, height: 6)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(job.title.isEmpty ? "Job \(job.id)" : job.title)
+                Text(model.jobDisplayTitle(job))
                     .font(FlipType.captionStrong)
                     .foregroundStyle(FlipColor.ink)
                     .lineLimit(1)
@@ -134,7 +134,7 @@ struct QueueSection: View {
                 .lineLimit(1)
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("Job \(job.id), \(job.title), \(job.displayState)")
+            .accessibilityLabel("Job \(job.id), \(model.jobDisplayTitle(job)), \(job.displayState)")
 
             Spacer(minLength: 2)
 
@@ -159,7 +159,7 @@ struct QueueSection: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(FlipColor.secondaryInk)
                 .disabled(isCancelling)
-                .accessibilityLabel("Cancel job \(job.id), \(job.title)")
+                .accessibilityLabel("Cancel job \(job.id), \(model.jobDisplayTitle(job))")
                 .accessibilityHint("Removes this job from the print queue.")
             }
         }

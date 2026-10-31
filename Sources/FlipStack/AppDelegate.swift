@@ -27,7 +27,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             defaults.removePersistentDomain(forName: suiteName)
             preferencesStore = PreferencesStore(defaults: defaults)
             preferencesStore.lastPrinterID = DemoSession.demoPrinterID()
-            preferencesStore.save(DemoSession.demoPreferences(), for: DemoSession.demoPrinterID())
+            preferencesStore.save(
+                DemoSession.demoPreferences(for: demo.scenario),
+                for: DemoSession.demoPrinterID()
+            )
             spooler = demo.spooler
             ppdProvider = demo.ppdProvider
             statusProvider = demo.statusProvider
@@ -92,7 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                         largeText: arguments.contains("--large-text"),
                         height: customHeight ?? FlipMetrics.panelHeight
                     ) ?? false
-                    NSLog("FlipStack demo screenshot \(ok ? "written" : "failed"): \(capturePath)")
+                    NSLog("FlipStack demo screenshot \(ok ? "written" : "failed")")
                     NSApp.terminate(nil)
                 } else {
                     menuBar?.present()
@@ -133,7 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                         largeText: arguments.contains("--large-text"),
                         height: customHeight ?? FlipMetrics.panelHeight
                     ) ?? false
-                    NSLog("FlipStack screenshot \(ok ? "written" : "failed"): \(capturePath)")
+                    NSLog("FlipStack screenshot \(ok ? "written" : "failed")")
                     NSApp.terminate(nil)
                 }
             }
@@ -244,7 +247,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         case #selector(printDocument):
             return model.canPrint
         case #selector(openDocument):
-            return !model.isPreparingPrint && !model.orchestrator.phase.isActive
+            return !model.isPreparingPrint
+                && !model.orchestrator.phase.isActive
+                && model.flipAxisSetup == nil
+                && model.flipCalibration == nil
         case #selector(refreshPrinters):
             return !model.isLoadingPrinters
         default:
@@ -258,5 +264,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     func applicationWillTerminate(_ notification: Notification) {
         orchestrator?.cancel()
+        model?.cancelFlipCalibration()
+        model?.clearOpenPanelState()
+        model?.cleanUpTemporaryFiles()
     }
 }

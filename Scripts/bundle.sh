@@ -178,6 +178,9 @@ fi
 if [[ -f "$ROOT/LICENSE" ]]; then
     cp "$ROOT/LICENSE" "$RESOURCES_DIR/LICENSE"
 fi
+if [[ -f "$ROOT/PRIVACY.md" ]]; then
+    cp "$ROOT/PRIVACY.md" "$RESOURCES_DIR/PRIVACY.md"
+fi
 
 # Make the bundle readable regardless of the caller's umask. This matters when
 # the release job protects temporary credentials with a restrictive umask.
@@ -232,6 +235,9 @@ if [[ "$MAKE_DMG" == "1" ]]; then
     if [[ -f "$ROOT/LICENSE" ]]; then
         cp "$ROOT/LICENSE" "$DMG_STAGING/LICENSE"
     fi
+    if [[ -f "$ROOT/PRIVACY.md" ]]; then
+        cp "$ROOT/PRIVACY.md" "$DMG_STAGING/PRIVACY.md"
+    fi
     cat > "$DMG_STAGING/Read Me.txt" <<EOF
 FlipStack $MARKETING_VERSION
 
@@ -241,10 +247,14 @@ FlipStack lives in the menu bar and does not show a Dock icon.
 Requires macOS 13 or later.
 
 License: MIT. See LICENSE.
+Privacy: no telemetry or document upload. See PRIVACY.md.
 EOF
     chmod 644 "$DMG_STAGING/Read Me.txt"
     if [[ -f "$DMG_STAGING/LICENSE" ]]; then
         chmod 644 "$DMG_STAGING/LICENSE"
+    fi
+    if [[ -f "$DMG_STAGING/PRIVACY.md" ]]; then
+        chmod 644 "$DMG_STAGING/PRIVACY.md"
     fi
     rm -f "$DMG_PATH"
     hdiutil create -quiet \

@@ -109,14 +109,48 @@ struct FooterBar: View {
             } label: {
                 Label("Print test page", systemImage: "doc.text")
             }
-            .disabled(model.selectedPrinter == nil || model.isMaintenanceBusy || !model.orchestrator.phase.isIdle)
+            .disabled(
+                model.selectedPrinter == nil
+                    || model.isMaintenanceBusy
+                    || model.isCalibrating
+                    || !model.orchestrator.phase.isIdle
+            )
 
             Button {
                 Task { await model.printAlignmentPage() }
             } label: {
                 Label("Head alignment sheet", systemImage: "scope")
             }
-            .disabled(model.selectedPrinter == nil || model.isMaintenanceBusy || !model.orchestrator.phase.isIdle)
+            .disabled(
+                model.selectedPrinter == nil
+                    || model.isMaintenanceBusy
+                    || model.isCalibrating
+                    || !model.orchestrator.phase.isIdle
+            )
+
+            Button {
+                Task { await model.printOrientationSheet() }
+            } label: {
+                Label("Flip orientation sheet", systemImage: "rectangle.portrait.and.arrow.right")
+            }
+            .disabled(
+                model.selectedPrinter == nil
+                    || model.isMaintenanceBusy
+                    || model.isCalibrating
+                    || !model.orchestrator.phase.isIdle
+            )
+
+            Button {
+                model.openFlipAxisSetup()
+            } label: {
+                Label("Flip calibration…", systemImage: "viewfinder")
+            }
+            .disabled(
+                model.selectedPrinter == nil
+                    || model.isMaintenanceBusy
+                    || model.isCalibrating
+                    || !model.orchestrator.phase.isIdle
+            )
 
             Divider()
 
@@ -169,7 +203,7 @@ struct FooterBar: View {
         .help("Maintenance and app menu")
         .accessibilityLabel("Maintenance and app menu")
         .accessibilityValue(model.isMaintenanceBusy ? "Working" : "Ready")
-        .accessibilityHint("Print a test page, print a head alignment sheet, open printer settings, or quit FlipStack.")
+        .accessibilityHint("Print a test page, a head alignment sheet, a flip orientation sheet, calibrate the flip, open printer settings, or quit FlipStack.")
     }
 
     private func openPrinterSettings() {

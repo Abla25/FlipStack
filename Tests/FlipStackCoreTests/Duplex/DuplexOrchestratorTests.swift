@@ -55,8 +55,8 @@ final class DuplexOrchestratorTests: XCTestCase {
 
         XCTAssertEqual(fronts.fileURL, sourceURL)
         XCTAssertEqual(backs.fileURL, sourceURL)
-        XCTAssertEqual(fronts.title, "Sample — fronts")
-        XCTAssertEqual(backs.title, "Sample — backs")
+        XCTAssertEqual(fronts.title, "FlipStack fronts")
+        XCTAssertEqual(backs.title, "FlipStack backs")
         XCTAssertEqual(fronts.pageSet, .odd)
         XCTAssertEqual(backs.pageSet, .even)
         XCTAssertEqual(fronts.pageRanges, ranges)
@@ -190,7 +190,7 @@ final class DuplexOrchestratorTests: XCTestCase {
         let request = try XCTUnwrap(requests.first)
         XCTAssertEqual(request.pageSet, .all)
         XCTAssertEqual(request.fileURL, sourceURL)
-        XCTAssertEqual(request.title, "One Sided")
+        XCTAssertEqual(request.title, "FlipStack job")
         XCTAssertEqual(request.numberUp, 1)
         XCTAssertEqual(request.driverOptions["PageSize"], "A4")
         XCTAssertEqual(request.driverOptions["sides"], "one-sided")
@@ -405,7 +405,7 @@ final class DuplexOrchestratorTests: XCTestCase {
         let requests = await spooler.requests
         XCTAssertEqual(requests.count, 1)
         XCTAssertEqual(requests[0].pageSet, .odd)
-        XCTAssertEqual(requests[0].title, "Sample — fronts")
+        XCTAssertEqual(requests[0].title, "FlipStack fronts")
 
         guard case .completed(let result) = orchestrator.phase else {
             return XCTFail("Expected completed, got \(orchestrator.phase)")
@@ -552,7 +552,7 @@ final class DuplexOrchestratorTests: XCTestCase {
         XCTAssertEqual(afterRetry.count, 2)
         XCTAssertEqual(afterRetry[0].pageSet, .odd)
         XCTAssertEqual(afterRetry[1].pageSet, .even)
-        XCTAssertEqual(afterRetry[1].title, "Sample — backs")
+        XCTAssertEqual(afterRetry[1].title, "FlipStack backs")
         XCTAssertEqual(afterRetry[1].fileURL, sourceURL)
         XCTAssertFalse(afterRetry.dropFirst().contains { $0.pageSet == .odd })
 

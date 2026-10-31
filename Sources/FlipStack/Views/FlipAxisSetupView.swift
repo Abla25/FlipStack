@@ -10,6 +10,7 @@ struct FlipAxisSetupView: View {
     @State private var selectedAxis: FlipAxis = .longEdge
     @State private var ejectsFaceDown = false
     @State private var didLoadDefaults = false
+    @State private var showsManualOptions = false
 
     private var printerName: String {
         model.selectedPrinter?.displayName ?? "this printer"
@@ -26,6 +27,7 @@ struct FlipAxisSetupView: View {
                     Text("Cancel")
                 }
                 .buttonStyle(FlipTertiaryButtonStyle())
+                .frame(minWidth: 44, minHeight: 44)
                 .accessibilityHint("Closes setup without saving changes.")
             }
 
@@ -42,57 +44,21 @@ struct FlipAxisSetupView: View {
                     .lineSpacing(1)
             }
 
-            HStack(spacing: 8) {
-                axisCard(.longEdge)
-                axisCard(.shortEdge)
-            }
+            calibrationSection
+                .padding(.top, 2)
 
-            faceDownSetting
-
-            Text("Pages are never reordered. The physical turn restores their order.")
-                .font(FlipType.caption)
-                .foregroundStyle(FlipColor.secondaryInk)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if model.flipAxisSetup?.autoStartsPrint == true {
-                HStack(spacing: 7) {
-                    Image(systemName: "printer")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(FlipColor.coralDeep)
-                    Text("Printing starts as soon as you continue.")
-                        .font(FlipType.caption)
-                        .foregroundStyle(FlipColor.secondaryInk)
+            if showsManualOptions {
+                manualForm
+            } else {
+                Button("Set up manually instead") {
+                    withAnimation(FlipMotion.standard(reduceMotion)) {
+                        showsManualOptions = true
+                    }
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(FlipColor.coral.opacity(0.07))
-                )
-                .accessibilityElement(children: .combine)
+                .buttonStyle(FlipTertiaryButtonStyle())
+                .frame(minWidth: 44, minHeight: 44)
+                .accessibilityHint("Shows the long-edge, short-edge, and tray choices.")
             }
-
-            Button {
-                model.completeFlipAxisSetup(
-                    flipAxis: selectedAxis,
-                    ejectsFaceDown: ejectsFaceDown
-                )
-            } label: {
-                HStack(spacing: 8) {
-                    Text("Continue")
-                    Spacer(minLength: 4)
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 11, weight: .semibold))
-                        .opacity(0.7)
-                }
-            }
-            .buttonStyle(FlipPrimaryButtonStyle())
-            .accessibilityHint(
-                model.flipAxisSetup?.autoStartsPrint == true
-                ? "Saves the setup and starts printing the fronts."
-                : "Saves the flip axis and tray for this printer."
-            )
-            .padding(.top, 2)
         }
         .onAppear {
             guard !didLoadDefaults else { return }
@@ -100,6 +66,145 @@ struct FlipAxisSetupView: View {
             selectedAxis = model.preferences.flipAxis
             ejectsFaceDown = model.preferences.ejectsFaceDown
         }
+    }
+
+    @ViewBuilder
+    private var manualForm: some View {
+        HStack(spacing: 8) {
+            Rectangle()
+                .fill(FlipColor.hairline)
+                .frame(height: 0.5)
+            Text("OR SET IT MANUALLY")
+                .font(.system(size: 8, weight: .semibold))
+                .tracking(1.1)
+                .foregroundStyle(FlipColor.tertiaryInk)
+                .fixedSize()
+            Rectangle()
+                .fill(FlipColor.hairline)
+                .frame(height: 0.5)
+        }
+        .accessibilityHidden(true)
+
+        HStack(spacing: 8) {
+            axisCard(.longEdge)
+            axisCard(.shortEdge)
+        }
+
+        faceDownSetting
+
+        Text("Pages are never reordered. The physical turn restores their order.")
+            .font(FlipType.caption)
+            .foregroundStyle(FlipColor.secondaryInk)
+            .fixedSize(horizontal: false, vertical: true)
+
+        Button {
+            model.completeFlipAxisSetup(
+                flipAxis: selectedAxis,
+                ejectsFaceDown: ejectsFaceDown
+            )
+        } label: {
+            HStack(spacing: 8) {
+                Text(manualActionTitle)
+                Spacer(minLength: 4)
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .opacity(0.7)
+            }
+        }
+        .buttonStyle(FlipSecondaryButtonStyle())
+        .disabled(model.isMaintenanceBusy)
+        .accessibilityHint(
+            model.flipAxisSetup?.autoStartsPrint == true
+            ? "Saves the manual setup and starts printing the fronts."
+            : "Saves the manual flip axis and tray for this printer."
+        )
+        .padding(.top, 2)
+    }
+
+    private var manualActionTitle: String {
+        model.flipAxisSetup?.autoStartsPrint == true
+        ? "Use manual setup and print"
+        : "Save manual setup"
+    }
+
+    // MARK: Calibration
+
+    private var calibrationSection: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(alignment: .top, spacing: 8) {
+                FlipIconMedallion(systemName: "viewfinder", tint: FlipColor.coralDeep, size: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Automatic calibration")
+                        .font(FlipType.bodyStrong)
+                        .foregroundStyle(FlipColor.ink)
+                    Text("Print one orientation sheet; FlipStack learns the tray and turn from your answers.")
+                        .font(FlipType.caption)
+                        .foregroundStyle(FlipColor.secondaryInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .lineSpacing(1)
+                }
+            }
+
+            if model.flipAxisSetup?.autoStartsPrint == true {
+                HStack(spacing: 6) {
+                    Image(systemName: "printer")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(FlipColor.coralDeep)
+                    Text("Your PDF is waiting. It starts after calibration is saved.")
+                        .font(.system(size: 9.5, weight: .medium))
+                        .foregroundStyle(FlipColor.secondaryInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .accessibilityElement(children: .combine)
+            }
+
+            Button {
+                model.startFlipCalibration()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "printer")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text("Print calibration sheet")
+                    Spacer(minLength: 4)
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .opacity(0.7)
+                }
+            }
+            .buttonStyle(FlipPrimaryButtonStyle())
+            .disabled(model.isMaintenanceBusy || model.isCalibrating || !model.orchestrator.phase.isIdle)
+            .accessibilityHint(
+                model.flipAxisSetup?.autoStartsPrint == true
+                ? "Prints one generic orientation sheet. Your document is not printed until calibration is saved."
+                : "Prints one generic orientation sheet without printing a document."
+            )
+
+            HStack(spacing: 7) {
+                Button("Print orientation sheet only") {
+                    Task { await model.printOrientationSheet() }
+                }
+                .buttonStyle(FlipTertiaryButtonStyle())
+                .disabled(model.isMaintenanceBusy || model.isCalibrating || !model.orchestrator.phase.isIdle)
+                .accessibilityHint("Prints the calibration sheet without asking the setup questions.")
+
+                Spacer(minLength: 0)
+
+                Text("No document content")
+                    .font(.system(size: 8.5, weight: .medium))
+                    .foregroundStyle(FlipColor.tertiaryInk)
+                    .lineLimit(1)
+            }
+        }
+        .padding(11)
+        .background(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .fill(FlipColor.coral.opacity(0.055))
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .strokeBorder(FlipColor.coral.opacity(0.35), lineWidth: 0.75)
+        }
+        .accessibilityElement(children: .contain)
     }
 
     // MARK: Axis cards
@@ -203,7 +308,7 @@ struct FlipAxisSetupView: View {
 
 // MARK: - Axis illustration
 
-private struct FlipAxisDiagram: View {
+struct FlipAxisDiagram: View {
     let axis: FlipAxis
     let isSelected: Bool
     let size: CGFloat

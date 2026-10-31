@@ -284,8 +284,10 @@ final class CUPSClientTests: XCTestCase {
             XCTAssertEqual(arguments, [
                 "-d", "Test_Queue",
                 "-t", "A Report",
+                "-n", "1",
                 "-o", "page-set=odd",
                 "-o", "number-up=2",
+                "-o", "orientation-requested=3",
                 "-o", "Duplex=NoTumble",
                 file.path
             ])

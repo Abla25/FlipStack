@@ -72,6 +72,86 @@ enum PrintUtilities {
         }
     }
 
+    /// A deliberately generic orientation sheet. It contains no document
+    /// content and no printer-specific metadata, so it is safe to leave beside
+    /// the printer or discard.
+    static func makeFlipCalibrationPage() throws -> URL {
+        try makePDF(size: CGSize(width: 595, height: 842)) { context in
+            let coral = NSColor(calibratedRed: 0.92, green: 0.31, blue: 0.19, alpha: 1)
+            let graphite = NSColor(calibratedWhite: 0.16, alpha: 1)
+            let mid = NSColor(calibratedWhite: 0.42, alpha: 1)
+            let pale = NSColor(calibratedWhite: 0.93, alpha: 1)
+
+            // Sheet frame and edge markers.
+            context.setStrokeColor(graphite.cgColor)
+            context.setLineWidth(1.4)
+            context.stroke(CGRect(x: 36, y: 36, width: 523, height: 770))
+
+            context.setFillColor(coral.cgColor)
+            context.fill(CGRect(x: 48, y: 780, width: 42, height: 4))
+
+            drawText("FLIPSTACK", at: CGPoint(x: 102, y: 776), size: 10, color: graphite, weight: .bold)
+            drawText("FLIP CALIBRATION SHEET", at: CGPoint(x: 48, y: 742), size: 24, color: graphite, weight: .bold)
+            drawText("One sheet. No document content.", at: CGPoint(x: 48, y: 720), size: 12, color: mid)
+
+            drawCenteredText("TOP EDGE · SHORT EDGE", centerX: 297.5, y: 786, size: 11, color: graphite, weight: .semibold)
+            drawCenteredText("BOTTOM EDGE · SHORT EDGE", centerX: 297.5, y: 48, size: 11, color: graphite, weight: .semibold)
+
+            // Left and right are the long edges of this portrait sheet.
+            context.setFillColor(pale.cgColor)
+            context.fill(CGRect(x: 48, y: 376, width: 76, height: 72))
+            context.fill(CGRect(x: 471, y: 376, width: 76, height: 72))
+            drawText("LEFT", at: CGPoint(x: 58, y: 432), size: 13, color: graphite, weight: .bold)
+            drawText("EDGE", at: CGPoint(x: 58, y: 416), size: 13, color: graphite, weight: .bold)
+            drawText("LONG EDGE", at: CGPoint(x: 48, y: 396), size: 9, color: graphite, weight: .semibold)
+            drawText("RIGHT", at: CGPoint(x: 481, y: 432), size: 13, color: graphite, weight: .bold)
+            drawText("EDGE", at: CGPoint(x: 481, y: 416), size: 13, color: graphite, weight: .bold)
+            drawText("LONG EDGE", at: CGPoint(x: 478, y: 396), size: 9, color: graphite, weight: .semibold)
+
+            // A single strong top arrow, visible at a glance.
+            context.setStrokeColor(graphite.cgColor)
+            context.setLineWidth(6)
+            context.setLineCap(.round)
+            context.move(to: CGPoint(x: 297.5, y: 590))
+            context.addLine(to: CGPoint(x: 297.5, y: 700))
+            context.strokePath()
+            context.setFillColor(graphite.cgColor)
+            context.move(to: CGPoint(x: 297.5, y: 718))
+            context.addLine(to: CGPoint(x: 276, y: 688))
+            context.addLine(to: CGPoint(x: 319, y: 688))
+            context.closePath()
+            context.fillPath()
+            drawText("TOP", at: CGPoint(x: 330, y: 676), size: 12, color: graphite, weight: .bold)
+
+            // The printed side marker.
+            let block = CGRect(x: 177, y: 270, width: 241, height: 350)
+            context.setFillColor(pale.cgColor)
+            context.fill(block)
+            context.setStrokeColor(NSColor(calibratedWhite: 0.78, alpha: 1).cgColor)
+            context.setLineWidth(0.8)
+            context.stroke(block)
+            drawCenteredText("PRINTED", centerX: 297.5, y: 518, size: 34, color: graphite, weight: .bold)
+            drawCenteredText("SIDE", centerX: 297.5, y: 480, size: 34, color: graphite, weight: .bold)
+            drawCenteredText("This is the printed side", centerX: 297.5, y: 446, size: 12, color: mid)
+
+            context.setFillColor(coral.cgColor)
+            context.fill(CGRect(x: 209, y: 354, width: 177, height: 7))
+            context.setFillColor(NSColor(calibratedWhite: 0.82, alpha: 1).cgColor)
+            context.fill(CGRect(x: 209, y: 336, width: 121, height: 5))
+            context.fill(CGRect(x: 209, y: 323, width: 152, height: 5))
+
+            drawCenteredText("1  NOTE WHICH SIDE LANDED UP", centerX: 297.5, y: 236, size: 10, color: graphite, weight: .semibold)
+            drawCenteredText("2  CONFIRM THE TURN IN FLIPSTACK", centerX: 297.5, y: 218, size: 10, color: graphite, weight: .semibold)
+            drawCenteredText("Nothing is written to the sheet. This sheet is safe to discard.", centerX: 297.5, y: 190, size: 10, color: mid)
+
+            context.setFillColor(coral.cgColor)
+            context.fill(CGRect(x: 48, y: 128, width: 8, height: 8))
+            context.fill(CGRect(x: 539, y: 128, width: 8, height: 8))
+            drawText("FlipStack flip calibration", at: CGPoint(x: 48, y: 96), size: 9, color: mid)
+            drawText("This sheet is safe to discard.", at: CGPoint(x: 48, y: 80), size: 9, color: mid)
+        }
+    }
+
     private static func makePDF(size: CGSize, draw: (CGContext) -> Void) throws -> URL {
         let data = NSMutableData()
         var mediaBox = CGRect(origin: .zero, size: size)
@@ -95,8 +175,16 @@ enum PrintUtilities {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("FlipStack", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o700],
+            ofItemAtPath: directory.path
+        )
         let url = directory.appendingPathComponent("FlipStack-\(UUID().uuidString).pdf")
         try (data as Data).write(to: url, options: .atomic)
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: url.path
+        )
         return url
     }
 
@@ -121,6 +209,26 @@ enum PrintUtilities {
             .foregroundColor: color
         ]
         (text as NSString).draw(at: point, withAttributes: attributes)
+    }
+
+    private static func drawCenteredText(
+        _ text: String,
+        centerX: CGFloat,
+        y: CGFloat,
+        size: CGFloat,
+        color: NSColor,
+        weight: NSFont.Weight = .regular
+    ) {
+        let font = NSFont.systemFont(ofSize: size, weight: weight)
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: color
+        ]
+        let width = (text as NSString).size(withAttributes: attributes).width
+        (text as NSString).draw(
+            at: CGPoint(x: centerX - width / 2, y: y),
+            withAttributes: attributes
+        )
     }
 
     private static func formattedNow() -> String {

@@ -356,7 +356,7 @@ public final class DuplexOrchestrator: ObservableObject {
         let request = PrintRequest(
             fileURL: source.fileURL,
             printerID: configuration.printerID,
-            title: Self.title(document.title, document: document, pass: pass),
+            title: Self.title(document: document, pass: pass),
             pageSet: source.pageSet,
             pageRanges: source.pageRanges,
             copies: configuration.copies,
@@ -728,18 +728,17 @@ public final class DuplexOrchestrator: ObservableObject {
         }
     }
 
-    private static func title(_ documentTitle: String, document: DuplexDocument, pass: DuplexPass) -> String {
+    /// CUPS job titles are visible to the queue owner and may be retained in
+    /// spool metadata. Keep the document name in FlipStack's in-memory queue
+    /// labels; never send it to CUPS.
+    private static func title(document: DuplexDocument, pass: DuplexPass) -> String {
         if document.isSingleSided {
-            return documentTitle
+            return "FlipStack job"
         }
-        let suffix: String
-        switch pass {
-        case .fronts:
-            suffix = "fronts"
-        case .backs:
-            suffix = "backs"
+        if document.isBooklet {
+            return "FlipStack booklet \(pass.rawValue)"
         }
-        return "\(documentTitle) — \(suffix)"
+        return "FlipStack \(pass.rawValue)"
     }
 
     private static func nanoseconds(for interval: TimeInterval) -> UInt64 {

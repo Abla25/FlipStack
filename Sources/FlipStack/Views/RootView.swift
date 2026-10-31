@@ -20,6 +20,9 @@ struct RootView: View {
         if model.isPreparingPrint {
             return "preparing"
         }
+        if model.flipCalibration != nil, !isFlowActive {
+            return "calibration"
+        }
         if model.flipAxisSetup != nil, !isFlowActive {
             return "setup"
         }
@@ -85,7 +88,10 @@ struct RootView: View {
                 }
             }
 
-            if showsComposerActionBar {
+            if model.flipCalibration != nil {
+                FlipCalibrationActionBar(model: model)
+                    .transition(.opacity)
+            } else if showsComposerActionBar {
                 PrimaryActionBar(model: model)
                     .transition(.opacity)
             }
@@ -104,6 +110,7 @@ struct RootView: View {
     private var showsComposerActionBar: Bool {
         guard orchestrator.phase.isIdle,
               model.flipAxisSetup == nil,
+              model.flipCalibration == nil,
               !model.isPreparingPrint,
               model.selectedDocument != nil,
               !model.printers.isEmpty else {
@@ -120,6 +127,8 @@ struct RootView: View {
     private var content: some View {
         if model.isPreparingPrint {
             PreparingSurface(model: model)
+        } else if let _ = model.flipCalibration, !isFlowActive {
+            FlipCalibrationView(model: model)
         } else if let _ = model.flipAxisSetup, !isFlowActive, model.selectedPrinter != nil {
             FlipAxisSetupView(model: model)
         } else {

@@ -61,21 +61,23 @@ final class NotificationService: NSObject, DuplexNotifying {
             ensureAuthorization { [weak self] in
                 self?.postFlipNotification(prompt)
             }
-        case .completed(let printerName, let sheetCount):
+        case .completed(_, let sheetCount):
             removeFlipNotification()
             guard authorizationGranted else { return }
             post(
                 title: "Printing complete",
-                body: "\(printerName) finished all \(sheetCount) \(sheetCount == 1 ? "sheet" : "sheets").",
+                body: "FlipStack finished all \(sheetCount) \(sheetCount == 1 ? "sheet" : "sheets").",
                 identifier: "flipstack-complete-\(UUID().uuidString)",
                 category: nil
             )
         case .failed(_, let failure):
             removeFlipNotification()
             guard authorizationGranted else { return }
+            // Notification banners can be visible on a locked screen. Keep the
+            // detail in the in-app surface rather than leaking queue or job text.
             post(
                 title: failure.title,
-                body: failure.message,
+                body: "Open FlipStack for details.",
                 identifier: "flipstack-failure-\(UUID().uuidString)",
                 category: nil
             )
@@ -107,11 +109,10 @@ final class NotificationService: NSObject, DuplexNotifying {
         guard let center, authorizationGranted else { return }
         let content = UNMutableNotificationContent()
         content.title = prompt.title
-        content.subtitle = "\(prompt.printerName) · \(prompt.sheetCount) \(prompt.sheetCount == 1 ? "sheet" : "sheets")"
+        content.subtitle = "\(prompt.sheetCount) \(prompt.sheetCount == 1 ? "sheet" : "sheets") · FlipStack"
         content.body = prompt.message
         content.sound = .default
         content.categoryIdentifier = Self.categoryIdentifier
-        content.userInfo = ["printerName": prompt.printerName]
 
         let identifier = "flipstack-flip-\(UUID().uuidString)"
         pendingFlipIdentifier = identifier

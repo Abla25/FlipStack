@@ -41,6 +41,21 @@ final class BookletImpositionRenderingTests: XCTestCase {
         XCTAssertGreaterThan(fileSize(at: documents.frontsURL), 0)
         XCTAssertGreaterThan(fileSize(at: documents.backsURL), 0)
 
+        let directoryAttributes = try FileManager.default.attributesOfItem(
+            atPath: documents.workingDirectory.path
+        )
+        XCTAssertEqual(
+            ((directoryAttributes[.posixPermissions] as? NSNumber)?.intValue ?? 0) & 0o777,
+            0o700
+        )
+        for file in [documents.frontsURL, documents.backsURL] {
+            let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
+            XCTAssertEqual(
+                ((attributes[.posixPermissions] as? NSNumber)?.intValue ?? 0) & 0o777,
+                0o600
+            )
+        }
+
         // The imposed files must be self-contained rather than depending on
         // the source PDF remaining at its original URL.
         try FileManager.default.removeItem(at: sourceURL)

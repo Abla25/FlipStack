@@ -16,9 +16,7 @@ final class LiveCUPSSmokeTests: XCTestCase {
         let client = CUPSClient()
         let printers = try await client.listPrinters()
         XCTAssertFalse(printers.isEmpty, "Expected at least one local CUPS queue.")
-        for printer in printers {
-            print("QUEUE \(printer.id) state=\(printer.state.rawValue) default=\(printer.isDefault) ppd=\(printer.ppdPath ?? "-") uri=\(printer.deviceURI ?? "-")")
-        }
+        print("CUPS queues found: \(printers.count)")
 
         guard let l1800 = printers.first(where: { $0.id.localizedCaseInsensitiveContains("L1800") }) else {
             throw XCTSkip("No Epson L1800 queue on this Mac.")
@@ -26,7 +24,7 @@ final class LiveCUPSSmokeTests: XCTestCase {
 
         let loader = PPDLoader()
         let url = loader.locatePPD(for: l1800)
-        print("L1800 PPD path: \(url?.path ?? "not found")")
+        print("L1800 PPD located: \(url != nil)")
         XCTAssertNotNil(url, "Expected to locate the L1800 PPD.")
         guard let url else { return }
 
@@ -49,13 +47,15 @@ final class LiveCUPSSmokeTests: XCTestCase {
         print("L1800 status: state=\(status.state.rawValue) origin=\(status.origin.rawValue) reasons=\(status.stateReasons) supplies=\(status.supplies.map { "\($0.name):\($0.levelPercent.map(String.init) ?? "?")" }) note=\(status.note ?? "-")")
         XCTAssertEqual(status.printerID, l1800.id)
 
+        var additionalStatusCount = 0
         for printer in printers where printer.id != l1800.id {
-            let other = await IPPStatusClient().status(for: printer)
-            print("STATUS \(printer.id): state=\(other.state.rawValue) origin=\(other.origin.rawValue) accepts=\(other.acceptsJobs.map(String.init) ?? "?") queued=\(other.queuedJobCount.map(String.init) ?? "?") reasons=\(other.stateReasons) supplies=\(other.supplies.map { "\($0.name):\($0.levelPercent.map(String.init) ?? "?")" }) note=\(other.note ?? "-")")
+            _ = await IPPStatusClient().status(for: printer)
+            additionalStatusCount += 1
         }
+        print("Additional queues checked: \(additionalStatusCount)")
 
         let devices = try await CUPSDeviceDiscovery().discoverDevices()
-        print("Discovered devices: \(devices.map { "\($0.transport.rawValue):\($0.name)" })")
+        print("Discovered devices: \(devices.count)")
         for discovered in devices {
             XCTAssertFalse(discovered.uri.isEmpty)
             XCTAssertFalse(discovered.name.isEmpty)

@@ -109,7 +109,7 @@ Print-path changes need more than a successful build. In the pull request, inclu
 
 Use plain paper and a short document for initial checks. Never run destructive or high-volume tests on a printer you do not control. If a test could consume a lot of ink or paper, ask first.
 
-A useful hardware report describes the observed CUPS state as well as the paper result. Commands such as `lpstat -p -d` and `lpstat -o` are usually enough; remove serial numbers and other identifying details before posting.
+A useful hardware report describes the observed CUPS state as well as the paper result. Commands such as `lpstat -p -d` and `lpstat -o` are usually enough. Before posting, remove queue names, job titles, owner names, device URIs, serial numbers, hostnames, and any other identifying details.
 
 ## Releases and notarization
 

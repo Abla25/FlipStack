@@ -14,7 +14,10 @@ struct HeaderView: View {
     private var printer: Printer? { model.selectedPrinter }
 
     private var isLocked: Bool {
-        !orchestrator.phase.isIdle || model.isPreparingPrint || model.flipAxisSetup != nil
+        !orchestrator.phase.isIdle
+            || model.isPreparingPrint
+            || model.flipAxisSetup != nil
+            || model.flipCalibration != nil
     }
 
     private var modelLine: String {
@@ -79,7 +82,9 @@ struct HeaderView: View {
                 .accessibilityElement(children: .combine)
             }
 
-            if let printer {
+            if let printer,
+               model.flipAxisSetup == nil,
+               model.flipCalibration == nil {
                 supplySection(for: printer)
             }
 

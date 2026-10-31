@@ -238,7 +238,19 @@ extension CUPSProcessRunner {
     /// independently on some releases, so the parser also understands the
     /// common localized labels and dates.
     private static func englishEnvironment() -> [String: String] {
-        var environment = ProcessInfo.processInfo.environment
+        let source = ProcessInfo.processInfo.environment
+        // Do not hand arbitrary developer-shell secrets (tokens, cloud keys,
+        // SSH agents) to CUPS helper tools. Keep only what the tools need plus
+        // the deliberately supported CUPS environment values.
+        let allowed = [
+            "PATH", "HOME", "TMPDIR", "USER", "LOGNAME",
+            "CUPS_SERVER", "CUPS_SERVERROOT", "CUPS_DATADIR",
+            "CUPS_CACHEDIR", "CUPS_STATEDIR", "CUPS_ENCRYPTION"
+        ]
+        var environment: [String: String] = [:]
+        for key in allowed {
+            if let value = source[key] { environment[key] = value }
+        }
         environment["LC_ALL"] = "C"
         environment["LANG"] = "C"
         return environment

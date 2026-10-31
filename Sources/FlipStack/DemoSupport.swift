@@ -27,6 +27,13 @@ final class DemoSession {
         case preview
         case bookletPreview
         case quality
+        case firstPrintSetup
+        case firstPrintPending
+        case calibrationSetup
+        case calibrationPrinting
+        case calibrationQuestions
+        case calibrationAnswered
+        case calibrationApplied
     }
 
     let scenario: Scenario
@@ -54,8 +61,13 @@ final class DemoSession {
         }
     }
 
-    nonisolated static func demoPreferences() -> PrinterPreferences {
-        PrinterPreferences(flipAxis: .longEdge, ejectsFaceDown: false, hasConfiguredFlip: true)
+    nonisolated static func demoPreferences(for scenario: Scenario) -> PrinterPreferences {
+        if scenario == .firstPrintSetup
+            || scenario == .firstPrintPending
+            || scenario == .calibrationApplied {
+            return .unconfigured
+        }
+        return PrinterPreferences(flipAxis: .longEdge, ejectsFaceDown: false, hasConfiguredFlip: true)
     }
 
     nonisolated static func demoPrinterID() -> String {
@@ -100,6 +112,65 @@ final class DemoSession {
             model.applyQualityPreset(.photo)
             model.forceLandscape = true
             model.fitToPage = true
+        case .firstPrintPending:
+            await model.acceptDocument(url: documentURL)
+            model.mode = .manualDuplex
+        case .firstPrintSetup:
+            await model.acceptDocument(url: documentURL)
+            model.mode = .manualDuplex
+            model.requestPrint()
+        case .calibrationSetup:
+            await model.acceptDocument(url: documentURL)
+            model.openFlipAxisSetup()
+        case .calibrationPrinting:
+            await model.acceptDocument(url: documentURL)
+            model.openFlipAxisSetup()
+            model.startFlipCalibration()
+            await waitForCalibration(model: model) { calibration in
+                if case .printing = calibration.stage { return true }
+                if case .failed = calibration.stage { return true }
+                return false
+            }
+        case .calibrationQuestions:
+            await model.acceptDocument(url: documentURL)
+            model.openFlipAxisSetup()
+            model.startFlipCalibration()
+            await waitForCalibration(model: model) { calibration in
+                if case .questions = calibration.stage { return true }
+                if case .failed = calibration.stage { return true }
+                return false
+            }
+        case .calibrationAnswered:
+            await model.acceptDocument(url: documentURL)
+            model.openFlipAxisSetup()
+            model.startFlipCalibration()
+            await waitForCalibration(model: model) { calibration in
+                if case .questions = calibration.stage { return true }
+                if case .failed = calibration.stage { return true }
+                return false
+            }
+            model.setFlipCalibrationAxis(.longEdge)
+            model.setFlipCalibrationEjectsFaceDown(false)
+        case .calibrationApplied:
+            await model.acceptDocument(url: documentURL)
+            model.mode = .manualDuplex
+            model.requestPrint()
+            model.startFlipCalibration()
+            await waitForCalibration(model: model) { calibration in
+                if case .questions = calibration.stage { return true }
+                if case .failed = calibration.stage { return true }
+                return false
+            }
+            if model.flipCalibration != nil {
+                model.setFlipCalibrationAxis(.shortEdge)
+                model.setFlipCalibrationEjectsFaceDown(true)
+                model.applyFlipCalibration()
+                await waitForPhase(model: model, matches: { phase in
+                    if case .printing(.fronts, _) = phase { return true }
+                    if case .failed = phase { return true }
+                    return false
+                }, timeout: timeout)
+            }
         case .booklet:
             await model.acceptDocument(url: documentURL)
             model.mode = .booklet
@@ -212,6 +283,18 @@ final class DemoSession {
             try? await Task.sleep(nanoseconds: 120_000_000)
         }
     }
+
+    private func waitForCalibration(
+        model: AppModel,
+        timeout: TimeInterval = 20,
+        matches: (FlipCalibration) -> Bool
+    ) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if let calibration = model.flipCalibration, matches(calibration) { return }
+            try? await Task.sleep(nanoseconds: 120_000_000)
+        }
+    }
 }
 
 // MARK: - Demo spooler
@@ -246,7 +329,8 @@ actor DemoSpooler: PrintSpooling {
                 title: "Annual report.pdf",
                 state: .completed,
                 impressionsCompleted: 12,
-                impressionsTotal: 12
+                impressionsTotal: 12,
+                owner: NSUserName()
             )
             jobs[471] = PrintJob(
                 id: 471,
@@ -255,6 +339,7 @@ actor DemoSpooler: PrintSpooling {
                 state: .pending,
                 impressionsCompleted: 0,
                 impressionsTotal: 4,
+                owner: NSUserName(),
                 documentCount: 1
             )
             jobs[472] = PrintJob(
@@ -264,6 +349,7 @@ actor DemoSpooler: PrintSpooling {
                 state: .processing,
                 impressionsCompleted: 2,
                 impressionsTotal: 5,
+                owner: NSUserName(),
                 documentCount: 1
             )
             activeIDs = [471, 472]
@@ -282,7 +368,8 @@ actor DemoSpooler: PrintSpooling {
     func submit(_ request: PrintRequest) async throws -> PrintJob {
         let id = nextID
         nextID += 1
-        let total = max(1, (request.pageSet == .all ? 5 : 3))
+        let isCalibration = request.title == "FlipStack calibration sheet"
+        let total = isCalibration ? 1 : max(1, (request.pageSet == .all ? 5 : 3))
         var job = PrintJob(
             id: id,
             printerID: request.printerID,
@@ -290,6 +377,7 @@ actor DemoSpooler: PrintSpooling {
             state: .processing,
             impressionsCompleted: 0,
             impressionsTotal: total,
+            owner: NSUserName(),
             documentCount: 1
         )
         if scenario == .printing {
@@ -307,7 +395,16 @@ actor DemoSpooler: PrintSpooling {
         let count = polls[id, default: 0]
 
         switch scenario {
-        case .printing, .bookletPrinting, .rangePrinting:
+        case .calibrationQuestions, .calibrationAnswered, .calibrationApplied:
+            if count >= 2 {
+                job.state = .completed
+                job.impressionsCompleted = job.impressionsTotal
+                activeIDs.removeAll { $0 == id }
+            } else {
+                job.state = .processing
+                job.impressionsCompleted = 0
+            }
+        case .printing, .bookletPrinting, .rangePrinting, .calibrationPrinting:
             job.state = .processing
             job.impressionsCompleted = min(job.impressionsTotal ?? 1, 1 + count / 3)
         case .flip, .completed, .completedSingle:
@@ -518,8 +615,16 @@ enum DemoPDF {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("FlipStackDemo", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o700],
+            ofItemAtPath: directory.path
+        )
         let url = directory.appendingPathComponent("Field-Notes-\(pageCount)-pages.pdf")
         try (data as Data).write(to: url, options: .atomic)
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: url.path
+        )
         return url
     }
 

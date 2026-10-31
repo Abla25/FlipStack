@@ -186,6 +186,13 @@ public struct PrintJob: Identifiable, Hashable, Codable, Sendable {
 
     public var isActive: Bool { state.isActive }
 
+    /// A queue row is safe to show when it belongs to the current CUPS user
+    /// or when this FlipStack session submitted it. Jobs from other users are
+    /// never rendered or offered for cancellation.
+    public func isVisible(to user: String, localJobIDs: Set<Int> = []) -> Bool {
+        localJobIDs.contains(id) || owner == user
+    }
+
     public var progress: Double? {
         guard let total = impressionsTotal, total > 0 else { return nil }
         let done = impressionsCompleted ?? 0

@@ -29,6 +29,7 @@ There are no timer-based "the printer is probably done" transitions. FlipStack w
 
 - **Everyday single-sided printing.** One clean pass for ordinary documents, envelopes, and labels, with copies, page ranges, and the same PPD-driven options.
 - **Guided manual duplex.** Two passes, one clear flip prompt, and a state machine that keeps the document in order from start to finish.
+- **Automatic flip calibration.** On the first two-sided job, FlipStack can print one generic orientation sheet and turn the answer into a saved flip axis and tray setting before the real document is sent. Re-run it from printer settings at any time.
 - **PPD-driven options.** Color, paper size, media type, and print quality come from the queue's real PPD. FlipStack does not invent driver choices, and remembers the choices per printer.
 - **Quality presets that actually apply.** Eco, Standard, High, and Photo resolve to real PPD choices for resolution, media, color, and optional ICC profile settings. Anything the driver does not expose stays untouched.
 - **Layout controls.** Automatic or forced landscape orientation and fit-to-page scaling are passed straight to CUPS for both passes.
@@ -57,6 +58,10 @@ The screenshots below use a demo queue so no real document or printer data is sh
 ### Print preview
 
 ![FlipStack in-panel print preview showing a selected PDF page with page navigation and print-order details](docs/screenshots/preview.png)
+
+### Calibrate the flip
+
+![FlipStack automatic flip calibration asking which side of the orientation sheet landed up and confirming the turn direction](docs/screenshots/calibration.png)
 
 ### Flip when the fronts are done
 
@@ -91,6 +96,14 @@ The screenshots below use a demo queue so no real document or printer data is sh
 5. Use the FlipStack icon in the menu bar. The app does not appear in the Dock.
 
 Release builds are universal: the same DMG runs natively on Apple silicon and Intel Macs.
+
+## Privacy
+
+FlipStack is local-only. There is no telemetry, analytics, account system, cloud sync, external crash reporting, or third-party SDK. Documents are not uploaded to any external service, stored in its own history, or included in notifications; they are sent only to the selected CUPS queue/printer for printing. Temporary print files live in the current user's protected temporary directory and are removed after use. CUPS job titles are generic, and the queue panel shows only jobs owned by the current user or submitted by this FlipStack session.
+
+The network activity is limited to printing and printer discovery: a print job to the configured CUPS queue, local CUPS/IPP status, CUPS `lpinfo` discovery that may generate local network/mDNS traffic, optional read-only SNMP supply queries to a configured network printer, and status requests to a remote CUPS host only if `CUPS_SERVER` explicitly points there. CUPS itself may retain job metadata/history independently of FlipStack.
+
+The calibration sheet is generic and contains no document content. Read [PRIVACY.md](PRIVACY.md) for the full data-handling statement and local data removal instructions.
 
 ## Why not the Mac App Store
 
@@ -146,7 +159,7 @@ Unsigned or ad-hoc builds are for local development only. The release workflow r
 7. When the flip prompt appears, take the whole stack, flip it as instructed, reinsert it, and press **Continue**.
 8. Watch the second pass and the queue from the same panel.
 
-The first time you print a two-sided job on a given printer, FlipStack asks for two details: which edge you turn the stack around (long or short), and whether the output tray ejects pages face-down. Both choices are saved for that printer, so the setup appears only once. You can change them later from the printer settings in the panel. Single-sided jobs do not need this setup.
+The first time you print a two-sided job on a given printer, FlipStack automatically prints one generic orientation sheet before the document. The sheet uses the queue's current paper and media and contains no document content. It asks which side landed facing up, recommends a long-edge turn for portrait/book-style documents or a short-edge turn for landscape/calendar-style documents, and waits for both answers to be confirmed. The real document waits until you save the calibration. You can cancel into manual setup instead, and both paths are saved for that printer. Re-run calibration or print a standalone orientation sheet later from the printer settings. Single-sided jobs do not need this setup.
 
 Booklet mode pads the document to a multiple of four pages, imposes two pages per side, and supports signatures for longer documents. FlipStack uses the long-edge flip for booklets and shows the fold and staple instructions after the sheets are printed.
 
@@ -163,7 +176,7 @@ FlipStack saves the following per printer:
 - The selected PPD choices: color mode, paper size, media type, quality/resolution, and any driver color profiles.
 - The quality preset is derived from those choices, so the last effective preset is restored.
 - Layout: automatic/landscape orientation and fit-to-page.
-- The physical flip axis, the face-down output-tray setting, and whether setup has been completed.
+- The physical flip axis, the face-down output-tray setting, and whether setup has been completed, including a calibration result.
 - The last selected printer and the last print mode (single, duplex, or booklet).
 
 The page range and copy count belong to the current job and are intentionally not restored on the next launch. Two-sided jobs always print one copy at a time; single-sided jobs can use up to 20 copies.

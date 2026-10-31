@@ -36,13 +36,18 @@ final class CUPSOptionBuilderTests: XCTestCase {
         )
         XCTAssertEqual(pairStrings(value), [
             "page-set=odd",
-            "page-ranges=1-3,5"
+            "page-ranges=1-3,5",
+            "number-up=1",
+            "orientation-requested=3"
         ])
         XCTAssertEqual(CUPSOptionBuilder.arguments(for: value), [
             "-d", "EPSON_L1800_Series",
             "-t", "FlipStack Test",
+            "-n", "1",
             "-o", "page-set=odd",
             "-o", "page-ranges=1-3,5",
+            "-o", "number-up=1",
+            "-o", "orientation-requested=3",
             fileURL.path
         ])
     }
@@ -55,7 +60,9 @@ final class CUPSOptionBuilderTests: XCTestCase {
         let pairs = pairStrings(value)
         XCTAssertEqual(pairs, [
             "page-set=even",
-            "page-ranges=2-4,8"
+            "page-ranges=2-4,8",
+            "number-up=1",
+            "orientation-requested=3"
         ])
         let joined = pairs.joined(separator: " ")
         XCTAssertFalse(joined.contains("output-order"))
@@ -69,6 +76,7 @@ final class CUPSOptionBuilderTests: XCTestCase {
             orientation: .reverseLandscape
         )
         XCTAssertEqual(pairStrings(value), [
+            "page-set=all",
             "number-up=2",
             "orientation-requested=5"
         ])
@@ -77,17 +85,22 @@ final class CUPSOptionBuilderTests: XCTestCase {
     func testFitToPageIsAnExplicitCupsOption() {
         var value = request()
         value.fitToPage = true
-        XCTAssertEqual(pairStrings(value), ["fit-to-page=true"])
+        XCTAssertEqual(pairStrings(value), [
+            "page-set=all",
+            "number-up=1",
+            "orientation-requested=3",
+            "fit-to-page=true"
+        ])
         XCTAssertTrue(
             CUPSOptionBuilder.arguments(for: value).contains("fit-to-page=true")
         )
     }
 
     func testAllOrientationValues() {
-        XCTAssertEqual(CUPSOptionBuilder.optionPairs(for: request(orientation: .landscape)).first?.1, "4")
-        XCTAssertEqual(CUPSOptionBuilder.optionPairs(for: request(orientation: .reverseLandscape)).first?.1, "5")
-        XCTAssertEqual(CUPSOptionBuilder.optionPairs(for: request(orientation: .reversePortrait)).first?.1, "6")
-        XCTAssertTrue(CUPSOptionBuilder.optionPairs(for: request(orientation: .portrait)).isEmpty)
+        XCTAssertEqual(CUPSOptionBuilder.optionPairs(for: request(orientation: .landscape)).first { $0.0 == "orientation-requested" }?.1, "4")
+        XCTAssertEqual(CUPSOptionBuilder.optionPairs(for: request(orientation: .reverseLandscape)).first { $0.0 == "orientation-requested" }?.1, "5")
+        XCTAssertEqual(CUPSOptionBuilder.optionPairs(for: request(orientation: .reversePortrait)).first { $0.0 == "orientation-requested" }?.1, "6")
+        XCTAssertEqual(CUPSOptionBuilder.optionPairs(for: request(orientation: .portrait)).first { $0.0 == "orientation-requested" }?.1, "3")
     }
 
     func testDriverOptionsAreSortedIncludingDuplexAndPPDOptions() {
@@ -98,6 +111,9 @@ final class CUPSOptionBuilderTests: XCTestCase {
             "MediaType": "PLAIN"
         ])
         XCTAssertEqual(pairStrings(value), [
+            "page-set=all",
+            "number-up=1",
+            "orientation-requested=3",
             "ColorModel=Grayscale",
             "Duplex=NoTumble",
             "MediaType=PLAIN",
@@ -107,12 +123,21 @@ final class CUPSOptionBuilderTests: XCTestCase {
 
     func testDuplexTumble() {
         let value = request(driverOptions: ["Duplex": "Tumble"])
-        XCTAssertEqual(pairStrings(value), ["Duplex=Tumble"])
+        XCTAssertEqual(pairStrings(value), [
+            "page-set=all",
+            "number-up=1",
+            "orientation-requested=3",
+            "Duplex=Tumble"
+        ])
     }
 
-    func testCopiesAppearOnlyAboveOne() {
+    func testCopiesAreAlwaysExplicit() {
         let single = request(copies: 1)
-        XCTAssertFalse(CUPSOptionBuilder.arguments(for: single).contains("-n"))
+        XCTAssertEqual(Array(CUPSOptionBuilder.arguments(for: single).prefix(6)), [
+            "-d", "EPSON_L1800_Series",
+            "-t", "FlipStack Test",
+            "-n", "1"
+        ])
 
         let multiple = request(copies: 3)
         let arguments = CUPSOptionBuilder.arguments(for: multiple)
@@ -153,7 +178,12 @@ final class CUPSOptionBuilderTests: XCTestCase {
             "output-order": "reverse",
             "PageSize": "A4"
         ])
-        XCTAssertEqual(pairStrings(value), ["PageSize=A4"])
+        XCTAssertEqual(pairStrings(value), [
+            "page-set=all",
+            "number-up=1",
+            "orientation-requested=3",
+            "PageSize=A4"
+        ])
         XCTAssertFalse(CUPSOptionBuilder.arguments(for: value).joined().contains("output-order"))
     }
 
@@ -165,7 +195,12 @@ final class CUPSOptionBuilderTests: XCTestCase {
             "orientation-requested": "5",
             "PageSize": "A4"
         ])
-        XCTAssertEqual(pairStrings(value), ["PageSize=A4"])
+        XCTAssertEqual(pairStrings(value), [
+            "page-set=all",
+            "number-up=1",
+            "orientation-requested=3",
+            "PageSize=A4"
+        ])
     }
 
     func testFileWithSpacesIsASingleArgumentAndNotQuoted() {

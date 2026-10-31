@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for helping improve FlipStack. Remove serial numbers, hostnames, user names, and other personal data before posting logs or screenshots.
+        Thanks for helping improve FlipStack. Remove serial numbers, device URIs, hostnames, queue names, job titles, user names, and other personal data before posting logs or screenshots.
   - type: input
     id: version
     attributes:

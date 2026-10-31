@@ -50,6 +50,10 @@ public struct PPDParser: Sendable {
 
         do {
             try data.write(to: temporaryURL, options: .atomic)
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o600],
+                ofItemAtPath: temporaryURL.path
+            )
         } catch {
             throw PPDError.unreadableFile(temporaryURL.path)
         }

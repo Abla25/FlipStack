@@ -31,6 +31,7 @@ struct SelectedDocument: Identifiable, Equatable {
     let url: URL
     let name: String
     let pageCount: Int
+    let isLandscape: Bool
 
     var title: String {
         let base = (name as NSString).deletingPathExtension
@@ -85,6 +86,29 @@ struct FlipAxisSetup: Equatable {
     var autoStartsPrint: Bool
 }
 
+struct FlipCalibration: Equatable {
+    enum Stage: Equatable {
+        case printing
+        case questions
+        case failed(String)
+    }
+
+    var id = UUID()
+    var stage: Stage
+    var autoStartsPrint: Bool
+    var printerID: String
+    var axis: FlipAxis
+    var recommendedAxis: FlipAxis
+    var ejectsFaceDown: Bool
+    var jobID: Int?
+    var hasConfirmedTray: Bool = false
+    var hasConfirmedAxis: Bool = false
+
+    var isAnswered: Bool {
+        hasConfirmedTray && hasConfirmedAxis
+    }
+}
+
 struct AppBanner: Identifiable, Equatable {
     enum Kind: String, Equatable {
         case info
@@ -117,6 +141,8 @@ final class AppModel: ObservableObject {
 
     private var isRefreshingStatus = false
     private var isRefreshingQueue = false
+    private var localJobIDs = Set<Int>()
+    private var localJobTitles: [Int: String] = [:]
 
     // MARK: Document and options
 
@@ -190,6 +216,7 @@ final class AppModel: ObservableObject {
     // MARK: Flow and surfaces
 
     @Published var flipAxisSetup: FlipAxisSetup?
+    @Published private(set) var flipCalibration: FlipCalibration?
     @Published var isShowingQueue = false {
         didSet {
             guard oldValue != isShowingQueue else { return }
@@ -220,6 +247,7 @@ final class AppModel: ObservableObject {
     private var monitorTask: Task<Void, Never>?
     private var queueMonitorTask: Task<Void, Never>?
     private var preparationTask: Task<Void, Never>?
+    private var calibrationTask: Task<Void, Never>?
     private var preparationGeneration = 0
     private var lastDiscoveryAt: Date?
     private var hasStarted = false
@@ -249,6 +277,9 @@ final class AppModel: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] phase in
                 guard let self else { return }
+                if case .printing(let pass, let job) = phase {
+                    self.rememberLocalJob(job, pass: pass)
+                }
                 switch phase {
                 case .printing, .awaitingFlip, .completed, .failed, .cancelled:
                     Task {
@@ -272,8 +303,11 @@ final class AppModel: ObservableObject {
             && !isLoadingPPD
             && !isPreparingPrint
             && !isMaintenanceBusy
+            && flipCalibration == nil
             && orchestrator.phase.isIdle
     }
+
+    var isCalibrating: Bool { flipCalibration != nil }
 
     var pageSelectionInfo: PageSelectionInfo {
         guard let document = selectedDocument else {
@@ -460,6 +494,16 @@ final class AppModel: ObservableObject {
         if reasons.contains(where: PrinterReason.isError) {
             return .attention
         }
+        if let calibration = flipCalibration {
+            switch calibration.stage {
+            case .printing:
+                return calibration.jobID == nil ? .preparing : .printing
+            case .questions:
+                return .waiting
+            case .failed:
+                return .attention
+            }
+        }
         if state == .processing {
             return .printing
         }
@@ -549,7 +593,16 @@ final class AppModel: ObservableObject {
             await refreshDiscovery()
         }
         startMonitoring()
-        cleanUpOldTemporaryFiles()
+        cleanUpTemporaryFiles()
+    }
+
+    /// Remove all local working files owned by FlipStack. Called on launch and
+    /// normal termination so a document-derived temporary PDF cannot outlive
+    /// the session.
+    func cleanUpTemporaryFiles() {
+        let base = FileManager.default.temporaryDirectory
+            .appendingPathComponent("FlipStack", isDirectory: true)
+        try? FileManager.default.removeItem(at: base)
     }
 
     func refreshAll() async {
@@ -607,6 +660,23 @@ final class AppModel: ObservableObject {
         do {
             let list = try await spooler.listPrinters()
             printers = list
+            if flipCalibration != nil,
+               let selectedPrinter,
+               !list.contains(where: { $0.id == selectedPrinter.id }) {
+                cancelFlipCalibrationWork()
+                flipCalibration = nil
+                flipAxisSetup = nil
+                banner = AppBanner(
+                    kind: .warning,
+                    title: "The printer is no longer available",
+                    message: "Flip setup was canceled. Reconnect the printer and try again."
+                )
+                self.selectedPrinter = nil
+                ppd = nil
+                status = nil
+                queue = []
+                return
+            }
             if let selectedPrinter,
                let refreshed = list.first(where: { $0.id == selectedPrinter.id }) {
                 self.selectedPrinter = refreshed
@@ -644,8 +714,13 @@ final class AppModel: ObservableObject {
     }
 
     func selectPrinter(_ printer: Printer) async {
-        guard orchestrator.phase.isIdle, !isPreparingPrint else { return }
+        guard orchestrator.phase.isIdle,
+              !isPreparingPrint,
+              flipCalibration == nil,
+              flipAxisSetup == nil else { return }
         selectedPrinter = printer
+        localJobIDs.removeAll()
+        localJobTitles.removeAll()
         preferencesStore.lastPrinterID = printer.id
         preferences = preferencesStore.load(for: printer.id)
         let layout = preferencesStore.loadLayout(for: printer.id)
@@ -799,19 +874,26 @@ final class AppModel: ObservableObject {
     // MARK: Preferences
 
     func requestPrint() {
-        guard canPrint, flipAxisSetup == nil else { return }
-        if mode.usesFlipSetup, !preferences.hasConfiguredFlip {
+        guard canPrint, flipAxisSetup == nil, flipCalibration == nil else { return }
+        let needsFlipSetup = mode.usesFlipSetup
+            && (mode == .booklet || pageSelectionInfo.pageCount > 1)
+        if needsFlipSetup, !preferences.hasConfiguredFlip {
             flipAxisSetup = FlipAxisSetup(autoStartsPrint: true)
+            // Match the first-time promise: send one generic calibration sheet
+            // immediately, then hold the real document until the answers land.
+            startFlipCalibration()
             return
         }
         beginPrint()
     }
 
     func openFlipAxisSetup() {
+        guard flipCalibration == nil else { return }
         flipAxisSetup = FlipAxisSetup(autoStartsPrint: false)
     }
 
     func completeFlipAxisSetup(flipAxis: FlipAxis, ejectsFaceDown: Bool) {
+        guard flipCalibration == nil else { return }
         let autoStart = flipAxisSetup?.autoStartsPrint ?? false
         preferences.flipAxis = flipAxis
         preferences.ejectsFaceDown = ejectsFaceDown
@@ -824,7 +906,155 @@ final class AppModel: ObservableObject {
     }
 
     func dismissFlipAxisSetup() {
+        let hadWaitingDocument = flipAxisSetup?.autoStartsPrint == true
+        cancelFlipCalibrationWork()
+        flipCalibration = nil
         flipAxisSetup = nil
+        if hadWaitingDocument {
+            banner = AppBanner(
+                kind: .info,
+                title: "Flip setup canceled",
+                message: "Your PDF was not printed."
+            )
+        }
+    }
+
+    // MARK: Automatic flip calibration
+
+    /// Prints one generic orientation sheet, monitors the real CUPS job, and
+    /// only then reveals the confirmation questions. The real document is never
+    /// sent until calibration is applied.
+    func startFlipCalibration() {
+        guard flipCalibration == nil,
+              let printer = selectedPrinter,
+              orchestrator.phase.isIdle,
+              !isPreparingPrint,
+              !isMaintenanceBusy else {
+            return
+        }
+        closePreview()
+        isShowingQueue = false
+        banner = nil
+        let autoStart = flipAxisSetup?.autoStartsPrint ?? false
+        if flipAxisSetup == nil {
+            flipAxisSetup = FlipAxisSetup(autoStartsPrint: false)
+        }
+        let landscape = forceLandscape || (selectedDocument?.isLandscape ?? false)
+        let suggestedAxis: FlipAxis
+        if mode == .booklet {
+            suggestedAxis = .longEdge
+        } else if preferences.hasConfiguredFlip {
+            suggestedAxis = preferences.flipAxis
+        } else {
+            suggestedAxis = landscape ? .shortEdge : .longEdge
+        }
+        let calibration = FlipCalibration(
+            stage: .printing,
+            autoStartsPrint: autoStart,
+            printerID: printer.id,
+            axis: suggestedAxis,
+            recommendedAxis: suggestedAxis,
+            ejectsFaceDown: preferences.ejectsFaceDown,
+            jobID: nil,
+            hasConfirmedAxis: mode == .booklet
+        )
+        flipCalibration = calibration
+        calibrationTask?.cancel()
+        calibrationTask = Task { [weak self] in
+            await self?.runFlipCalibration(
+                printer: printer,
+                calibrationID: calibration.id
+            )
+        }
+    }
+
+    func retryFlipCalibration() {
+        let autoStart = flipCalibration?.autoStartsPrint
+            ?? flipAxisSetup?.autoStartsPrint
+            ?? false
+        cancelFlipCalibrationWork()
+        flipCalibration = nil
+        if flipAxisSetup == nil {
+            flipAxisSetup = FlipAxisSetup(autoStartsPrint: autoStart)
+        }
+        startFlipCalibration()
+    }
+
+    func setFlipCalibrationAxis(_ axis: FlipAxis) {
+        guard mode != .booklet,
+              var calibration = flipCalibration,
+              calibration.stage == .questions else { return }
+        calibration.axis = axis
+        calibration.hasConfirmedAxis = true
+        flipCalibration = calibration
+    }
+
+    func setFlipCalibrationEjectsFaceDown(_ value: Bool) {
+        guard var calibration = flipCalibration, calibration.stage == .questions else { return }
+        calibration.ejectsFaceDown = value
+        calibration.hasConfirmedTray = true
+        flipCalibration = calibration
+    }
+
+    func applyFlipCalibration() {
+        guard let calibration = flipCalibration,
+              calibration.stage == .questions,
+              calibration.isAnswered,
+              calibration.printerID == selectedPrinter?.id else { return }
+        preferences.flipAxis = mode == .booklet ? .longEdge : calibration.axis
+        preferences.ejectsFaceDown = calibration.ejectsFaceDown
+        preferences.hasConfiguredFlip = true
+        savePreferences()
+        let autoStart = calibration.autoStartsPrint
+        flipCalibration = nil
+        flipAxisSetup = nil
+        banner = AppBanner(
+            kind: .success,
+            title: "Flip setup calibrated",
+            message: calibrationSummary(for: calibration)
+        )
+        if autoStart {
+            beginPrint()
+        }
+    }
+
+    /// Leaves the calibration sheet flow but keeps the manual setup surface
+    /// available. The calibration job is cancelled if it is still active.
+    func returnToFlipSetup() {
+        cancelFlipCalibrationWork()
+        flipCalibration = nil
+        if flipAxisSetup == nil {
+            flipAxisSetup = FlipAxisSetup(autoStartsPrint: false)
+        }
+    }
+
+    func cancelFlipCalibration() {
+        cancelFlipCalibrationWork()
+        flipCalibration = nil
+    }
+
+    private func cancelFlipCalibrationWork() {
+        calibrationTask?.cancel()
+        calibrationTask = nil
+        guard let calibration = flipCalibration,
+              let jobID = calibration.jobID else {
+            return
+        }
+        Task { [weak self, spooler] in
+            do {
+                try await spooler.cancel(jobID: jobID, printerID: calibration.printerID)
+            } catch {
+                self?.banner = AppBanner(
+                    kind: .warning,
+                    title: "Could not cancel the calibration sheet",
+                    message: "It may still print. Check the queue before trying again."
+                )
+            }
+        }
+    }
+
+    private func calibrationSummary(for calibration: FlipCalibration) -> String {
+        "\(calibration.axis.label) · print lands \(calibration.ejectsFaceDown ? "down" : "up")."
     }
 
     func setEjectsFaceDown(_ value: Bool) {
@@ -856,7 +1086,10 @@ final class AppModel: ObservableObject {
     // MARK: Documents
 
     func chooseDocument() {
-        guard !isPreparingPrint, !orchestrator.phase.isActive else { return }
+        guard !isPreparingPrint,
+              !orchestrator.phase.isActive,
+              flipAxisSetup == nil,
+              flipCalibration == nil else { return }
         let panel = NSOpenPanel()
         panel.title = "Choose a PDF"
         panel.message = "Pick the document FlipStack should print."
@@ -866,12 +1099,31 @@ final class AppModel: ObservableObject {
         panel.canChooseFiles = true
         panel.allowedContentTypes = [.pdf]
         NSApp.activate(ignoringOtherApps: true)
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let response = panel.runModal()
+        // AppKit's open panel otherwise persists the last folder as a bookmark
+        // in UserDefaults, which can reveal a user's document location.
+        clearOpenPanelState()
+        guard response == .OK, let url = panel.url else { return }
         Task { await acceptDocument(url: url) }
     }
 
+    func clearOpenPanelState() {
+        let defaults = UserDefaults.standard
+        for key in [
+            "NSOSPLastRootDirectory",
+            "NSNavPanelExpandedSizeForOpenMode",
+            "NSNavLastRootDirectory",
+            "NSNavLastCurrentDirectory"
+        ] {
+            defaults.removeObject(forKey: key)
+        }
+    }
+
     func acceptDocument(url: URL) async {
-        guard !isPreparingPrint, !orchestrator.phase.isActive else { return }
+        guard !isPreparingPrint,
+              !orchestrator.phase.isActive,
+              flipAxisSetup == nil,
+              flipCalibration == nil else { return }
         if !orchestrator.phase.isIdle {
             orchestrator.reset()
             discardWorkingFiles()
@@ -901,8 +1153,21 @@ final class AppModel: ObservableObject {
             return
         }
         let name = url.lastPathComponent
+        var isLandscape = false
+        if let firstPage = pdf.page(at: 0) {
+            let bounds = firstPage.bounds(for: .mediaBox)
+            let rotated90 = firstPage.rotation % 180 != 0
+            let width = rotated90 ? bounds.height : bounds.width
+            let height = rotated90 ? bounds.width : bounds.height
+            isLandscape = width > height
+        }
         closePreview()
-        selectedDocument = SelectedDocument(url: url, name: name, pageCount: pdf.pageCount)
+        selectedDocument = SelectedDocument(
+            url: url,
+            name: name,
+            pageCount: pdf.pageCount,
+            isLandscape: isLandscape
+        )
         pageSelectionMode = .all
         pageRangeText = ""
         banner = nil
@@ -910,7 +1175,9 @@ final class AppModel: ObservableObject {
     }
 
     func clearDocument() {
-        guard !orchestrator.phase.isActive else { return }
+        guard !orchestrator.phase.isActive,
+              flipAxisSetup == nil,
+              flipCalibration == nil else { return }
         closePreview()
         discardWorkingFiles()
         selectedDocument = nil
@@ -1082,6 +1349,7 @@ final class AppModel: ObservableObject {
     // MARK: Print flow
 
     private func beginPrint() {
+        guard flipAxisSetup == nil, flipCalibration == nil else { return }
         guard let printer = selectedPrinter, let document = selectedDocument else { return }
         guard !isPreparingPrint, !orchestrator.phase.isActive else { return }
         let selection = pageSelectionInfo
@@ -1248,6 +1516,10 @@ final class AppModel: ObservableObject {
             .appendingPathComponent("FlipStack", isDirectory: true)
             .appendingPathComponent("\(prefix)-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o700],
+            ofItemAtPath: directory.path
+        )
         return directory
     }
 
@@ -1282,7 +1554,11 @@ final class AppModel: ObservableObject {
             ejectsFaceDown: preferences.ejectsFaceDown,
             driverOptions: currentDriverOptions,
             copies: activePrintMode == .singleSided ? max(1, copies) : 1,
-            forceOneSidedPasses: ppd?.supportsHardwareDuplex ?? false,
+            // If there is no PPD we cannot prove the queue is simplex. Force
+            // each pass to one side rather than risk a driver auto-duplexing
+            // the manual pass.
+            forceOneSidedPasses: activePrintMode != .singleSided
+                && (ppd == nil || ppd?.supportsHardwareDuplex == true),
             fitToPage: activePrintMode != .booklet && fitToPage
         )
     }
@@ -1384,6 +1660,35 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// The CUPS title is intentionally generic. Keep the friendly local name
+    /// in memory for the queue panel, never in the submitted job metadata.
+    func jobDisplayTitle(_ job: PrintJob) -> String {
+        if let title = localJobTitles[job.id], !title.isEmpty {
+            return title
+        }
+        return job.title.isEmpty ? "Job \(job.id)" : job.title
+    }
+
+    private func rememberLocalJob(_ job: PrintJob, pass: DuplexPass) {
+        localJobIDs.insert(job.id)
+        guard let document = selectedDocument else { return }
+        let suffix: String
+        switch activePrintMode {
+        case .singleSided:
+            suffix = ""
+        case .manualDuplex:
+            suffix = " — \(pass.rawValue)"
+        case .booklet:
+            suffix = " — booklet \(pass.rawValue)"
+        }
+        localJobTitles[job.id] = "\(document.title)\(suffix)"
+    }
+
+    private func rememberLocalJob(_ job: PrintJob, title: String) {
+        localJobIDs.insert(job.id)
+        localJobTitles[job.id] = title
+    }
+
     func refreshQueue() async {
         guard let printer = selectedPrinter, !isRefreshingQueue else { return }
         isRefreshingQueue = true
@@ -1396,11 +1701,14 @@ final class AppModel: ObservableObject {
             var byID: [Int: PrintJob] = [:]
             for job in recentJobs { byID[job.id] = job }
             for job in activeJobs { byID[job.id] = job }
-            queue = byID.values.sorted { lhs, rhs in
-                if lhs.isActive != rhs.isActive { return lhs.isActive }
-                if lhs.id != rhs.id { return lhs.id > rhs.id }
-                return lhs.title < rhs.title
-            }
+            let currentUser = NSUserName()
+            queue = byID.values
+                .filter { $0.isVisible(to: currentUser, localJobIDs: localJobIDs) }
+                .sorted { lhs, rhs in
+                    if lhs.isActive != rhs.isActive { return lhs.isActive }
+                    if lhs.id != rhs.id { return lhs.id > rhs.id }
+                    return lhs.title < rhs.title
+                }
             queueError = nil
         } catch {
             queueError = error.localizedDescription
@@ -1408,6 +1716,7 @@ final class AppModel: ObservableObject {
     }
 
     func cancelQueuedJob(_ job: PrintJob) async {
+        guard job.isVisible(to: NSUserName(), localJobIDs: localJobIDs) else { return }
         do {
             try await spooler.cancel(jobID: job.id, printerID: job.printerID)
             await refreshQueue()
@@ -1449,6 +1758,167 @@ final class AppModel: ObservableObject {
         }
     }
 
+    // MARK: Automatic flip calibration
+
+    private func runFlipCalibration(printer: Printer, calibrationID: UUID) async {
+        guard !Task.isCancelled,
+              flipCalibration?.id == calibrationID else { return }
+        var sheetURL: URL?
+        do {
+            let url = try PrintUtilities.makeFlipCalibrationPage()
+            sheetURL = url
+            var options = currentDriverOptions
+            options["sides"] = "one-sided"
+            // A calibration sheet must never inherit a stale Duplex value.
+            options = options.filter { $0.key.lowercased() != "duplex" }
+            let request = PrintRequest(
+                fileURL: url,
+                printerID: printer.id,
+                title: "FlipStack calibration sheet",
+                pageSet: .all,
+                copies: 1,
+                orientation: (forceLandscape || (selectedDocument?.isLandscape ?? false))
+                    ? .landscape
+                    : .portrait,
+                driverOptions: options,
+                fitToPage: true
+            )
+            guard !Task.isCancelled else {
+                try? FileManager.default.removeItem(at: url)
+                return
+            }
+            let job = try await spooler.submit(request)
+            rememberLocalJob(job, title: "FlipStack calibration sheet")
+            // CUPS has consumed the document by the time submit returns.
+            try? FileManager.default.removeItem(at: url)
+            sheetURL = nil
+            guard !Task.isCancelled,
+                  var calibration = flipCalibration,
+                  calibration.id == calibrationID,
+                  selectedPrinter?.id == printer.id else {
+                try? await spooler.cancel(jobID: job.id, printerID: printer.id)
+                return
+            }
+            calibration.jobID = job.id
+            calibration.stage = .printing
+            flipCalibration = calibration
+            await refreshQueue()
+            await monitorFlipCalibration(
+                jobID: job.id,
+                printer: printer,
+                calibrationID: calibrationID
+            )
+        } catch {
+            if let sheetURL {
+                try? FileManager.default.removeItem(at: sheetURL)
+            }
+            guard !Task.isCancelled else { return }
+            failFlipCalibration(
+                "The calibration sheet could not be sent to \(printer.displayName).",
+                calibrationID: calibrationID
+            )
+        }
+    }
+
+    private func monitorFlipCalibration(
+        jobID: Int,
+        printer: Printer,
+        calibrationID: UUID
+    ) async {
+        let deadline = Date().addingTimeInterval(10 * 60)
+        var lookupErrors = 0
+        var missingPolls = 0
+
+        while !Task.isCancelled {
+            guard let calibration = flipCalibration,
+                  calibration.id == calibrationID,
+                  calibration.jobID == jobID,
+                  selectedPrinter?.id == printer.id else {
+                return
+            }
+
+            do {
+                guard let job = try await spooler.job(id: jobID, printerID: printer.id) else {
+                    guard flipCalibration?.id == calibrationID else { return }
+                    missingPolls += 1
+                    if missingPolls >= 3 {
+                        failFlipCalibration(
+                            "The printer no longer reports the calibration job. Check the sheet in the tray, then try again if needed.",
+                            calibrationID: calibrationID
+                        )
+                        return
+                    }
+                    try? await Task.sleep(nanoseconds: 400_000_000)
+                    continue
+                }
+                guard flipCalibration?.id == calibrationID else { return }
+                lookupErrors = 0
+                missingPolls = 0
+                switch job.state {
+                case .completed:
+                    guard var current = flipCalibration,
+                          current.id == calibrationID else { return }
+                    current.stage = .questions
+                    current.jobID = nil
+                    current.hasConfirmedTray = false
+                    current.hasConfirmedAxis = mode == .booklet
+                    flipCalibration = current
+                    await refreshQueue()
+                    await refreshStatus()
+                    return
+                case .canceled, .aborted, .stopped:
+                    failFlipCalibration(
+                        "The calibration sheet was \(job.state.label.lowercased()).",
+                        calibrationID: calibrationID
+                    )
+                    return
+                default:
+                    break
+                }
+            } catch {
+                lookupErrors += 1
+                if lookupErrors >= 3 {
+                    failFlipCalibration(
+                        "FlipStack could not read the calibration job.",
+                        calibrationID: calibrationID
+                    )
+                    return
+                }
+            }
+
+            if Date() >= deadline {
+                try? await spooler.cancel(jobID: jobID, printerID: printer.id)
+                failFlipCalibration(
+                    "The calibration sheet waited too long. Check the printer, then try again.",
+                    calibrationID: calibrationID
+                )
+                return
+            }
+
+            do {
+                try await Task.sleep(nanoseconds: 400_000_000)
+            } catch {
+                return
+            }
+        }
+    }
+
+    private func failFlipCalibration(_ message: String, calibrationID: UUID? = nil) {
+        guard var calibration = flipCalibration,
+              calibrationID == nil || calibration.id == calibrationID else { return }
+        let jobID = calibration.jobID
+        let printerID = calibration.printerID
+        calibration.stage = .failed(message)
+        calibration.jobID = nil
+        flipCalibration = calibration
+        if let jobID {
+            Task { [spooler] in
+                try? await spooler.cancel(jobID: jobID, printerID: printerID)
+            }
+        }
+        Task { await refreshQueue() }
+    }
+
     // MARK: Maintenance
 
     func printTestPage() async {
@@ -1463,11 +1933,21 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// A standalone copy of the generic orientation sheet. Useful after a tray
+    /// or output setting changed, without starting the calibration questions.
+    func printOrientationSheet() async {
+        await printUtility(title: "FlipStack orientation sheet", fitToPage: true) { _ in
+            try PrintUtilities.makeFlipCalibrationPage()
+        }
+    }
+
     private func printUtility(
         title: String,
+        fitToPage: Bool = false,
         makePDF: (String) throws -> URL
     ) async {
         guard let printer = selectedPrinter, !isMaintenanceBusy,
+              !isCalibrating,
               orchestrator.phase.isIdle, !isPreparingPrint else { return }
         isMaintenanceBusy = true
         defer { isMaintenanceBusy = false }
@@ -1475,15 +1955,18 @@ final class AppModel: ObservableObject {
             let url = try makePDF(printer.displayName)
             defer { try? FileManager.default.removeItem(at: url) }
             var options = currentDriverOptions
+            options = options.filter { $0.key.lowercased() != "duplex" }
             options["sides"] = "one-sided"
             let request = PrintRequest(
                 fileURL: url,
                 printerID: printer.id,
                 title: title,
                 copies: 1,
-                driverOptions: options
+                driverOptions: options,
+                fitToPage: fitToPage
             )
             let job = try await spooler.submit(request)
+            rememberLocalJob(job, title: title)
             await refreshQueue()
             banner = AppBanner(
                 kind: .success,
@@ -1505,22 +1988,4 @@ final class AppModel: ObservableObject {
         banner = nil
     }
 
-    // MARK: Housekeeping
-
-    private func cleanUpOldTemporaryFiles() {
-        let base = FileManager.default.temporaryDirectory
-            .appendingPathComponent("FlipStack", isDirectory: true)
-        guard let entries = try? FileManager.default.contentsOfDirectory(
-            at: base,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else { return }
-        let cutoff = Date().addingTimeInterval(-60 * 60 * 24)
-        for entry in entries {
-            let values = try? entry.resourceValues(forKeys: [.contentModificationDateKey])
-            if let date = values?.contentModificationDate, date < cutoff {
-                try? FileManager.default.removeItem(at: entry)
-            }
-        }
-    }
 }

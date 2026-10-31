@@ -80,9 +80,17 @@ public enum PDFPageExtractor {
             at: destinationURL.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o700],
+            ofItemAtPath: destinationURL.deletingLastPathComponent().path
+        )
         guard output.write(to: destinationURL) else {
             throw ExtractError.cannotWrite("Could not write the selected pages.")
         }
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: destinationURL.path
+        )
         return output.pageCount
     }
 }

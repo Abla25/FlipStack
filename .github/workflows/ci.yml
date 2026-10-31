@@ -63,6 +63,7 @@ jobs:
           test -f "$APP/Contents/Info.plist"
           test -f "$APP/Contents/Resources/AppIcon.icns"
           test -f "$APP/Contents/Resources/LICENSE"
+          test -f "$APP/Contents/Resources/PRIVACY.md"
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist" | grep -qx 'app.flipstack.FlipStack'
           /usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist" | grep -qx 'FlipStack'
           /usr/libexec/PlistBuddy -c 'Print :LSUIElement' "$APP/Contents/Info.plist" | grep -qx 'true'

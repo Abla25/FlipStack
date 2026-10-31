@@ -3,7 +3,7 @@ import SwiftUI
 
 // MARK: - Shared heading
 
-private struct FlowHeading: View {
+struct FlowHeading: View {
     let eyebrow: String
     let tint: Color
     let title: String
@@ -245,7 +245,7 @@ struct PrintingSurface: View {
     private var jobCard: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(job.title)
+                Text(model.jobDisplayTitle(job))
                     .font(FlipType.footnoteStrong)
                     .foregroundStyle(FlipColor.ink)
                     .lineLimit(1)
@@ -294,7 +294,7 @@ struct PrintingSurface: View {
                 .strokeBorder(FlipColor.hairline, lineWidth: 0.5)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Job \(job.id), \(job.title)")
+        .accessibilityLabel("Job \(job.id), \(model.jobDisplayTitle(job))")
         .accessibilityValue(
             "\(job.displayState). \(isSingleSided ? "Single-sided." : (pass == .fronts ? "First pass, fronts." : "Second pass, backs."))"
         )

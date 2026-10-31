@@ -123,7 +123,18 @@ struct PrimaryActionSection: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    private var needsCalibration: Bool {
+        guard model.selectedDocument != nil,
+              !model.preferences.hasConfiguredFlip else { return false }
+        switch model.mode {
+        case .singleSided: return false
+        case .manualDuplex: return model.pageSelectionInfo.pageCount > 1
+        case .booklet: return true
+        }
+    }
+
     private var actionTitle: String {
+        if needsCalibration { return "Calibrate and print" }
         switch model.mode {
         case .singleSided: return "Print document"
         case .manualDuplex:
@@ -184,6 +195,9 @@ struct PrimaryActionSection: View {
 
     private var detailLine: String? {
         if let reason = disabledReason { return reason }
+        if needsCalibration {
+            return "One orientation sheet on the current paper prints first; your PDF waits."
+        }
         guard let sheets = sheetCount else { return nil }
         let copyPrefix = model.copies > 1
             ? "\(model.copies) copies · "

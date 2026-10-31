@@ -22,6 +22,7 @@ final class MenuBarController: NSObject {
     private var isVisible = false
     private var hostingView: NSHostingView<RootView>!
     private var lastAnnouncedPhase: String?
+    private var lastCalibrationStage: FlipCalibration.Stage?
     var allowsAutomaticPresentation = true
 
     init(model: AppModel, orchestrator: DuplexOrchestrator) {
@@ -277,6 +278,10 @@ final class MenuBarController: NSObject {
                 withIntermediateDirectories: true
             )
             try data.write(to: url, options: .atomic)
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o600],
+                ofItemAtPath: url.path
+            )
             return true
         } catch {
             NSLog("FlipStack render failed: \(error)")
@@ -348,6 +353,38 @@ final class MenuBarController: NSObject {
                 guard document != nil else { return }
                 guard self?.allowsAutomaticPresentation == true else { return }
                 self?.present()
+            }
+            .store(in: &cancellables)
+
+        model.$flipCalibration
+            .receive(on: RunLoop.main)
+            .sink { [weak self] calibration in
+                guard let self else { return }
+                guard let button = self.statusItem.button else { return }
+                guard let calibration else {
+                    self.lastCalibrationStage = nil
+                    self.updateIcon(for: self.orchestrator.phase)
+                    return
+                }
+                let stageChanged = self.lastCalibrationStage != calibration.stage
+                self.lastCalibrationStage = calibration.stage
+                switch calibration.stage {
+                case .printing:
+                    button.image = Self.makeIcon(waiting: false)
+                    button.toolTip = "FlipStack · calibrating"
+                    button.setAccessibilityLabel("FlipStack, calibrating the flip")
+                case .questions:
+                    button.image = Self.makeIcon(waiting: true)
+                    button.toolTip = "FlipStack · calibration ready"
+                    button.setAccessibilityLabel("FlipStack, calibration ready")
+                    if stageChanged, self.allowsAutomaticPresentation {
+                        self.present()
+                    }
+                case .failed:
+                    button.image = Self.makeIcon(waiting: false)
+                    button.toolTip = "FlipStack · calibration needs attention"
+                    button.setAccessibilityLabel("FlipStack, calibration needs attention")
+                }
             }
             .store(in: &cancellables)
     }
