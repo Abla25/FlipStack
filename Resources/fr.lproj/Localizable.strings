@@ -87,7 +87,7 @@
 "HOW A FLIP WORKS" = "COMMENT FONCTIONNE LE RETOURNEMENT";
 "Drop a PDF, print the fronts, then flip the whole stack once and print the backs. Single-sided prints skip the flip." = "Déposez un PDF, imprimez les rectos, retournez une fois toute la pile, puis imprimez les versos. Les impressions recto seul évitent ce retournement.";
 "Single-sided prints skip the flip. Duplex and booklet use it to keep every back in order." = "Les impressions recto seul évitent le retournement. Le recto-verso et le livret l’utilisent pour garder l’ordre des versos.";
-"Print preview" = "Aperçu avant impression";
+"Print preview" = "Aperçu";
 "Page selection" = "Sélection des pages";
 "Select all pages" = "Sélectionner toutes les pages";
 "Rendering preview…" = "Génération de l’aperçu…";
@@ -601,5 +601,6 @@
 "Check the tray. If any backs printed, start over to keep the order correct." = "Vérifiez le bac. Si des versos ont été imprimés, recommencez pour garder le bon ordre.";
 "Choose a PDF" = "Choisir un PDF";
 "Set up" = "Configurer";
-"PRINT STUDIO" = "STUDIO D’IMPRESSION";
+"PRINT STUDIO" = "PRINT STUDIO";
 "Checking the printer…" = "Vérification de l’imprimante…";
+"Setup" = "Configurer";

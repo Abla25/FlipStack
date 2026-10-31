@@ -190,7 +190,7 @@ private struct PageSelectionSidebar: View {
                 .accessibilityLabel("Select all pages")
             }
 
-            ScrollView(.vertical, showsIndicators: false) {
+            ScrollView(.vertical, showsIndicators: true) {
                 LazyVStack(spacing: 7) {
                     ForEach(1...max(1, pageCount), id: \.self) { page in
                         pageThumbnail(page)
@@ -308,11 +308,21 @@ struct DocumentPreviewPanel: View {
 
     private var previewAdjustments: some View {
         HStack(spacing: 7) {
+            if model.previewBacksURL != nil, model.isShowingPreview {
+                HStack(spacing: 2) {
+                    sideChip("Fronts", backs: false)
+                    sideChip("Backs", backs: true)
+                }
+                .padding(2)
+                .background(Capsule().fill(FlipColor.tone))
+                .overlay(Capsule().strokeBorder(FlipColor.hairline, lineWidth: 0.5))
+            }
+
             if model.mode != .booklet {
                 Text("Scale")
                     .font(FlipType.captionStrong)
                     .foregroundStyle(FlipColor.secondaryInk)
-                    .frame(width: 34, alignment: .leading)
+                    .fixedSize(horizontal: true, vertical: false)
 
                 FlipScaleStepper(model: model, compact: true)
                     .disabled(model.isPreparingPrint)
@@ -353,16 +363,6 @@ struct DocumentPreviewPanel: View {
             HStack(spacing: 7) {
                 FlipEyebrow("Print preview")
                 Spacer(minLength: 4)
-
-                if model.previewBacksURL != nil, model.isShowingPreview {
-                    HStack(spacing: 2) {
-                        sideChip("Fronts", backs: false)
-                        sideChip("Backs", backs: true)
-                    }
-                    .padding(2)
-                    .background(Capsule().fill(FlipColor.tone))
-                    .overlay(Capsule().strokeBorder(FlipColor.hairline, lineWidth: 0.5))
-                }
 
                 Button {
                     model.togglePreview()

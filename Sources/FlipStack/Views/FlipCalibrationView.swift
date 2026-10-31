@@ -124,19 +124,10 @@ struct FlipCalibrationView: View {
                 subtitle: "Look at which side is facing up, then confirm the turn FlipStack should use for the stack."
             )
 
-            HStack(alignment: .top, spacing: 13) {
-                CalibrationSheetArt()
-                    .frame(width: 92, height: 126)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    trayQuestion(calibration)
-                    axisQuestion(calibration)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 10) {
+                trayQuestion(calibration)
+                axisQuestion(calibration)
             }
-
-            calibrationResult(calibration)
-
             if calibration.autoStartsPrint {
                 HStack(spacing: 7) {
                     Image(systemName: "printer")
@@ -162,7 +153,7 @@ struct FlipCalibrationView: View {
     private func trayQuestion(_ calibration: FlipCalibration) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             calibrationQuestionLabel("1", "Which side is facing up?")
-            HStack(spacing: 6) {
+            VStack(spacing: 6) {
                 calibrationChoice(
                     title: "Printed side up",
                     subtitle: "I can see the print",
@@ -199,7 +190,7 @@ struct FlipCalibrationView: View {
                     .font(FlipType.caption)
                     .foregroundStyle(FlipColor.secondaryInk)
                     .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 6) {
+                VStack(spacing: 6) {
                     calibrationChoice(
                         title: "Long edge",
                         subtitle: "Book turn",
@@ -342,12 +333,6 @@ struct FlipCalibrationView: View {
                 subtitle: subtitle
             )
             Spacer(minLength: 0)
-            Button("Cancel setup") {
-                model.dismissFlipAxisSetup()
-            }
-            .buttonStyle(FlipTertiaryButtonStyle())
-            .frame(minWidth: 44, minHeight: 44)
-            .accessibilityHint("Cancels calibration and closes flip setup. The document is not printed.")
         }
     }
 
@@ -455,13 +440,18 @@ struct FlipCalibrationActionBar: View {
                             }
                         }
                         .buttonStyle(FlipPrimaryButtonStyle())
-                        HStack {
-                            Button("Set up manually") {
+                        HStack(spacing: 8) {
+                            Button(L("Set up manually")) {
                                 model.returnToFlipSetup()
                             }
                             .buttonStyle(FlipTertiaryButtonStyle())
-                            .frame(minWidth: 44, minHeight: 44)
+                            .frame(minWidth: 44, minHeight: 36)
                             Spacer(minLength: 0)
+                            Button(L("Cancel setup")) {
+                                model.dismissFlipAxisSetup()
+                            }
+                            .buttonStyle(FlipTertiaryButtonStyle())
+                            .frame(minWidth: 44, minHeight: 36)
                         }
                     }
                 }
@@ -488,33 +478,44 @@ struct FlipCalibrationActionBar: View {
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityAddTraits(.isHeader)
 
-        HStack(spacing: 8) {
-            Button {
-                model.applyFlipCalibration()
-            } label: {
-                HStack(spacing: 8) {
-                    Text(calibration.autoStartsPrint ? L("Save and print") : L("Use this setup"))
-                    Spacer(minLength: 4)
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 11, weight: .semibold))
-                        .opacity(0.7)
-                }
+        Button {
+            model.applyFlipCalibration()
+        } label: {
+            HStack(spacing: 8) {
+                Text(calibration.autoStartsPrint ? L("Save and print") : L("Use this setup"))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                Spacer(minLength: 4)
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .opacity(calibration.isAnswered ? 0.7 : 0)
             }
-            .buttonStyle(FlipPrimaryButtonStyle())
-            .disabled(!calibration.isAnswered)
-            .keyboardShortcut(.defaultAction)
-            .accessibilityHint(
-                calibration.autoStartsPrint
-                ? "Saves the calibrated flip setup and starts the waiting document."
-                : "Saves the calibrated flip setup for this printer."
-            )
+        }
+        .buttonStyle(FlipPrimaryButtonStyle())
+        .disabled(!calibration.isAnswered)
+        .keyboardShortcut(.defaultAction)
+        .accessibilityHint(
+            calibration.autoStartsPrint
+            ? "Saves the calibrated flip setup and starts the waiting document."
+            : "Saves the calibrated flip setup for this printer."
+        )
 
-            Button("Manual setup") {
+        HStack(spacing: 8) {
+            Button(L("Set up manually")) {
                 model.returnToFlipSetup()
             }
             .buttonStyle(FlipTertiaryButtonStyle())
-            .frame(minWidth: 44, minHeight: 44)
+            .frame(minWidth: 44, minHeight: 36)
             .accessibilityHint("Leaves calibration and opens manual flip setup.")
+
+            Spacer(minLength: 0)
+
+            Button(L("Cancel setup")) {
+                model.dismissFlipAxisSetup()
+            }
+            .buttonStyle(FlipTertiaryButtonStyle())
+            .frame(minWidth: 44, minHeight: 36)
+            .accessibilityHint("Cancels calibration and closes flip setup. The document is not printed.")
         }
     }
 

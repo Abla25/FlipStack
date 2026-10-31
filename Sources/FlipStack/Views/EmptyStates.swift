@@ -31,9 +31,9 @@ struct NoPrinterState: View {
                 .padding(.horizontal, 18)
 
             HStack(spacing: 6) {
-                setupStep("1", "Add printer", active: true)
+                setupStep("1", "Add", active: true)
                 setupChevron
-                setupStep("2", "Setup sheet", active: false)
+                setupStep("2", "Setup", active: false)
                 setupChevron
                 setupStep("3", "Print", active: false)
             }

@@ -360,6 +360,10 @@ final class MenuBarController: NSObject {
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
             guard let self else { return event }
             if event.keyCode == 53 {
+                if let responder = NSApp.keyWindow?.firstResponder,
+                   responder is NSTextView {
+                    return event
+                }
                 if self.model.isShowingSettings {
                     self.model.closeSettings()
                 } else {

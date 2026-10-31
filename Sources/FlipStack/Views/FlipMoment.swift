@@ -9,11 +9,6 @@ struct FlipWaitingView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isFlipped = false
-    @State private var isConfirming = false
-
-    private var primaryTitle: String {
-        prompt.mode == .reinsertOnly ? L("I reinserted the stack") : L("I flipped the sheets")
-    }
 
     private var eyebrow: String {
         String(format: L("Your turn · %@"), FlipFormat.sheets(prompt.sheetCount))
@@ -87,20 +82,6 @@ struct FlipWaitingView: View {
                     .font(FlipType.captionStrong)
                     .foregroundStyle(FlipColor.secondaryInk)
                     .lineLimit(1)
-                Spacer(minLength: 4)
-                Button {
-                    model.cancelFlow()
-                } label: {
-                    Text("Cancel")
-                        .font(FlipType.caption)
-                        .foregroundStyle(FlipColor.secondaryInk)
-                        .padding(.vertical, 2)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .disabled(isConfirming)
-                .accessibilityLabel("Cancel printing")
-                .accessibilityHint("Stops the duplex job after the first pass.")
             }
 
             if let footnote = prompt.footnote {
@@ -110,33 +91,6 @@ struct FlipWaitingView: View {
                     tint: FlipColor.tertiaryInk
                 )
             }
-
-            Button {
-                confirmFlip()
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: prompt.mode == .reinsertOnly ? "arrow.down" : "arrow.triangle.2.circlepath")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text(primaryTitle)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
-                    Spacer(minLength: 2)
-                    if isConfirming {
-                        ProgressView()
-                            .controlSize(.mini)
-                            .tint(FlipColor.onCoral)
-                    }
-                }
-            }
-            .buttonStyle(FlipPrimaryButtonStyle())
-            .disabled(isConfirming)
-            .accessibilityHint(
-                prompt.mode == .reinsertOnly
-                ? "Confirms the stack is back in the printer and starts the backs."
-                : "Confirms the stack was flipped as one block and starts the backs."
-            )
-            .accessibilityValue(isConfirming ? "Confirmed" : "Waiting for you")
-            .padding(.top, 2)
         }
         .onChange(of: orchestrator.flipAnimationNonce) { _ in
             withAnimation(FlipMotion.stack(reduceMotion)) {
@@ -183,26 +137,6 @@ struct FlipWaitingView: View {
         }
     }
 
-    // MARK: Confirm choreography
-
-    private func confirmFlip() {
-        guard !isConfirming else { return }
-        isConfirming = true
-
-        withAnimation(FlipMotion.stack(reduceMotion)) {
-            isFlipped = true
-        }
-
-        if reduceMotion {
-            model.confirmFlip()
-            return
-        }
-
-        Task {
-            try? await Task.sleep(nanoseconds: 520_000_000)
-            model.confirmFlip()
-        }
-    }
 }
 
 // MARK: - The hero moment

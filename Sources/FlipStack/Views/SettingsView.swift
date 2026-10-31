@@ -26,6 +26,7 @@ struct SettingsView: View {
                 }
                 .buttonStyle(FlipSecondaryButtonStyle())
                 .frame(width: 86)
+                .keyboardShortcut(.defaultAction)
                 .accessibilityHint("Closes settings and returns to the document.")
             }
             .padding(.bottom, 15)

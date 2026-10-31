@@ -77,13 +77,6 @@ struct PreparingSurface: View {
             .frame(maxWidth: .infinity, alignment: .center)
             .accessibilityElement(children: .combine)
 
-            Button {
-                model.cancelFlow()
-            } label: {
-                Text("Cancel")
-            }
-            .buttonStyle(FlipSecondaryButtonStyle())
-            .accessibilityHint("Stops the job before the first pass is sent.")
         }
     }
 }
@@ -209,18 +202,6 @@ struct PrintingSurface: View {
             .frame(maxWidth: .infinity)
 
             jobCard
-
-            Button {
-                model.cancelFlow()
-            } label: {
-                Text("Cancel print")
-            }
-            .buttonStyle(FlipSecondaryButtonStyle())
-            .accessibilityHint(
-                model.activePrintMode == .singleSided
-                ? "Stops the current single-sided job."
-                : "Stops the current job. The stack stays where it is."
-            )
 
             HStack(alignment: .top, spacing: 6) {
                 Image(systemName: "info.circle")
@@ -354,20 +335,6 @@ struct CompletedSurface: View {
                     )
                 }
             }
-
-            Button {
-                model.resetFlow()
-            } label: {
-                HStack(spacing: 8) {
-                    Text("Print another")
-                    Spacer(minLength: 4)
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 11, weight: .semibold))
-                        .opacity(0.7)
-                }
-            }
-            .buttonStyle(FlipPrimaryButtonStyle())
-            .accessibilityHint("Clears this result and returns to the document.")
         }
     }
 
@@ -480,49 +447,8 @@ struct FailedSurface: View {
                 tint: FlipColor.danger
             )
 
-            VStack(spacing: 5) {
-                if failure.canRetryBacks {
-                    Button {
-                        model.retryBacks()
-                    } label: {
-                        Text("Retry backs")
-                    }
-                    .buttonStyle(FlipPrimaryButtonStyle())
-                    .accessibilityHint("Retries only the second pass with the stack in the printer.")
+            // Actions are hosted by the sticky FlowActionBar.
 
-                    Button {
-                        model.startOver()
-                    } label: {
-                        Text("Start over")
-                    }
-                    .buttonStyle(FlipSecondaryButtonStyle())
-                    .accessibilityHint("Starts both passes again from the first page.")
-
-                    Button {
-                        model.resetFlow()
-                    } label: {
-                        Text("Dismiss")
-                    }
-                    .buttonStyle(FlipTertiaryButtonStyle())
-                    .accessibilityHint("Closes this error without printing again.")
-                } else {
-                    Button {
-                        model.startOver()
-                    } label: {
-                        Text("Start over")
-                    }
-                    .buttonStyle(FlipPrimaryButtonStyle())
-                    .accessibilityHint("Starts both passes again from the first page.")
-
-                    Button {
-                        model.resetFlow()
-                    } label: {
-                        Text("Dismiss")
-                    }
-                    .buttonStyle(FlipSecondaryButtonStyle())
-                    .accessibilityHint("Closes this error without printing again.")
-                }
-            }
         }
     }
 }
@@ -622,23 +548,7 @@ struct CancelledSurface: View {
                 )
             }
 
-            VStack(spacing: 5) {
-                Button {
-                    model.startOver()
-                } label: {
-                    Text("Start over")
-                }
-                .buttonStyle(FlipPrimaryButtonStyle())
-                .accessibilityHint("Starts the job again from the first page.")
-
-                Button {
-                    model.resetFlow()
-                } label: {
-                    Text("Back to document")
-                }
-                .buttonStyle(FlipSecondaryButtonStyle())
-                .accessibilityHint("Closes this state without printing.")
-            }
+            // Actions are hosted by the sticky FlowActionBar.
         }
     }
 }

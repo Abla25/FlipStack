@@ -14,7 +14,7 @@ struct HeaderView: View {
     private var printer: Printer? { model.selectedPrinter }
 
     private var isLocked: Bool {
-        !orchestrator.phase.isIdle
+        orchestrator.phase.isActive
             || model.isPreparingPrint
             || model.flipAxisSetup != nil
             || model.flipCalibration != nil
@@ -84,7 +84,9 @@ struct HeaderView: View {
 
             if let printer,
                model.flipAxisSetup == nil,
-               model.flipCalibration == nil {
+               model.flipCalibration == nil,
+               !orchestrator.phase.isActive,
+               !model.isPreparingPrint {
                 supplySection(for: printer)
             }
 

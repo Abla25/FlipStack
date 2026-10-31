@@ -76,7 +76,7 @@ private struct FirstRunSetupCard: View {
             }
             .padding(.vertical, 1)
 
-            HStack(spacing: 8) {
+            VStack(spacing: 5) {
                 Button {
                     model.beginGuidedSetup()
                 } label: {
@@ -84,6 +84,8 @@ private struct FirstRunSetupCard: View {
                         Image(systemName: "printer")
                             .font(.system(size: 10, weight: .semibold))
                         Text("Print setup sheet")
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
                         Spacer(minLength: 0)
                     }
                 }
@@ -97,7 +99,7 @@ private struct FirstRunSetupCard: View {
                 }
                 .buttonStyle(FlipTertiaryButtonStyle())
                 .disabled(model.isCalibrating || !model.orchestrator.phase.isIdle)
-                .frame(minHeight: 44)
+                .frame(minHeight: 36)
                 .accessibilityHint("Skips the calibration sheet and chooses the turn and output face yourself.")
             }
         }
@@ -365,6 +367,7 @@ struct PrimaryActionSection: View {
             }
             .buttonStyle(FlipPrimaryButtonStyle())
             .disabled(!canStart)
+            .keyboardShortcut(.defaultAction)
             .help(disabledReason ?? detailLine ?? actionTitle)
             .accessibilityLabel(model.isPreparingPrint ? "Preparing print job" : actionTitle)
             .accessibilityHint(disabledReason ?? detailLine ?? "Starts printing. Command-P also works.")

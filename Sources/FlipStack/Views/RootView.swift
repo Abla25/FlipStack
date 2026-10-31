@@ -48,7 +48,7 @@ struct RootView: View {
         VStack(spacing: 0) {
             HeaderView(model: model, orchestrator: orchestrator)
 
-            ScrollView(.vertical, showsIndicators: false) {
+            ScrollView(.vertical, showsIndicators: true) {
                 VStack(spacing: 0) {
                     if let banner = model.banner {
                         FlipBanner(banner: banner, reduceMotion: reduceMotion) {
@@ -77,13 +77,13 @@ struct RootView: View {
             .mask {
                 VStack(spacing: 0) {
                     Rectangle()
-                    if showsComposerActionBar {
+                    if showsComposerActionBar || showsFlowActionBar || model.isShowingSettings {
                         LinearGradient(
                             colors: [.black, .clear],
                             startPoint: .top,
                             endPoint: .bottom
                         )
-                        .frame(height: model.isShowingQueue ? 28 : 20)
+                        .frame(height: model.isShowingQueue ? 40 : 32)
                     }
                 }
             }
@@ -93,6 +93,9 @@ struct RootView: View {
                     .transition(.opacity)
             } else if showsComposerActionBar {
                 PrimaryActionBar(model: model)
+                    .transition(.opacity)
+            } else if showsFlowActionBar {
+                FlowActionBar(model: model, orchestrator: orchestrator)
                     .transition(.opacity)
             }
 
@@ -121,10 +124,17 @@ struct RootView: View {
         return model.selectedPrinter != nil
     }
 
+    private var showsFlowActionBar: Bool {
+        if model.isShowingSettings { return false }
+        if model.flipCalibration != nil { return false }
+        return model.isPreparingPrint || !orchestrator.phase.isIdle
+    }
+
     private var showsInkLowStrip: Bool {
         !model.isShowingSettings
             && orchestrator.phase.isIdle
             && model.flipAxisSetup == nil
+            && model.flipCalibration == nil
             && !model.isPreparingPrint
     }
 

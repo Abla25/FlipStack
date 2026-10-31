@@ -87,7 +87,7 @@
 "HOW A FLIP WORKS" = "CÓMO FUNCIONA EL GIRO";
 "Drop a PDF, print the fronts, then flip the whole stack once and print the backs. Single-sided prints skip the flip." = "Arrastra un PDF, imprime los anversos, gira una vez todo el bloque e imprime los reversos. Las impresiones a una cara no necesitan girar.";
 "Single-sided prints skip the flip. Duplex and booklet use it to keep every back in order." = "Las impresiones a una cara no giran. Doble cara y folleto lo usan para mantener el orden de los reversos.";
-"Print preview" = "Vista previa de impresión";
+"Print preview" = "Vista previa";
 "Page selection" = "Selección de páginas";
 "Select all pages" = "Seleccionar todas las páginas";
 "Rendering preview…" = "Generando vista previa…";
@@ -601,5 +601,6 @@
 "Check the tray. If any backs printed, start over to keep the order correct." = "Comprueba la bandeja. Si se imprimió algún reverso, empieza de nuevo para mantener el orden.";
 "Choose a PDF" = "Elegir un PDF";
 "Set up" = "Configurar";
-"PRINT STUDIO" = "ESTUDIO DE IMPRESIÓN";
+"PRINT STUDIO" = "PRINT STUDIO";
 "Checking the printer…" = "Comprobando la impresora…";
+"Setup" = "Configurar";
