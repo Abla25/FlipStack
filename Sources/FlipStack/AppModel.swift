@@ -108,6 +108,7 @@ struct FlipCalibration: Equatable {
     var recommendedAxis: FlipAxis
     var ejectsFaceDown: Bool
     var jobID: Int?
+    var jobStartedAt: Date?
     var hasConfirmedTray: Bool = false
     var hasConfirmedAxis: Bool = false
 
@@ -1997,6 +1998,7 @@ final class AppModel: ObservableObject {
                 return
             }
             calibration.jobID = job.id
+            calibration.jobStartedAt = Date()
             calibration.stage = .printing
             flipCalibration = calibration
             await refreshQueue()
@@ -2052,8 +2054,14 @@ final class AppModel: ObservableObject {
                         case .completed:
                             guard var current = flipCalibration,
                                   current.id == calibrationID else { return }
+                            if let started = current.jobStartedAt,
+                               let finishedAt = finished.createdAt,
+                               finishedAt < started {
+                                break
+                            }
                             current.stage = .questions
                             current.jobID = nil
+                            current.jobStartedAt = nil
                             current.hasConfirmedTray = false
                             current.hasConfirmedAxis = mode == .booklet
                             flipCalibration = current
@@ -2088,8 +2096,14 @@ final class AppModel: ObservableObject {
                 case .completed:
                     guard var current = flipCalibration,
                           current.id == calibrationID else { return }
+                    if let started = current.jobStartedAt,
+                       let finishedAt = job.createdAt,
+                       finishedAt < started {
+                        break
+                    }
                     current.stage = .questions
                     current.jobID = nil
+                    current.jobStartedAt = nil
                     current.hasConfirmedTray = false
                     current.hasConfirmedAxis = mode == .booklet
                     flipCalibration = current
