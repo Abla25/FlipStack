@@ -542,3 +542,8 @@
 " — booklet %@" = " — folleto %@";
 "Pages must be between 1 and %lld." = "Las páginas deben estar entre 1 y %lld.";
 "%@ sent" = "%@ enviado";
+"1. Print this page at 100% on plain paper." = "1. Imprime esta página al 100 % en papel normal.";
+"2. Find the row where the two line segments meet without a step." = "2. Encuentra la fila donde los dos segmentos se unen sin escalón.";
+"3. Enter that row in your printer’s alignment utility." = "3. Introduce esa fila en la utilidad de alineación de la impresora.";
+"1  NOTE WHICH SIDE LANDED UP" = "1  ANOTA QUÉ LADO QUEDÓ ARRIBA";
+"2  CONFIRM THE TURN IN FLIPSTACK" = "2  CONFIRMA EL GIRO EN FLIPSTACK";

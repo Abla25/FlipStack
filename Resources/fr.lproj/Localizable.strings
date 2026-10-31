@@ -542,3 +542,8 @@
 " — booklet %@" = " — livret %@";
 "Pages must be between 1 and %lld." = "Les pages doivent être comprises entre 1 et %lld.";
 "%@ sent" = "%@ envoyé";
+"1. Print this page at 100% on plain paper." = "1. Imprimez cette page à 100 % sur du papier ordinaire.";
+"2. Find the row where the two line segments meet without a step." = "2. Trouvez la ligne où les deux segments se rejoignent sans décalage.";
+"3. Enter that row in your printer’s alignment utility." = "3. Saisissez cette ligne dans l’utilitaire d’alignement de l’imprimante.";
+"1  NOTE WHICH SIDE LANDED UP" = "1  NOTEZ QUELLE FACE EST VISIBLE";
+"2  CONFIRM THE TURN IN FLIPSTACK" = "2  CONFIRMEZ LE RETOURNEMENT DANS FLIPSTACK";

@@ -42,11 +42,11 @@ enum PrintUtilities {
     static func makeAlignmentPage(printerName: String) throws -> URL {
         try makePDF(size: CGSize(width: 595, height: 842)) { context in
             drawHeader(context, title: L("Head alignment sheet"), subtitle: printerName)
-            drawText("1. Print this page at 100% on plain paper.",
+            drawText(L("1. Print this page at 100% on plain paper."),
                      at: CGPoint(x: 64, y: 700), size: 11, color: .black)
-            drawText("2. Find the row where the two line segments meet without a step.",
+            drawText(L("2. Find the row where the two line segments meet without a step."),
                      at: CGPoint(x: 64, y: 680), size: 11, color: .black)
-            drawText("3. Enter that row in your printer’s alignment utility.",
+            drawText(L("3. Enter that row in your printer’s alignment utility."),
                      at: CGPoint(x: 64, y: 660), size: 11, color: .black)
 
             var y: CGFloat = 590
@@ -141,8 +141,8 @@ enum PrintUtilities {
             context.fill(CGRect(x: 209, y: 336, width: 121, height: 5))
             context.fill(CGRect(x: 209, y: 323, width: 152, height: 5))
 
-            drawCenteredText("1  NOTE WHICH SIDE LANDED UP", centerX: 297.5, y: 236, size: 10, color: graphite, weight: .semibold)
-            drawCenteredText("2  CONFIRM THE TURN IN FLIPSTACK", centerX: 297.5, y: 218, size: 10, color: graphite, weight: .semibold)
+            drawCenteredText(L("1  NOTE WHICH SIDE LANDED UP"), centerX: 297.5, y: 236, size: 10, color: graphite, weight: .semibold)
+            drawCenteredText(L("2  CONFIRM THE TURN IN FLIPSTACK"), centerX: 297.5, y: 218, size: 10, color: graphite, weight: .semibold)
             drawCenteredText(L("Nothing is written to the sheet. This sheet is safe to discard."), centerX: 297.5, y: 190, size: 10, color: mid)
 
             context.setFillColor(coral.cgColor)
