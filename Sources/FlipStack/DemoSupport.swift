@@ -28,6 +28,7 @@ final class DemoSession {
         case rangePrinting
         case preview
         case previewAdjusted
+        case pageSelection
         case grayscale
         case bookletPreview
         case quality
@@ -38,6 +39,7 @@ final class DemoSession {
         case calibrationQuestions
         case calibrationAnswered
         case calibrationApplied
+        case qualitySettings
     }
 
     let scenario: Scenario
@@ -116,6 +118,12 @@ final class DemoSession {
             }
             model.togglePreview()
             await waitForPreview(model: model, timeout: timeout)
+        case .pageSelection:
+            await model.acceptDocument(url: documentURL)
+            model.togglePageSelection(2)
+            model.togglePageSelection(4)
+            model.togglePreview()
+            await waitForPreview(model: model, timeout: timeout)
         case .grayscale:
             await model.acceptDocument(url: documentURL)
             if model.supportsColorModeToggle {
@@ -138,6 +146,13 @@ final class DemoSession {
             await model.acceptDocument(url: documentURL)
             model.mode = .manualDuplex
             model.requestPrint()
+        case .qualitySettings:
+            await model.acceptDocument(url: documentURL)
+            if let option = model.qualityTunableOptions.first,
+               let choice = option.choices.last {
+                model.setQualityOverride(choice.keyword, for: .eco, option: option)
+            }
+            model.openSettings()
         case .calibrationSetup:
             await model.acceptDocument(url: documentURL)
             model.openFlipAxisSetup()

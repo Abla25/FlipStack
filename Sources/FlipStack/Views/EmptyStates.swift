@@ -12,15 +12,15 @@ struct NoPrinterState: View {
             FlipPrinterArt(hasPaper: false, showsAccent: true)
                 .padding(.bottom, 20)
 
-            Text(model.discoveredPrinters.isEmpty ? "Add a printer to begin." : "A printer is nearby.")
+            Text(model.discoveredPrinters.isEmpty ? L("Add a printer to begin.") : L("A printer is nearby."))
                 .font(FlipType.displayLarge)
                 .foregroundStyle(FlipColor.ink)
                 .accessibilityAddTraits(.isHeader)
 
             Text(
                 model.discoveredPrinters.isEmpty
-                ? "FlipStack prints through macOS print queues. Add yours in Printers & Scanners; it appears here automatically."
-                : "Add it in Printers & Scanners to create a queue. FlipStack will find it when you come back."
+                ? L("FlipStack prints through macOS print queues. Add yours in Printers & Scanners; it appears here automatically.")
+                : L("Add it in Printers & Scanners to create a queue. FlipStack will find it when you come back.")
             )
                 .font(FlipType.footnote)
                 .foregroundStyle(FlipColor.secondaryInk)
@@ -118,7 +118,7 @@ struct NoPrinterState: View {
                 .foregroundStyle(active ? FlipColor.onCoral : FlipColor.secondaryInk)
                 .frame(width: 16, height: 16)
                 .background(Circle().fill(active ? FlipColor.coral : FlipColor.toneStrong))
-            Text(title)
+            Text(L(title))
                 .font(.system(size: 9, weight: .medium))
                 .foregroundStyle(active ? FlipColor.ink : FlipColor.secondaryInk)
                 .lineLimit(1)

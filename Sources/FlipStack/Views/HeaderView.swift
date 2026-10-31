@@ -21,7 +21,7 @@ struct HeaderView: View {
     }
 
     private var modelLine: String {
-        if model.isLoadingPPD { return "Reading driver options…" }
+        if model.isLoadingPPD { return L("Reading driver options…") }
         if let name = printer?.modelName, !name.isEmpty,
            name.caseInsensitiveCompare(printer?.displayName ?? "") != .orderedSame {
             return name
@@ -32,16 +32,16 @@ struct HeaderView: View {
         }
         if let uri = printer?.deviceURI?.lowercased() {
             if uri.hasPrefix("usb://") || uri.hasPrefix("hp:/") {
-                return "USB printer"
+                return L("USB printer")
             }
             if uri.hasPrefix("dnssd://") || uri.hasPrefix("ipp://")
                 || uri.hasPrefix("ipps://") || uri.hasPrefix("socket://")
                 || uri.hasPrefix("lpd://") {
-                return "Network printer"
+                return L("Network printer")
             }
         }
-        guard let printer else { return "No printer selected" }
-        return "Print queue · \(printer.id)"
+        guard let printer else { return L("No printer selected") }
+        return String(format: L("Print queue · %@"), printer.id)
     }
 
     private var stateReasons: [String] {
@@ -144,6 +144,22 @@ struct HeaderView: View {
             .accessibilityHint("Opens the print studio in a resizable desktop window.")
 
             Button {
+                model.openSettings()
+            } label: {
+                Image(systemName: "gearshape")
+            }
+            .buttonStyle(FlipIconButtonStyle())
+            .disabled(
+                !orchestrator.phase.isIdle
+                    || model.isPreparingPrint
+                    || model.flipCalibration != nil
+                    || model.flipAxisSetup != nil
+            )
+            .help("Settings")
+            .accessibilityLabel("Settings")
+            .accessibilityHint("Changes language and per-printer quality presets.")
+
+            Button {
                 guard !isLocked, !model.isLoadingPrinters, !model.isRefreshing else { return }
                 Task { await model.refreshAll() }
             } label: {
@@ -220,12 +236,12 @@ struct HeaderView: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                 } else {
-                    Text(model.isLoadingPrinters ? "Finding a printer" : "No printer")
+                    Text(model.isLoadingPrinters ? L("Finding a printer") : L("No printer"))
                         .font(.system(size: min(printerNameSize, 29), weight: .semibold, design: .serif))
                         .foregroundStyle(FlipColor.ink)
                         .lineLimit(1)
                         .accessibilityAddTraits(.isHeader)
-                    Text(model.isLoadingPrinters ? "Checking this Mac" : "Nothing connected yet")
+                    Text(model.isLoadingPrinters ? L("Checking this Mac") : L("Nothing connected yet"))
                         .font(FlipType.caption)
                         .foregroundStyle(FlipColor.tertiaryInk)
                 }

@@ -58,7 +58,7 @@ private struct FirstRunSetupCard: View {
                         .font(FlipType.bodyStrong)
                         .foregroundStyle(FlipColor.ink)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text("FlipStack prints a generic orientation sheet so it can learn how \(printerName) stacks paper. Your PDF is not used.")
+                    Text(String(format: L("FlipStack prints a generic orientation sheet so it can learn how %@ stacks paper. Your PDF is not used."), printerName))
                         .font(FlipType.caption)
                         .foregroundStyle(FlipColor.secondaryInk)
                         .fixedSize(horizontal: false, vertical: true)
@@ -121,7 +121,7 @@ private struct FirstRunSetupCard: View {
                 .foregroundStyle(FlipColor.onCoral)
                 .frame(width: 15, height: 15)
                 .background(Circle().fill(FlipColor.coral))
-            Text(title)
+            Text(L(title))
                 .font(.system(size: 9.5, weight: .medium))
                 .foregroundStyle(FlipColor.secondaryInk)
                 .lineLimit(1)
@@ -166,11 +166,11 @@ private struct FirstFlipGuide: View {
                             .font(.system(size: 10, weight: .semibold, design: .rounded))
                             .monospacedDigit()
                             .foregroundStyle(FlipColor.coralDeep)
-                        Text(step.1)
+                        Text(L(step.1))
                             .font(FlipType.captionStrong)
                             .foregroundStyle(FlipColor.ink)
                             .lineLimit(2)
-                        Text(step.2)
+                        Text(L(step.2))
                             .font(.system(size: 10))
                             .foregroundStyle(FlipColor.secondaryInk)
                             .fixedSize(horizontal: false, vertical: true)
@@ -192,7 +192,7 @@ private struct FirstFlipGuide: View {
             FlipHairline()
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("How a flip works. Drop a PDF, print the fronts, then flip the whole stack once and print the backs. Single-sided prints skip the flip.")
+        .accessibilityLabel(L("How a flip works. Drop a PDF, print the fronts, then flip the whole stack once and print the backs. Single-sided prints skip the flip."))
     }
 }
 
@@ -236,12 +236,12 @@ struct PrimaryActionSection: View {
     }
 
     private var actionTitle: String {
-        if needsCalibration { return "Set up flip and print" }
+        if needsCalibration { return L("Set up flip and print") }
         switch model.mode {
-        case .singleSided: return "Print document"
+        case .singleSided: return L("Print document")
         case .manualDuplex:
-            return model.pageSelectionInfo.pageCount == 1 ? "Print page" : "Print fronts"
-        case .booklet: return "Print booklet"
+            return model.pageSelectionInfo.pageCount == 1 ? L("Print page") : L("Print fronts")
+        case .booklet: return L("Print booklet")
         }
     }
 
@@ -255,28 +255,28 @@ struct PrimaryActionSection: View {
 
     private var disabledReason: String? {
         if model.isPreparingPrint {
-            return "Preparing the document. This stays on your Mac."
+            return L("Preparing the document. This stays on your Mac.")
         }
         if model.isMaintenanceBusy {
-            return "A maintenance page is being prepared."
+            return L("A maintenance page is being prepared.")
         }
         if model.selectedPrinter == nil {
-            return "Connect a printer to start printing."
+            return L("Connect a printer to start printing.")
         }
         if model.selectedDocument == nil {
-            return "Choose a PDF to continue."
+            return L("Choose a PDF to continue.")
         }
         if !model.pageSelectionInfo.isValid {
             return model.pageSelectionInfo.message ?? "Choose at least one page."
         }
         if model.isLoadingPPD {
-            return "Reading the printer driver…"
+            return L("Reading the printer driver…")
         }
         if printerIsStopped {
-            return "The printer is stopped. Resume its queue, then try again."
+            return L("The printer is stopped. Resume its queue, then try again.")
         }
         if !model.canPrint {
-            return "A print flow is already running."
+            return L("A print flow is already running.")
         }
         return nil
     }
@@ -298,11 +298,11 @@ struct PrimaryActionSection: View {
     private var detailLine: String? {
         if let reason = disabledReason { return reason }
         if needsCalibration {
-            return "One setup sheet first. Answer two questions, then your PDF prints."
+            return L("One setup sheet first. Answer two questions, then your PDF prints.")
         }
         guard let sheets = sheetCount else { return nil }
         let copyPrefix = model.copies > 1
-            ? "\(model.copies) copies · "
+            ? String(format: L("%lld copies · "), model.copies)
             : ""
         let selectedPrefix: String
         if model.pageSelectionMode == .range {
@@ -312,14 +312,14 @@ struct PrimaryActionSection: View {
         }
         switch model.mode {
         case .singleSided:
-            return "\(selectedPrefix)\(copyPrefix)\(FlipFormat.sheets(sheets)) · one side."
+            return String(format: L("%@%@%@ · one side."), selectedPrefix, copyPrefix, FlipFormat.sheets(sheets))
         case .booklet:
-            return "\(selectedPrefix)\(copyPrefix)\(FlipFormat.sheets(sheets)) per copy · fold and flip between passes."
+            return String(format: L("%@%@%@ · fold and flip between passes."), selectedPrefix, copyPrefix, FlipFormat.sheets(sheets))
         case .manualDuplex:
             if model.pageSelectionInfo.pageCount == 1 {
-                return "\(selectedPrefix)1 sheet · one page, so no flip is needed."
+                return String(format: L("%@1 sheet · one page, so no flip is needed."), selectedPrefix)
             }
-            return "\(selectedPrefix)\(copyPrefix)\(FlipFormat.sheets(sheets)) per copy · fronts first, then the flip."
+            return String(format: L("%@%@%@ · fronts first, then the flip."), selectedPrefix, copyPrefix, FlipFormat.sheets(sheets))
         }
     }
 

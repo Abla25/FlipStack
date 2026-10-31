@@ -69,7 +69,7 @@ struct DuplexProgressArc: View {
 
                 VStack(spacing: compact ? 0 : 1) {
                     if indeterminate {
-                        Text("WORKING")
+                        Text(L("WORKING"))
                             .font(.system(size: diameter * 0.13, weight: .semibold))
                             .tracking(1.2)
                             .foregroundStyle(FlipColor.ink)
@@ -86,7 +86,7 @@ struct DuplexProgressArc: View {
                             .lineLimit(1)
                     }
                     if !compact {
-                        Text(indeterminate ? "PRINTING" : (singleSided ? "PRINTED" : "OVERALL"))
+                        Text(indeterminate ? L("PRINTING") : (singleSided ? L("PRINTED") : L("OVERALL")))
                             .font(.system(size: 7.5, weight: .semibold))
                             .tracking(1.1)
                             .foregroundStyle(FlipColor.tertiaryInk)
@@ -102,7 +102,7 @@ struct DuplexProgressArc: View {
                 }
                 .padding(.top, 1)
             } else if !compact {
-                Text("One side · no flip")
+                Text(L("One side · no flip"))
                     .font(.system(size: 8, weight: .semibold))
                     .tracking(0.9)
                     .foregroundStyle(FlipColor.tertiaryInk)
@@ -110,7 +110,7 @@ struct DuplexProgressArc: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(singleSided ? "Print progress" : "Duplex progress")
+        .accessibilityLabel(singleSided ? L("Print progress") : L("Duplex progress"))
         .accessibilityValue(accessibilityProgress)
         .onAppear {
             guard indeterminate, !reduceMotion else { return }
@@ -129,7 +129,7 @@ struct DuplexProgressArc: View {
             Circle()
                 .fill(fraction > 0 ? FlipColor.coral.opacity(isActive ? 1 : 0.7) : FlipColor.ink.opacity(0.14))
                 .frame(width: 4, height: 4)
-            Text(title.uppercased())
+            Text(L(title).uppercased())
                 .font(.system(size: 7.5, weight: .semibold))
                 .tracking(0.9)
                 .foregroundStyle(isActive ? FlipColor.ink : FlipColor.secondaryInk)
@@ -142,20 +142,20 @@ struct DuplexProgressArc: View {
 
     private var accessibilityProgress: String {
         if indeterminate {
-            return "The printer is working. This queue does not report page-level progress."
+            return L("The printer is working. This queue does not report page-level progress.")
         }
         if singleSided {
-            return "Printing \(Int((clamped * 100).rounded())) percent complete."
+            return String(format: L("Printing %lld percent complete."), Int((clamped * 100).rounded()))
         }
         let fronts = Int((frontFraction * 100).rounded())
         let backs = Int((backFraction * 100).rounded())
         let state: String
         switch activePass {
-        case .some(.fronts): state = "Printing fronts."
-        case .some(.backs): state = "Printing backs."
-        case .none: state = clamped >= 0.5 ? "Fronts complete. Backs next." : "Preparing the first pass."
+        case .some(.fronts): state = L("Printing fronts.")
+        case .some(.backs): state = L("Printing backs.")
+        case .none: state = clamped >= 0.5 ? L("Fronts complete. Backs next.") : L("Preparing the first pass.")
         }
-        return "Fronts \(fronts) percent, backs \(backs) percent. \(state)"
+        return String(format: L("Fronts %lld percent, backs %lld percent. %@"), fronts, backs, state)
     }
 }
 

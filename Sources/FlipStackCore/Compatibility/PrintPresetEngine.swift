@@ -16,23 +16,23 @@ public enum PrintQualityPreset: String, CaseIterable, Codable, Sendable, Identif
 
     public var title: String {
         switch self {
-        case .eco: return "Eco"
-        case .standard: return "Standard"
-        case .high: return "High"
-        case .photo: return "Photo"
+        case .eco: return L("Eco")
+        case .standard: return L("Standard")
+        case .high: return L("High")
+        case .photo: return L("Photo")
         }
     }
 
     public var detail: String {
         switch self {
         case .eco:
-            return "A lighter draft with usable text and less ink than Photo."
+            return L("A lighter draft with usable text and less ink than Photo.")
         case .standard:
-            return "Balanced resolution and speed for everyday documents."
+            return L("Balanced resolution and speed for everyday documents.")
         case .high:
-            return "Highest practical resolution for crisp text and detailed graphics."
+            return L("Highest practical resolution for crisp text and detailed graphics.")
         case .photo:
-            return "Maximum detail with photo media and color when the printer supports it."
+            return L("Maximum detail with photo media and color when the printer supports it.")
         }
     }
 }

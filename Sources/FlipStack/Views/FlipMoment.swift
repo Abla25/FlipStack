@@ -12,11 +12,11 @@ struct FlipWaitingView: View {
     @State private var isConfirming = false
 
     private var primaryTitle: String {
-        prompt.mode == .reinsertOnly ? "I reinserted the stack" : "I flipped the sheets"
+        prompt.mode == .reinsertOnly ? L("I reinserted the stack") : L("I flipped the sheets")
     }
 
     private var eyebrow: String {
-        "Your turn · \(FlipFormat.sheets(prompt.sheetCount))"
+        String(format: L("Your turn · %@"), FlipFormat.sheets(prompt.sheetCount))
     }
 
     private var currentProgress: Double {
@@ -171,7 +171,7 @@ struct FlipWaitingView: View {
             Circle()
                 .fill(FlipColor.coral.opacity(fraction > 0 ? (strong ? 1 : 0.62) : 0.14))
                 .frame(width: 3, height: 3)
-            Text(title.uppercased())
+            Text(L(title).uppercased())
                 .font(.system(size: 6.5, weight: .semibold))
                 .tracking(0.7)
                 .foregroundStyle(FlipColor.tertiaryInk)

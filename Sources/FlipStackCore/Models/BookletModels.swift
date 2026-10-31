@@ -98,16 +98,16 @@ public struct BookletPlan: Hashable, Sendable {
 
     public var foldHint: String {
         if signatureCount > 1 {
-            return "Fold each of the \(signatureCount) signatures separately, then nest them in order."
+            return String(format: L("Fold each of the %lld signatures separately, then nest them in order."), signatureCount)
         }
-        return "Fold the stack in half with the printed pages facing out."
+        return L("Fold the stack in half with the printed pages facing out.")
     }
 
     public var stapleHint: String {
         if signatureCount > 1 {
-            return "Staple each signature twice on the fold, then stack the signatures in order."
+            return L("Staple each signature twice on the fold, then stack the signatures in order.")
         }
-        return "Staple twice along the fold after folding."
+        return L("Staple twice along the fold after folding.")
     }
 }
 

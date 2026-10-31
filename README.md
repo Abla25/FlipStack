@@ -33,6 +33,9 @@ There are no timer-based "the printer is probably done" transitions. FlipStack w
 - **PPD-driven options.** Color or black-and-white, paper size, media type, and print quality come from the queue's real PPD. FlipStack does not invent driver choices, and remembers the choices per printer.
 - **Quality presets that actually apply.** Eco, Standard, High, and Photo resolve to real PPD choices for resolution, media, color, and optional ICC profile settings. Anything the driver does not expose stays untouched.
 - **Layout and scale controls.** Match the PDF, portrait, or landscape; fit-to-page or an exact 50–150% print scale. The page dimensions, queue paper, exact percentage, color mode, and quality appear before the action bar. Exact scaling is applied to a temporary PDF before submission; the preview updates with the scale.
+- **Page picker with thumbnails.** Open the print preview to get a macOS Preview-style page rail. Every page starts selected; uncheck pages to print only the ones you want. The preview and the printed page ranges update together.
+- **Four languages.** English, Italiano, Español, and Français can be chosen in Settings and apply immediately across the app. Driver-supplied paper/media names remain whatever the PPD advertises.
+- **Tunable quality presets.** Settings exposes the real PPD quality and media choices behind Eco, Standard, High, and Photo for each printer. Tune once; your values persist per queue and apply the next time you choose that preset.
 - **Print preview.** See the selected pages inside the panel before printing. Booklet previews pair the imposed PDF pages back into the actual 2-up sheet sides and let you inspect fronts and backs.
 - **Page ranges done right.** Selected pages are compiled in order before the two-pass flow, so the sheet pairing stays correct even when the range starts on an even page. Ranges work in single-sided, duplex, and booklet modes.
 - **Booklet imposition.** Two-up booklet printing with configurable signatures, plus fold and staple hints. Booklets use the same guided front-and-back workflow.
@@ -55,9 +58,17 @@ The screenshots below use a demo queue so no real document or printer data is sh
 
 ![FlipStack panel with a document loaded, mode selector, page range, quality presets, and driver options](docs/screenshots/ready.png)
 
-### Print preview
+### Print preview and page picker
 
-![FlipStack in-panel print preview showing a selected PDF page with live scale and color controls](docs/screenshots/preview.png)
+![FlipStack in-panel print preview showing a source-page rail, checked page thumbnails, live scale, and color controls](docs/screenshots/preview.png)
+
+Uncheck pages in the rail to print only those pages; the selected-page PDF and the print job update together.
+
+### Settings
+
+![FlipStack settings with English, Italian, Spanish, and French language choices and per-printer quality preset editors](docs/screenshots/settings.png)
+
+Choose the interface language and tune the real PPD values behind Eco, Standard, High, and Photo for the selected printer. Overrides are local and persist per queue.
 
 ### Calibrate the flip
 
@@ -93,7 +104,7 @@ The screenshots below use a demo queue so no real document or printer data is sh
 2. Open the DMG and drag **FlipStack.app** to **Applications**.
 3. Launch FlipStack from Applications. Gatekeeper verifies the Developer ID signature and notarization.
 4. On the first flip prompt, allow notifications if you want FlipStack to get your attention while another app is in front. Notifications are optional; the flip popover opens either way.
-5. Use the FlipStack icon in the menu bar for the quick panel, or right-click it and choose **Open FlipStack Window** for the full window. The app does not keep a Dock icon while the window is closed.
+5. Use the FlipStack icon in the menu bar for the quick panel, or right-click it and choose **Open FlipStack Window** for the full window. The app does not keep a Dock icon while the window is closed. While a file is being dragged, the quick panel stays open and accepts the drop; clicking outside still dismisses it after the mouse button is released.
 
 Release builds are universal: the same DMG runs natively on Apple silicon and Intel Macs.
 
@@ -165,9 +176,11 @@ Booklet mode pads the document to a multiple of four pages, imposes two pages pe
 
 For two-sided jobs, FlipStack prints one copy at a time so every back lands on its matching front. To print several copies, print another after the first completes. Single-sided jobs can print up to 20 copies in one job. Page ranges are compiled in order before printing: the two-pass flow always alternates front and back from the first selected page, even when the range starts on an even page.
 
-Use the eye button on the document row to open the inline print preview. The preview has the same compact scale stepper and color/black-and-white control so the page updates live; for booklets, switch between fronts and backs to inspect the actual 2-up sheet sides. Close the preview to return to the print controls.
+Use the eye button on the document row to open the inline print preview. The preview has the same compact scale stepper and color/black-and-white control so the page updates live; for booklets, switch between fronts and backs to inspect the actual 2-up sheet sides. For single-sided and duplex jobs, the page rail on the left shows a thumbnail of every source page. Check or uncheck pages to choose exactly what prints; the range above and the job both follow that selection. Close the preview to return to the print controls.
 
 Quality presets are applied to the real driver choices. Eco avoids the absolute lowest draft resolution when a choice at or above 300 dpi exists, so it stays light without looking like a fax; Standard picks the balanced option; High picks the best non-photo quality; Photo uses maximum quality, photo media, and the driver's photo/ICC profile when present. Quality and color are independent: choosing a preset while B&W is active keeps B&W, and the preset stays selected. Choose a preset, or fine-tune paper, media, and quality; the preset indicator shows Custom when the current combination does not match. Orientation, fit-to-page or exact scale, and color mode are applied to both passes. Exact scale is baked into a temporary PDF before submission. The preview reflects the selected scale and color mode.
+
+Open **Settings** from the maintenance menu, the app menu (`⌘,`), or the right-click menu. The Language section switches the whole interface and app menus immediately. The printer section shows the selected queue's real PPD quality and media values for each preset; changes are stored only on this Mac, per printer, and reset individually with **Reset**.
 
 ### Settings that are remembered
 

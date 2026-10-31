@@ -188,15 +188,15 @@ enum FlipMotion {
 
 enum FlipFormat {
     static func sheets(_ count: Int) -> String {
-        count == 1 ? "1 sheet" : "\(count) sheets"
+        count == 1 ? L("1 sheet") : String(format: L("%lld sheets"), count)
     }
 
     static func pages(_ count: Int) -> String {
-        count == 1 ? "1 page" : "\(count) pages"
+        count == 1 ? L("1 page") : String(format: L("%lld pages"), count)
     }
 
     static func jobs(_ count: Int) -> String {
-        count == 1 ? "1 job" : "\(count) jobs"
+        count == 1 ? L("1 job") : String(format: L("%lld jobs"), count)
     }
 
     static func percent(_ value: Double) -> String {
@@ -206,7 +206,7 @@ enum FlipFormat {
     /// A human page size for the document strip, e.g. `A4 · 210 × 297 mm`.
     /// Points are converted without rounding away what the PDF actually says.
     static func paperDescription(width: CGFloat, height: CGFloat) -> String {
-        guard width > 0, height > 0 else { return "Page size unknown" }
+        guard width > 0, height > 0 else { return L("Page size unknown") }
         let short = min(width, height)
         let long = max(width, height)
         let millimetersShort = Int((short / 72 * 25.4).rounded())
@@ -278,7 +278,7 @@ struct FlipEyebrow: View {
     private let color: Color
 
     init(_ text: String, color: Color = FlipColor.secondaryInk) {
-        self.text = text
+        self.text = L(text)
         self.color = color
     }
 

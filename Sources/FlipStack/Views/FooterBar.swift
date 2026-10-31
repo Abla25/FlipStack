@@ -155,6 +155,18 @@ struct FooterBar: View {
             Divider()
 
             Button {
+                model.openSettings()
+            } label: {
+                Label("Settings…", systemImage: "gearshape")
+            }
+            .disabled(
+                !model.orchestrator.phase.isIdle
+                    || model.isPreparingPrint
+                    || model.flipCalibration != nil
+                    || model.flipAxisSetup != nil
+            )
+
+            Button {
                 openPrinterSettings()
             } label: {
                 Label("Printers & Scanners…", systemImage: "printer")

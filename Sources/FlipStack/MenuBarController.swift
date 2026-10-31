@@ -15,9 +15,9 @@ final class MenuBarController: NSObject {
     private let statusItem: NSStatusItem
     private let panel: FlipPanel
     private let effectView = NSVisualEffectView()
-    private var globalMonitor: Any?
+    private var globalMouseDownMonitor: Any?
+    private var globalMouseUpMonitor: Any?
     private var localMonitor: Any?
-    private var resignObserver: NSObjectProtocol?
     private var cancellables = Set<AnyCancellable>()
     private var isVisible = false
     private var hostingView: NSHostingView<RootView>!
@@ -53,8 +53,8 @@ final class MenuBarController: NSObject {
         button.action = #selector(statusItemClicked(_:))
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         button.toolTip = "FlipStack"
-        button.setAccessibilityLabel("FlipStack print manager")
-        button.setAccessibilityHelp("Opens the FlipStack popover.")
+        button.setAccessibilityLabel(L("FlipStack print manager"))
+        button.setAccessibilityHelp(L("Opens the FlipStack popover."))
     }
 
     @objc private func statusItemClicked(_ sender: NSStatusBarButton) {
@@ -70,17 +70,24 @@ final class MenuBarController: NSObject {
         guard let button = statusItem.button else { return }
         let menu = NSMenu()
         let openWindow = NSMenuItem(
-            title: "Open FlipStack Window…",
+            title: L("Open FlipStack Window…"),
             action: #selector(AppDelegate.openStudioWindow),
             keyEquivalent: ""
         )
         openWindow.target = NSApp.delegate
         menu.addItem(openWindow)
-        let openPanel = NSMenuItem(title: "Open Quick Panel", action: #selector(openFromMenu), keyEquivalent: "")
+        let openPanel = NSMenuItem(title: L("Open Quick Panel"), action: #selector(openFromMenu), keyEquivalent: "")
         openPanel.target = self
         menu.addItem(openPanel)
+        let settings = NSMenuItem(
+            title: L("Settings…"),
+            action: #selector(AppDelegate.openSettingsFromMenu),
+            keyEquivalent: ""
+        )
+        settings.target = NSApp.delegate
+        menu.addItem(settings)
         menu.addItem(.separator())
-        let quit = NSMenuItem(title: "Quit FlipStack", action: #selector(quit), keyEquivalent: "q")
+        let quit = NSMenuItem(title: L("Quit FlipStack"), action: #selector(quit), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
         menu.popUp(
@@ -328,9 +335,28 @@ final class MenuBarController: NSObject {
 
     private func installMonitors() {
         removeMonitors()
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+
+        // Do not close on mouse-down. A drag from Finder starts with a click
+        // outside the panel, and closing then makes the drop target vanish
+        // before the file can arrive. Wait for mouse-up: if the pointer is
+        // still inside the panel the gesture was a drop, not an outside click.
+        globalMouseDownMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.rightMouseDown]
+        ) { [weak self] _ in
             Task { @MainActor in self?.close() }
         }
+        globalMouseUpMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseUp]
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.isVisible else { return }
+                if self.panel.frame.contains(NSEvent.mouseLocation) {
+                    return
+                }
+                self.close()
+            }
+        }
+
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
             guard let self else { return event }
             if event.keyCode == 53 {
@@ -339,27 +365,20 @@ final class MenuBarController: NSObject {
             }
             return event
         }
-        resignObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didResignActiveNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in self?.close() }
-        }
     }
 
     private func removeMonitors() {
-        if let globalMonitor {
-            NSEvent.removeMonitor(globalMonitor)
-            self.globalMonitor = nil
+        if let globalMouseDownMonitor {
+            NSEvent.removeMonitor(globalMouseDownMonitor)
+            self.globalMouseDownMonitor = nil
+        }
+        if let globalMouseUpMonitor {
+            NSEvent.removeMonitor(globalMouseUpMonitor)
+            self.globalMouseUpMonitor = nil
         }
         if let localMonitor {
             NSEvent.removeMonitor(localMonitor)
             self.localMonitor = nil
-        }
-        if let resignObserver {
-            NotificationCenter.default.removeObserver(resignObserver)
-            self.resignObserver = nil
         }
     }
 
@@ -409,19 +428,19 @@ final class MenuBarController: NSObject {
                 switch calibration.stage {
                 case .printing:
                     button.image = Self.makeIcon(waiting: false)
-                    button.toolTip = "FlipStack · calibrating"
-                    button.setAccessibilityLabel("FlipStack, calibrating the flip")
+                    button.toolTip = L("FlipStack · calibrating")
+                    button.setAccessibilityLabel(L("FlipStack, calibrating the flip"))
                 case .questions:
                     button.image = Self.makeIcon(waiting: true)
-                    button.toolTip = "FlipStack · calibration ready"
-                    button.setAccessibilityLabel("FlipStack, calibration ready")
+                    button.toolTip = L("FlipStack · calibration ready")
+                    button.setAccessibilityLabel(L("FlipStack, calibration ready"))
                     if stageChanged, self.allowsAutomaticPresentation {
                         self.present()
                     }
                 case .failed:
                     button.image = Self.makeIcon(waiting: false)
-                    button.toolTip = "FlipStack · calibration needs attention"
-                    button.setAccessibilityLabel("FlipStack, calibration needs attention")
+                    button.toolTip = L("FlipStack · calibration needs attention")
+                    button.setAccessibilityLabel(L("FlipStack, calibration needs attention"))
                 }
             }
             .store(in: &cancellables)
@@ -438,14 +457,14 @@ final class MenuBarController: NSObject {
         button.image = Self.makeIcon(waiting: waiting)
         switch phase {
         case .printing(_, let job):
-            button.toolTip = "FlipStack · \(job.displayState)"
-            button.setAccessibilityLabel("FlipStack, printing")
+            button.toolTip = "\(L("FlipStack")) · \(job.displayState)"
+            button.setAccessibilityLabel(L("FlipStack, printing"))
         case .awaitingFlip:
-            button.toolTip = "FlipStack · waiting for you to flip the stack"
-            button.setAccessibilityLabel("FlipStack, waiting for the stack to be flipped")
+            button.toolTip = L("FlipStack · waiting for you to flip the stack")
+            button.setAccessibilityLabel(L("FlipStack, waiting for the stack to be flipped"))
         default:
             button.toolTip = "FlipStack"
-            button.setAccessibilityLabel("FlipStack print manager")
+            button.setAccessibilityLabel(L("FlipStack print manager"))
         }
     }
 
@@ -457,30 +476,30 @@ final class MenuBarController: NSObject {
         switch phase {
         case .idle:
             key = "idle"
-            message = "FlipStack is ready."
+            message = L("FlipStack is ready.")
         case .preparing:
             key = "preparing"
-            message = "Preparing the print job."
+            message = L("Preparing the print job.")
         case .printing(.fronts, _):
             key = "printing-fronts"
-            message = "Printing fronts."
+            message = L("Printing fronts.")
         case .printing(.backs, _):
             key = "printing-backs"
-            message = "Printing backs."
+            message = L("Printing backs.")
         case .awaitingFlip(let prompt):
             key = "awaiting-flip"
             message = prompt.mode == .reinsertOnly
-                ? "Your turn. Reinsert the stack exactly as it is, then continue."
-                : "Your turn. Flip the whole stack as one block, then continue."
+                ? L("Your turn. Reinsert the stack exactly as it is, then continue.")
+                : L("Your turn. Flip the whole stack as one block, then continue.")
         case .completed:
             key = "completed"
-            message = "Printing complete."
+            message = L("Printing complete.")
         case .failed(let failure):
             key = "failed-\(failure.title)"
             message = failure.title
         case .cancelled:
             key = "cancelled"
-            message = "Printing canceled."
+            message = L("Printing canceled.")
         }
         guard key != lastAnnouncedPhase else { return }
         lastAnnouncedPhase = key

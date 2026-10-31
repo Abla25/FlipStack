@@ -115,7 +115,7 @@ struct FlipMetaChip: View {
         HStack(spacing: 5) {
             Image(systemName: systemName)
                 .font(.system(size: 9, weight: .semibold))
-            Text(text)
+            Text(L(text))
                 .font(FlipType.caption)
                 .lineLimit(1)
         }
@@ -297,7 +297,7 @@ struct FlipHintLine: View {
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(tint)
                 .frame(width: 13, height: 14, alignment: .top)
-            Text(text)
+            Text(L(text))
                 .font(FlipType.footnote)
                 .foregroundStyle(FlipColor.secondaryInk)
                 .fixedSize(horizontal: false, vertical: true)

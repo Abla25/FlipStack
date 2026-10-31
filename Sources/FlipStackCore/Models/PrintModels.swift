@@ -140,14 +140,14 @@ public enum JobState: String, Codable, Sendable, CaseIterable {
 
     public var label: String {
         switch self {
-        case .pending: return "Waiting"
-        case .held: return "Held"
-        case .processing: return "Printing"
-        case .stopped: return "Stopped"
-        case .canceled: return "Canceled"
-        case .aborted: return "Failed"
-        case .completed: return "Done"
-        case .unknown: return "Unknown"
+        case .pending: return L("Waiting")
+        case .held: return L("Held")
+        case .processing: return L("Printing")
+        case .stopped: return L("Stopped")
+        case .canceled: return L("Canceled")
+        case .aborted: return L("Failed")
+        case .completed: return L("Done")
+        case .unknown: return L("Unknown")
         }
     }
 }
@@ -205,7 +205,7 @@ public struct PrintJob: Identifiable, Hashable, Codable, Sendable {
 
     public var displayState: String {
         if state == .processing, let progress {
-            return "Printing \(Int(progress * 100))%"
+            return String(format: L("Printing %lld%%"), Int(progress * 100))
         }
         return state.label
     }

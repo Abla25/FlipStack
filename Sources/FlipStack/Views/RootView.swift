@@ -101,6 +101,7 @@ struct RootView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.clear)
         .tint(FlipColor.coral)
+        .environment(\.locale, model.language.locale)
         .clipped()
         .animation(FlipMotion.standard(reduceMotion), value: model.banner?.id)
         .animation(FlipMotion.surface(reduceMotion), value: surfaceKey)
@@ -108,7 +109,8 @@ struct RootView: View {
     }
 
     private var showsComposerActionBar: Bool {
-        guard orchestrator.phase.isIdle,
+        guard !model.isShowingSettings,
+              orchestrator.phase.isIdle,
               model.flipAxisSetup == nil,
               model.flipCalibration == nil,
               !model.isPreparingPrint,
@@ -120,12 +122,17 @@ struct RootView: View {
     }
 
     private var showsInkLowStrip: Bool {
-        orchestrator.phase.isIdle && model.flipAxisSetup == nil && !model.isPreparingPrint
+        !model.isShowingSettings
+            && orchestrator.phase.isIdle
+            && model.flipAxisSetup == nil
+            && !model.isPreparingPrint
     }
 
     @ViewBuilder
     private var content: some View {
-        if model.isPreparingPrint {
+        if model.isShowingSettings {
+            SettingsView(model: model)
+        } else if model.isPreparingPrint {
             PreparingSurface(model: model)
         } else if let _ = model.flipCalibration, !isFlowActive {
             FlipCalibrationView(model: model)

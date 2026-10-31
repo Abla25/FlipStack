@@ -36,12 +36,12 @@ final class NotificationService: NSObject, DuplexNotifying {
     private func registerCategory(on center: UNUserNotificationCenter) {
         let continueAction = UNNotificationAction(
             identifier: Self.continueAction,
-            title: "Continue",
+            title: L("Continue"),
             options: [.foreground]
         )
         let cancelAction = UNNotificationAction(
             identifier: Self.cancelAction,
-            title: "Cancel",
+            title: L("Cancel"),
             options: [.destructive]
         )
         let category = UNNotificationCategory(
@@ -65,8 +65,8 @@ final class NotificationService: NSObject, DuplexNotifying {
             removeFlipNotification()
             guard authorizationGranted else { return }
             post(
-                title: "Printing complete",
-                body: "FlipStack finished all \(sheetCount) \(sheetCount == 1 ? "sheet" : "sheets").",
+                title: L("Printing complete"),
+                body: String(format: L("FlipStack finished all %lld sheets."), sheetCount),
                 identifier: "flipstack-complete-\(UUID().uuidString)",
                 category: nil
             )
@@ -77,13 +77,18 @@ final class NotificationService: NSObject, DuplexNotifying {
             // detail in the in-app surface rather than leaking queue or job text.
             post(
                 title: failure.title,
-                body: "Open FlipStack for details.",
+                body: L("Open FlipStack for details."),
                 identifier: "flipstack-failure-\(UUID().uuidString)",
                 category: nil
             )
         case .canceled:
             removeFlipNotification()
         }
+    }
+
+    func languageDidChange() {
+        guard let center else { return }
+        registerCategory(on: center)
     }
 
     private func ensureAuthorization(_ completion: @escaping () -> Void) {
@@ -109,7 +114,7 @@ final class NotificationService: NSObject, DuplexNotifying {
         guard let center, authorizationGranted else { return }
         let content = UNMutableNotificationContent()
         content.title = prompt.title
-        content.subtitle = "\(prompt.sheetCount) \(prompt.sheetCount == 1 ? "sheet" : "sheets") · FlipStack"
+        content.subtitle = "\(FlipFormat.sheets(prompt.sheetCount)) · FlipStack"
         content.body = prompt.message
         content.sound = .default
         content.categoryIdentifier = Self.categoryIdentifier

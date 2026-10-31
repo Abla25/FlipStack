@@ -9,10 +9,10 @@ public enum PrinterState: String, Codable, Sendable, CaseIterable {
 
     public var label: String {
         switch self {
-        case .idle: return "Ready"
-        case .processing: return "Printing"
-        case .stopped: return "Stopped"
-        case .unknown: return "Unknown"
+        case .idle: return L("Ready")
+        case .processing: return L("Printing")
+        case .stopped: return L("Stopped")
+        case .unknown: return L("Unknown")
         }
     }
 
@@ -124,7 +124,7 @@ public enum PrinterReason {
     public static func humanReadable(_ reason: String) -> String? {
         if reason.isEmpty || reason == "none" { return nil }
         if let value = labels[reason] {
-            return value.isEmpty ? nil : value
+            return value.isEmpty ? nil : L(value)
         }
         var text = reason
             .replacingOccurrences(of: "-error", with: "")

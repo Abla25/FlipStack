@@ -12,13 +12,13 @@ struct FlowHeading: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             FlipEyebrow(eyebrow, color: tint)
-            Text(title)
+            Text(L(title))
                 .font(FlipType.displayLarge)
                 .foregroundStyle(FlipColor.ink)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
             if let subtitle {
-                Text(subtitle)
+                Text(L(subtitle))
                     .font(FlipType.footnote)
                     .foregroundStyle(FlipColor.secondaryInk)
                     .fixedSize(horizontal: false, vertical: true)
@@ -36,20 +36,20 @@ struct PreparingSurface: View {
 
     private var title: String {
         switch model.activePrintMode {
-        case .singleSided: return "Preparing the document."
-        case .manualDuplex: return "Lining up the passes."
-        case .booklet: return "Building the booklet."
+        case .singleSided: return L("Preparing the document.")
+        case .manualDuplex: return L("Lining up the passes.")
+        case .booklet: return L("Building the booklet.")
         }
     }
 
     private var subtitle: String {
         switch model.activePrintMode {
         case .singleSided:
-            return "FlipStack is getting the job ready on this Mac. Nothing is sent until it is."
+            return L("FlipStack is getting the job ready on this Mac. Nothing is sent until it is.")
         case .manualDuplex:
-            return "FlipStack is preparing the job on this Mac. Nothing is sent until both passes are ready."
+            return L("FlipStack is preparing the job on this Mac. Nothing is sent until both passes are ready.")
         case .booklet:
-            return "FlipStack is arranging the pages into signatures on this Mac. Nothing is sent yet."
+            return L("FlipStack is arranging the pages into signatures on this Mac. Nothing is sent yet.")
         }
     }
 
@@ -168,27 +168,27 @@ struct PrintingSurface: View {
     }
 
     private var eyebrow: String {
-        if isWaitingForPrinter { return "Waiting for printer" }
-        if isSingleSided { return "Single-sided" }
-        return pass == .fronts ? "Pass 1 of 2 · Fronts" : "Pass 2 of 2 · Backs"
+        if isWaitingForPrinter { return L("Waiting for printer") }
+        if isSingleSided { return L("Single-sided") }
+        return pass == .fronts ? L("Pass 1 of 2 · Fronts") : L("Pass 2 of 2 · Backs")
     }
 
     private var title: String {
-        if isWaitingForPrinter { return "The printer is offline." }
-        if isSingleSided { return "Printing." }
-        return pass == .fronts ? "Printing fronts." : "Printing backs."
+        if isWaitingForPrinter { return L("The printer is offline.") }
+        if isSingleSided { return L("Printing.") }
+        return pass == .fronts ? L("Printing fronts.") : L("Printing backs.")
     }
 
     private var subtitle: String {
         if isWaitingForPrinter {
-            return "The job is queued. FlipStack keeps watching; wake or reconnect the printer, or cancel the job here."
+            return L("The job is queued. FlipStack keeps watching; wake or reconnect the printer, or cancel the job here.")
         }
         if isSingleSided {
-            return "The printer is working through the document one side at a time."
+            return L("The printer is working through the document one side at a time.")
         }
         return pass == .fronts
-        ? "The printer is working through the first pass. FlipStack will pause before the backs."
-        : "The stack is in place. The printer is working through the second pass now."
+        ? L("The printer is working through the first pass. FlipStack will pause before the backs.")
+        : L("The stack is in place. The printer is working through the second pass now.")
     }
 
     var body: some View {
@@ -229,8 +229,8 @@ struct PrintingSurface: View {
                     .frame(width: 11, height: 12, alignment: .top)
                 Text(
                     isSingleSided
-                    ? "You can close this panel. FlipStack keeps watching the job in the menu bar."
-                    : "You can close this panel. FlipStack keeps watching and brings the flip prompt back."
+                    ? L("You can close this panel. FlipStack keeps watching the job in the menu bar.")
+                    : L("You can close this panel. FlipStack keeps watching and brings the flip prompt back.")
                 )
                 .font(FlipType.caption)
                 .foregroundStyle(FlipColor.tertiaryInk)
@@ -258,13 +258,17 @@ struct PrintingSurface: View {
             }
 
             HStack(spacing: 5) {
-                Text("Job \(job.id)")
+                Text(String(format: L("Job %lld"), job.id))
                     .font(FlipType.caption)
                     .foregroundStyle(FlipColor.tertiaryInk)
                 Circle()
                     .fill(FlipColor.tertiaryInk)
                     .frame(width: 2.5, height: 2.5)
-                Text(isSingleSided ? "Single-sided" : (pass == .fronts ? "First pass" : "Second pass"))
+                Text(
+                    isSingleSided
+                    ? L("Single-sided")
+                    : (pass == .fronts ? L("First pass") : L("Second pass"))
+                )
                     .font(FlipType.caption)
                     .foregroundStyle(FlipColor.tertiaryInk)
                 Spacer(minLength: 0)
@@ -294,9 +298,11 @@ struct PrintingSurface: View {
                 .strokeBorder(FlipColor.hairline, lineWidth: 0.5)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Job \(job.id), \(model.jobDisplayTitle(job))")
+        .accessibilityLabel(String(format: L("Job %lld, %@"), job.id, model.jobDisplayTitle(job)))
         .accessibilityValue(
-            "\(job.displayState). \(isSingleSided ? "Single-sided." : (pass == .fronts ? "First pass, fronts." : "Second pass, backs."))"
+            "\(job.displayState). " + (isSingleSided
+                ? L("Single-sided.")
+                : (pass == .fronts ? L("First pass, fronts.") : L("Second pass, backs.")))
         )
     }
 }
@@ -315,8 +321,8 @@ struct CompletedSurface: View {
                 tint: FlipColor.success,
                 title: "All done.",
                 subtitle: result.isSingleSided || result.sourcePageCount <= 1
-                    ? "\(result.printerName) finished your document."
-                    : "\(result.printerName) finished both passes."
+                    ? String(format: L("%@ finished your document."), result.printerName)
+                    : String(format: L("%@ finished both passes."), result.printerName)
             )
 
             CompletedArt()
@@ -581,15 +587,15 @@ struct CancelledSurface: View {
 
     private var subtitle: String {
         if model.activePrintMode == .singleSided {
-            return "The single-sided job stopped. No more pages will be printed."
+            return L("The single-sided job stopped. No more pages will be printed.")
         }
         switch pass {
         case .some(.fronts):
-            return "The job stopped during the fronts. No backs will be printed."
+            return L("The job stopped during the fronts. No backs will be printed.")
         case .some(.backs):
-            return "The fronts finished. The backs were not printed."
+            return L("The fronts finished. The backs were not printed.")
         case .none:
-            return "No more pages will be printed."
+            return L("No more pages will be printed.")
         }
     }
 
@@ -611,7 +617,7 @@ struct CancelledSurface: View {
                     systemName: "tray",
                     text: model.activePrintMode == .singleSided
                         ? "Check the printer and the tray before starting over."
-                        : "Remove any sheets from the tray before starting over.",
+                        : L("Remove any sheets from the tray before starting over."),
                     tint: FlipColor.tertiaryInk
                 )
             }

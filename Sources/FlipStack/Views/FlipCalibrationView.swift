@@ -83,26 +83,26 @@ struct FlipCalibrationView: View {
     private var statusTitle: String {
         switch model.printerHealth {
         case .offline:
-            return "Waiting for the printer"
+            return L("Waiting for the printer")
         case .attention:
-            return "The printer needs attention"
+            return L("The printer needs attention")
         case .unknown:
-            return "Checking the queue"
+            return L("Checking the queue")
         default:
-            return "Printing the calibration sheet"
+            return L("Printing the calibration sheet")
         }
     }
 
     private var statusDetail: String {
         switch model.printerHealth {
         case .offline:
-            return "CUPS reports the printer offline. The sheet is queued and FlipStack will wait up to ten minutes for it to print."
+            return L("CUPS reports the printer offline. The sheet is queued and FlipStack will wait up to ten minutes for it to print.")
         case .attention:
-            return "Finish the printer’s request, then FlipStack will continue with the sheet."
+            return L("Finish the printer’s request, then FlipStack will continue with the sheet.")
         case .unknown:
-            return "Checking the printer."
+            return L("Checking the printer.")
         default:
-            return "Keep the sheet as it lands. You will confirm the result in the next step."
+            return L("Keep the sheet as it lands. You will confirm the result in the next step.")
         }
     }
 
@@ -195,7 +195,7 @@ struct FlipCalibrationView: View {
                     .padding(.vertical, 5)
                     .accessibilityElement(children: .combine)
             } else {
-                Text("Recommended: \(calibration.recommendedAxis.label.lowercased()). Confirm or change it.")
+                Text(String(format: L("Recommended: %@. Confirm or change it."), calibration.recommendedAxis.label.lowercased()))
                     .font(FlipType.caption)
                     .foregroundStyle(FlipColor.secondaryInk)
                     .fixedSize(horizontal: false, vertical: true)
@@ -258,7 +258,7 @@ struct FlipCalibrationView: View {
                     .frame(width: 48, height: 48)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("\(calibration.axis.label) · print lands \(calibration.ejectsFaceDown ? "down" : "up")")
+                    Text(String(format: L("%@ · print lands %@."), calibration.axis.label, calibration.ejectsFaceDown ? L("down") : L("up")))
                         .font(FlipType.bodyStrong)
                         .foregroundStyle(FlipColor.ink)
                     Text(resultDetail(calibration))
@@ -284,16 +284,16 @@ struct FlipCalibrationView: View {
 
     private func missingAnswerText(_ calibration: FlipCalibration) -> String {
         if !calibration.hasConfirmedTray {
-            return "Confirm which side of the sheet landed facing up."
+            return L("Confirm which side of the sheet landed facing up.")
         }
-        return "Confirm the long-edge or short-edge turn."
+        return L("Confirm the long-edge or short-edge turn.")
     }
 
     private func resultDetail(_ calibration: FlipCalibration) -> String {
         if calibration.ejectsFaceDown {
-            return "Your tray already lands the printed side down. Reinsert the stack without flipping; the backs print in order."
+            return L("Your tray already lands the printed side down. Reinsert the stack without flipping; the backs print in order.")
         }
-        return "\(calibration.axis.flipInstruction) Then reinsert the stack for the backs."
+        return String(format: L("%@ Then reinsert the stack for the backs."), calibration.axis.flipInstruction)
     }
 
     // MARK: Failure
@@ -359,7 +359,7 @@ struct FlipCalibrationView: View {
                 .foregroundStyle(FlipColor.onCoral)
                 .frame(width: 15, height: 15)
                 .background(Circle().fill(FlipColor.coral))
-            Text(text)
+            Text(L(text))
                 .font(FlipType.captionStrong)
                 .foregroundStyle(FlipColor.secondaryInk)
                 .fixedSize(horizontal: false, vertical: true)
@@ -382,12 +382,12 @@ struct FlipCalibrationView: View {
                     .foregroundStyle(selected ? FlipColor.coralDeep : FlipColor.tertiaryInk)
                     .frame(width: 13, height: 14, alignment: .top)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
+                    Text(L(title))
                         .font(FlipType.captionStrong)
                         .foregroundStyle(FlipColor.ink)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text(subtitle)
+                    Text(L(subtitle))
                         .font(FlipType.caption)
                         .foregroundStyle(FlipColor.secondaryInk)
                         .lineLimit(2)
@@ -415,7 +415,7 @@ struct FlipCalibrationView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(title), \(subtitle)")
+        .accessibilityLabel("\(L(title)), \(L(subtitle))")
         .accessibilityValue(selected ? "Selected" : "Not selected")
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityHint("Choose this calibration result.")
@@ -480,8 +480,8 @@ struct FlipCalibrationActionBar: View {
     @ViewBuilder
     private func questionsActions(_ calibration: FlipCalibration) -> some View {
         Text(calibration.isAnswered
-             ? "\(calibration.axis.label) · print lands \(calibration.ejectsFaceDown ? "down" : "up")"
-             : missingAnswerText(calibration))
+             ? String(format: L("%@ · print lands %@."), calibration.axis.label, calibration.ejectsFaceDown ? L("down") : L("up"))
+             : L(missingAnswerText(calibration)))
             .font(calibration.isAnswered ? FlipType.captionStrong : FlipType.caption)
             .foregroundStyle(calibration.isAnswered ? FlipColor.ink : FlipColor.secondaryInk)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -493,7 +493,7 @@ struct FlipCalibrationActionBar: View {
                 model.applyFlipCalibration()
             } label: {
                 HStack(spacing: 8) {
-                    Text(calibration.autoStartsPrint ? "Save and print" : "Use this setup")
+                    Text(calibration.autoStartsPrint ? L("Save and print") : L("Use this setup"))
                     Spacer(minLength: 4)
                     Image(systemName: "arrow.right")
                         .font(.system(size: 11, weight: .semibold))
@@ -520,9 +520,9 @@ struct FlipCalibrationActionBar: View {
 
     private func missingAnswerText(_ calibration: FlipCalibration) -> String {
         if !calibration.hasConfirmedTray {
-            return "Confirm which side landed up."
+            return L("Confirm which side landed up.")
         }
-        return "Confirm the turn direction."
+        return L("Confirm the turn direction.")
     }
 }
 
@@ -543,24 +543,24 @@ private struct CalibrationSheetArt: View {
                 Image(systemName: "arrow.up")
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(FlipColor.coral)
-                Text("TOP")
+                Text(L("TOP"))
                     .font(.system(size: 7, weight: .bold))
                     .tracking(0.8)
                     .foregroundStyle(FlipColor.printLine)
                 Spacer(minLength: 2)
-                Text("FLIP")
+                Text(L("FLIP"))
                     .font(.system(size: 10, weight: .bold, design: .serif))
                     .foregroundStyle(FlipColor.printLine)
-                Text("CALIBRATION")
+                Text(L("CALIBRATION"))
                     .font(.system(size: 5.5, weight: .semibold))
                     .tracking(0.6)
                     .foregroundStyle(FlipColor.printLine)
-                Text("PRINTED SIDE")
+                Text(L("PRINTED SIDE"))
                     .font(.system(size: 6.5, weight: .semibold))
                     .tracking(0.4)
                     .foregroundStyle(FlipColor.coralDeep)
                 Spacer(minLength: 2)
-                Text("SHORT EDGE")
+                Text(L("SHORT EDGE"))
                     .font(.system(size: 5.5, weight: .medium))
                     .foregroundStyle(FlipColor.printLine)
             }
@@ -568,12 +568,12 @@ private struct CalibrationSheetArt: View {
             .padding(.horizontal, 5)
 
             HStack {
-                Text("LONG")
+                Text(L("LONG"))
                     .font(.system(size: 5.5, weight: .bold))
                     .foregroundStyle(FlipColor.coralDeep)
                     .rotationEffect(.degrees(-90))
                 Spacer()
-                Text("LONG")
+                Text(L("LONG"))
                     .font(.system(size: 5.5, weight: .bold))
                     .foregroundStyle(FlipColor.coralDeep)
                     .rotationEffect(.degrees(90))

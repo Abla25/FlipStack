@@ -44,7 +44,7 @@ struct DocumentSection: View {
             DropPageArt(isTargeted: isTargeted, size: artSize)
                 .padding(.bottom, 12)
 
-            Text(isTargeted ? "Release to open" : "Drop a PDF to begin")
+            Text(isTargeted ? L("Release to open") : L("Drop a PDF to begin"))
                 .font(FlipType.displaySmall)
                 .foregroundStyle(FlipColor.ink)
                 .multilineTextAlignment(.center)
@@ -105,7 +105,7 @@ struct DocumentSection: View {
         if selection.isValid,
            !selection.isAll,
            selection.pageCount > 0 {
-            return "\(selection.summary) selected"
+            return selection.summary
         }
         return document.formattedPageCount
     }
@@ -120,13 +120,11 @@ struct DocumentSection: View {
                     .foregroundStyle(FlipColor.ink)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                HStack(spacing: 5) {
+                VStack(alignment: .leading, spacing: 1) {
                     Text(documentSubtitle(document))
                         .font(FlipType.caption)
                         .foregroundStyle(FlipColor.secondaryInk)
-                    Circle()
-                        .fill(FlipColor.tertiaryInk.opacity(0.55))
-                        .frame(width: 2.5, height: 2.5)
+                        .lineLimit(1)
                     Text(document.pageSizeText)
                         .font(FlipType.caption)
                         .foregroundStyle(FlipColor.tertiaryInk)

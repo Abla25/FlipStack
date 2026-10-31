@@ -1,11 +1,12 @@
 import AppKit
 import Foundation
 import CoreGraphics
+import FlipStackCore
 
 enum PrintUtilities {
     static func makeTestPage(printerName: String) throws -> URL {
         try makePDF(size: CGSize(width: 595, height: 842)) { context in
-            drawHeader(context, title: "FlipStack test page", subtitle: printerName)
+            drawHeader(context, title: L("FlipStack test page"), subtitle: printerName)
             let ink = NSColor(calibratedRed: 1.0, green: 0.34, blue: 0.22, alpha: 1)
             let colors: [(String, NSColor)] = [
                 ("Cyan", .cyan),
@@ -29,18 +30,18 @@ enum PrintUtilities {
                 context.addLine(to: CGPoint(x: x, y: 190))
                 context.strokePath()
             }
-            drawText("Alignment bars: each vertical line should be crisp and evenly spaced.",
+            drawText(L("Alignment bars: each vertical line should be crisp and evenly spaced."),
                      at: CGPoint(x: 64, y: 160), size: 10, color: .darkGray)
-            drawText("If lines are broken or colors streak, run a head cleaning cycle.",
+            drawText(L("If lines are broken or colors streak, run a head cleaning cycle."),
                      at: CGPoint(x: 64, y: 140), size: 10, color: .darkGray)
-            drawText("Printed by FlipStack · \(formattedNow())",
+            drawText(String(format: L("Printed by FlipStack · %@"), formattedNow()),
                      at: CGPoint(x: 64, y: 80), size: 9, color: .gray)
         }
     }
 
     static func makeAlignmentPage(printerName: String) throws -> URL {
         try makePDF(size: CGSize(width: 595, height: 842)) { context in
-            drawHeader(context, title: "Head alignment sheet", subtitle: printerName)
+            drawHeader(context, title: L("Head alignment sheet"), subtitle: printerName)
             drawText("1. Print this page at 100% on plain paper.",
                      at: CGPoint(x: 64, y: 700), size: 11, color: .black)
             drawText("2. Find the row where the two line segments meet without a step.",
@@ -67,7 +68,7 @@ enum PrintUtilities {
             context.move(to: CGPoint(x: 64, y: 96))
             context.addLine(to: CGPoint(x: 531, y: 96))
             context.strokePath()
-            drawText("FlipStack alignment reference · \(formattedNow())",
+            drawText(String(format: L("FlipStack alignment reference · %@"), formattedNow()),
                      at: CGPoint(x: 64, y: 74), size: 9, color: .gray)
         }
     }
@@ -90,23 +91,23 @@ enum PrintUtilities {
             context.setFillColor(coral.cgColor)
             context.fill(CGRect(x: 48, y: 780, width: 42, height: 4))
 
-            drawText("FLIPSTACK", at: CGPoint(x: 102, y: 776), size: 10, color: graphite, weight: .bold)
-            drawText("FLIP CALIBRATION SHEET", at: CGPoint(x: 48, y: 742), size: 24, color: graphite, weight: .bold)
-            drawText("One sheet. No document content.", at: CGPoint(x: 48, y: 720), size: 12, color: mid)
+            drawText(L("FLIPSTACK"), at: CGPoint(x: 102, y: 776), size: 10, color: graphite, weight: .bold)
+            drawText(L("FLIP CALIBRATION SHEET"), at: CGPoint(x: 48, y: 742), size: 24, color: graphite, weight: .bold)
+            drawText(L("One sheet. No document content."), at: CGPoint(x: 48, y: 720), size: 12, color: mid)
 
-            drawCenteredText("TOP EDGE · SHORT EDGE", centerX: 297.5, y: 786, size: 11, color: graphite, weight: .semibold)
-            drawCenteredText("BOTTOM EDGE · SHORT EDGE", centerX: 297.5, y: 48, size: 11, color: graphite, weight: .semibold)
+            drawCenteredText(L("TOP EDGE · SHORT EDGE"), centerX: 297.5, y: 786, size: 11, color: graphite, weight: .semibold)
+            drawCenteredText(L("BOTTOM EDGE · SHORT EDGE"), centerX: 297.5, y: 48, size: 11, color: graphite, weight: .semibold)
 
             // Left and right are the long edges of this portrait sheet.
             context.setFillColor(pale.cgColor)
             context.fill(CGRect(x: 48, y: 376, width: 76, height: 72))
             context.fill(CGRect(x: 471, y: 376, width: 76, height: 72))
-            drawText("LEFT", at: CGPoint(x: 58, y: 432), size: 13, color: graphite, weight: .bold)
-            drawText("EDGE", at: CGPoint(x: 58, y: 416), size: 13, color: graphite, weight: .bold)
-            drawText("LONG EDGE", at: CGPoint(x: 48, y: 396), size: 9, color: graphite, weight: .semibold)
-            drawText("RIGHT", at: CGPoint(x: 481, y: 432), size: 13, color: graphite, weight: .bold)
-            drawText("EDGE", at: CGPoint(x: 481, y: 416), size: 13, color: graphite, weight: .bold)
-            drawText("LONG EDGE", at: CGPoint(x: 478, y: 396), size: 9, color: graphite, weight: .semibold)
+            drawText(L("LEFT"), at: CGPoint(x: 58, y: 432), size: 13, color: graphite, weight: .bold)
+            drawText(L("EDGE"), at: CGPoint(x: 58, y: 416), size: 13, color: graphite, weight: .bold)
+            drawText(L("LONG EDGE"), at: CGPoint(x: 48, y: 396), size: 9, color: graphite, weight: .semibold)
+            drawText(L("RIGHT"), at: CGPoint(x: 481, y: 432), size: 13, color: graphite, weight: .bold)
+            drawText(L("EDGE"), at: CGPoint(x: 481, y: 416), size: 13, color: graphite, weight: .bold)
+            drawText(L("LONG EDGE"), at: CGPoint(x: 478, y: 396), size: 9, color: graphite, weight: .semibold)
 
             // A single strong top arrow, visible at a glance.
             context.setStrokeColor(graphite.cgColor)
@@ -121,7 +122,7 @@ enum PrintUtilities {
             context.addLine(to: CGPoint(x: 319, y: 688))
             context.closePath()
             context.fillPath()
-            drawText("TOP", at: CGPoint(x: 330, y: 676), size: 12, color: graphite, weight: .bold)
+            drawText(L("TOP"), at: CGPoint(x: 330, y: 676), size: 12, color: graphite, weight: .bold)
 
             // The printed side marker.
             let block = CGRect(x: 177, y: 270, width: 241, height: 350)
@@ -130,9 +131,9 @@ enum PrintUtilities {
             context.setStrokeColor(NSColor(calibratedWhite: 0.78, alpha: 1).cgColor)
             context.setLineWidth(0.8)
             context.stroke(block)
-            drawCenteredText("PRINTED", centerX: 297.5, y: 518, size: 34, color: graphite, weight: .bold)
-            drawCenteredText("SIDE", centerX: 297.5, y: 480, size: 34, color: graphite, weight: .bold)
-            drawCenteredText("This is the printed side", centerX: 297.5, y: 446, size: 12, color: mid)
+            drawCenteredText(L("PRINTED"), centerX: 297.5, y: 518, size: 34, color: graphite, weight: .bold)
+            drawCenteredText(L("SIDE"), centerX: 297.5, y: 480, size: 34, color: graphite, weight: .bold)
+            drawCenteredText(L("This is the printed side"), centerX: 297.5, y: 446, size: 12, color: mid)
 
             context.setFillColor(coral.cgColor)
             context.fill(CGRect(x: 209, y: 354, width: 177, height: 7))
@@ -142,13 +143,13 @@ enum PrintUtilities {
 
             drawCenteredText("1  NOTE WHICH SIDE LANDED UP", centerX: 297.5, y: 236, size: 10, color: graphite, weight: .semibold)
             drawCenteredText("2  CONFIRM THE TURN IN FLIPSTACK", centerX: 297.5, y: 218, size: 10, color: graphite, weight: .semibold)
-            drawCenteredText("Nothing is written to the sheet. This sheet is safe to discard.", centerX: 297.5, y: 190, size: 10, color: mid)
+            drawCenteredText(L("Nothing is written to the sheet. This sheet is safe to discard."), centerX: 297.5, y: 190, size: 10, color: mid)
 
             context.setFillColor(coral.cgColor)
             context.fill(CGRect(x: 48, y: 128, width: 8, height: 8))
             context.fill(CGRect(x: 539, y: 128, width: 8, height: 8))
-            drawText("FlipStack flip calibration", at: CGPoint(x: 48, y: 96), size: 9, color: mid)
-            drawText("This sheet is safe to discard.", at: CGPoint(x: 48, y: 80), size: 9, color: mid)
+            drawText(L("FlipStack flip calibration"), at: CGPoint(x: 48, y: 96), size: 9, color: mid)
+            drawText(L("This sheet is safe to discard."), at: CGPoint(x: 48, y: 80), size: 9, color: mid)
         }
     }
 
@@ -233,7 +234,7 @@ enum PrintUtilities {
 
     private static func formattedNow() -> String {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US")
+        formatter.locale = AppLanguage.current.locale
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         return formatter.string(from: Date())
@@ -246,7 +247,7 @@ enum PrintUtilityError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .cannotCreatePDF:
-            return "Could not create the PDF."
+            return L("Could not create the PDF.")
         }
     }
 }

@@ -11,33 +11,33 @@ public enum FlipAxis: String, Codable, CaseIterable, Sendable, Identifiable {
 
     public var label: String {
         switch self {
-        case .longEdge: return "Long edge"
-        case .shortEdge: return "Short edge"
+        case .longEdge: return L("Long edge")
+        case .shortEdge: return L("Short edge")
         }
     }
 
     public var shortLabel: String {
         switch self {
-        case .longEdge: return "Book"
-        case .shortEdge: return "Calendar"
+        case .longEdge: return L("Book")
+        case .shortEdge: return L("Calendar")
         }
     }
 
     public var detail: String {
         switch self {
         case .longEdge:
-            return "For portrait documents and books. Turn the stack like a page, along the long edge."
+            return L("For portrait documents and books. Turn the stack like a page, along the long edge.")
         case .shortEdge:
-            return "For landscape pages and calendars. Turn the stack along the short edge."
+            return L("For landscape pages and calendars. Turn the stack along the short edge.")
         }
     }
 
     public var flipInstruction: String {
         switch self {
         case .longEdge:
-            return "Flip the stack over its long edge, like turning a book page."
+            return L("Flip the stack over its long edge, like turning a book page.")
         case .shortEdge:
-            return "Flip the stack over its short edge, like turning a calendar page."
+            return L("Flip the stack over its short edge, like turning a calendar page.")
         }
     }
 
@@ -95,17 +95,17 @@ public enum PrintMode: String, Codable, Sendable, CaseIterable, Identifiable {
 
     public var label: String {
         switch self {
-        case .singleSided: return "Single"
-        case .manualDuplex: return "Duplex"
-        case .booklet: return "Booklet"
+        case .singleSided: return L("Single")
+        case .manualDuplex: return L("Duplex")
+        case .booklet: return L("Booklet")
         }
     }
 
     public var longLabel: String {
         switch self {
-        case .singleSided: return "Single-sided"
-        case .manualDuplex: return "Manual duplex"
-        case .booklet: return "Booklet"
+        case .singleSided: return L("Single-sided")
+        case .manualDuplex: return L("Manual duplex")
+        case .booklet: return L("Booklet")
         }
     }
 
@@ -124,8 +124,8 @@ public enum DuplexPass: String, Codable, Sendable, Equatable {
 
     public var label: String {
         switch self {
-        case .fronts: return "Fronts"
-        case .backs: return "Backs"
+        case .fronts: return L("Fronts")
+        case .backs: return L("Backs")
         }
     }
 }
@@ -354,9 +354,9 @@ public struct DuplexConfiguration: Hashable, Sendable {
 }
 
 public enum DuplexCopy {
-    public static let flipMessage = "Flip the WHOLE stack over as one block — do NOT reorder or reverse the pages — reinsert it, then press Continue."
-    public static let reinsertMessage = "Reinsert the stack exactly as it is — do NOT reorder or reverse the pages — then press Continue."
-    public static let noReversal = "No page reversal is used. The physical flip puts the sheets back in the right order."
+    public static var flipMessage: String { L("Flip the WHOLE stack over as one block — do NOT reorder or reverse the pages — reinsert it, then press Continue.") }
+    public static var reinsertMessage: String { L("Reinsert the stack exactly as it is — do NOT reorder or reverse the pages — then press Continue.") }
+    public static var noReversal: String { L("No page reversal is used. The physical flip puts the sheets back in the right order.") }
 }
 
 public struct FlipPrompt: Equatable, Sendable {
@@ -407,11 +407,11 @@ public struct FlipPrompt: Equatable, Sendable {
                 flipAxis: flipAxis,
                 mode: mode,
                 hasOddPageCount: hasOddPageCount,
-                title: "Flip the stack",
+                title: L("Flip the stack"),
                 message: DuplexCopy.flipMessage,
                 detail: flipAxis.flipInstruction,
                 footnote: hasOddPageCount
-                    ? "The document has an odd page count, so the last sheet’s back stays blank."
+                    ? L("The document has an odd page count, so the last sheet’s back stays blank.")
                     : nil
             )
         case .reinsertOnly:
@@ -421,11 +421,11 @@ public struct FlipPrompt: Equatable, Sendable {
                 flipAxis: flipAxis,
                 mode: mode,
                 hasOddPageCount: hasOddPageCount,
-                title: "Reinsert the stack",
+                title: L("Reinsert the stack"),
                 message: DuplexCopy.reinsertMessage,
-                detail: "Your output tray ejects face-down, so the stack is already in the right order.",
+                detail: L("Your output tray ejects face-down, so the stack is already in the right order."),
                 footnote: hasOddPageCount
-                    ? "The document has an odd page count, so the last sheet’s back stays blank."
+                    ? L("The document has an odd page count, so the last sheet’s back stays blank.")
                     : nil
             )
         }
@@ -528,14 +528,14 @@ public enum DuplexFailure: Error, Equatable, Sendable {
 
     public var title: String {
         switch self {
-        case .invalidDocument: return "Cannot print this document"
-        case .printerUnavailable: return "Printer unavailable"
-        case .printerStopped: return "The printer stopped"
-        case .submitFailed: return "Could not start printing"
-        case .jobFailed: return "Printing did not finish"
-        case .jobStuck: return "The job is stuck"
-        case .monitorFailed: return "Lost contact with the printer"
-        case .cancelled: return "Printing canceled"
+        case .invalidDocument: return L("Cannot print this document")
+        case .printerUnavailable: return L("Printer unavailable")
+        case .printerStopped: return L("The printer stopped")
+        case .submitFailed: return L("Could not start printing")
+        case .jobFailed: return L("Printing did not finish")
+        case .jobStuck: return L("The job is stuck")
+        case .monitorFailed: return L("Lost contact with the printer")
+        case .cancelled: return L("Printing canceled")
         }
     }
 
@@ -547,19 +547,19 @@ public enum DuplexFailure: Error, Equatable, Sendable {
             return message
         case .printerStopped(_, let reasons):
             let detail = reasons.compactMap(PrinterReason.humanReadable).joined(separator: ", ")
-            return detail.isEmpty ? "The queue is stopped mid-job." : detail
+            return detail.isEmpty ? L("The queue is stopped mid-job.") : detail
         case .submitFailed(_, let message):
             return message
         case .jobFailed(_, let state, let reasons):
             let detail = reasons.compactMap(PrinterReason.humanReadable).joined(separator: ", ")
             if !detail.isEmpty { return detail }
-            return state == .canceled ? "The print job was canceled." : "The print job ended in \(state.label.lowercased()) state."
+            return state == .canceled ? L("The print job was canceled.") : "The print job ended in \(state.label.lowercased()) state."
         case .jobStuck(_, let seconds):
-            return "No progress was reported for \(Int(seconds)) seconds. Check the printer, then try again."
+            return String(format: L("No progress was reported for %lld seconds. Check the printer, then try again."), Int(seconds))
         case .monitorFailed(_, let message):
             return message
         case .cancelled:
-            return "The job was canceled."
+            return L("The job was canceled.")
         }
     }
 

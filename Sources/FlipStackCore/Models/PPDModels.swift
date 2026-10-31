@@ -10,12 +10,12 @@ public enum PPDOptionGroup: String, Codable, Sendable, CaseIterable {
 
     public var title: String {
         switch self {
-        case .color: return "Color"
-        case .paperSize: return "Paper"
-        case .mediaType: return "Media"
-        case .quality: return "Quality"
-        case .duplex: return "Duplex"
-        case .other: return "Other"
+        case .color: return L("Color")
+        case .paperSize: return L("Paper")
+        case .mediaType: return L("Media")
+        case .quality: return L("Quality")
+        case .duplex: return L("Duplex")
+        case .other: return L("Other")
         }
     }
 

@@ -175,6 +175,15 @@ if [[ ! -f "$ICON_DEST" ]]; then
     "$PLIST_BUDDY" -c "Delete :CFBundleIconFile" "$CONTENTS/Info.plist" >/dev/null 2>&1 || true
 fi
 
+# Copy the in-app language tables into the app bundle. The settings screen
+# selects a locale at runtime, so these are plain .lproj resources rather than
+# a compile-time String Catalog.
+for lproj in "$ROOT"/Resources/*.lproj; do
+    if [[ -d "$lproj" ]]; then
+        cp -R "$lproj" "$RESOURCES_DIR/"
+    fi
+done
+
 if [[ -f "$ROOT/LICENSE" ]]; then
     cp "$ROOT/LICENSE" "$RESOURCES_DIR/LICENSE"
 fi

@@ -119,7 +119,7 @@ struct QueueSection: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 HStack(spacing: 4) {
-                    Text("Job \(job.id)")
+                    Text(String(format: L("Job %lld"), job.id))
                         .font(FlipType.caption)
                         .foregroundStyle(FlipColor.tertiaryInk)
                     Text("·")
@@ -176,14 +176,14 @@ struct QueueSection: View {
             EmptyQueueArt(size: min(emptyArtWidth, 56))
                 .padding(.bottom, 1)
 
-            Text(model.selectedPrinter == nil ? "No printer selected" : "The queue is quiet")
+            Text(model.selectedPrinter == nil ? L("No printer selected") : L("The queue is quiet"))
                 .font(.system(.subheadline, design: .serif, weight: .semibold))
                 .foregroundStyle(FlipColor.ink)
 
             Text(
                 model.selectedPrinter == nil
                 ? "Choose a printer to see its jobs."
-                : "Active and recent jobs will appear here."
+                : L("Active and recent jobs will appear here.")
             )
             .font(FlipType.caption)
             .foregroundStyle(FlipColor.tertiaryInk)

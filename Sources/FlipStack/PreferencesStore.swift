@@ -10,9 +10,9 @@ enum PageOrientationChoice: String, CaseIterable, Identifiable, Codable, Sendabl
 
     var label: String {
         switch self {
-        case .automatic: return "Match PDF"
-        case .portrait: return "Portrait"
-        case .landscape: return "Landscape"
+        case .automatic: return L("Match PDF")
+        case .portrait: return L("Portrait")
+        case .landscape: return L("Landscape")
         }
     }
 }
@@ -80,6 +80,8 @@ protocol PreferencesStoring: AnyObject {
     func saveOptionChoices(_ choices: [String: String], for printerID: String)
     func loadLayout(for printerID: String) -> PrintLayoutPreferences
     func saveLayout(_ layout: PrintLayoutPreferences, for printerID: String)
+    func loadQualityOverrides(for printerID: String) -> [String: [String: String]]
+    func saveQualityOverrides(_ overrides: [String: [String: String]], for printerID: String)
 }
 
 final class PreferencesStore: PreferencesStoring {
@@ -87,6 +89,7 @@ final class PreferencesStore: PreferencesStoring {
     private let preferencesKey = "FlipStack.printerPreferences.v1"
     private let optionsKey = "FlipStack.printerOptions.v1"
     private let layoutKey = "FlipStack.printLayout.v1"
+    private let qualityOverridesKey = "FlipStack.qualityOverrides.v1"
     private let lastPrinterKey = "FlipStack.lastPrinterID"
     private let lastModeKey = "FlipStack.lastPrintMode.v1"
 
@@ -165,5 +168,21 @@ final class PreferencesStore: PreferencesStoring {
         guard let data = try? JSONEncoder().encode(layout) else { return }
         all[printerID] = data
         defaults.set(all, forKey: layoutKey)
+    }
+
+    func loadQualityOverrides(for printerID: String) -> [String: [String: String]] {
+        let all = defaults.dictionary(forKey: qualityOverridesKey) ?? [:]
+        guard let data = all[printerID] as? Data,
+              let decoded = try? JSONDecoder().decode([String: [String: String]].self, from: data) else {
+            return [:]
+        }
+        return decoded
+    }
+
+    func saveQualityOverrides(_ overrides: [String: [String: String]], for printerID: String) {
+        guard let data = try? JSONEncoder().encode(overrides) else { return }
+        var all = defaults.dictionary(forKey: qualityOverridesKey) ?? [:]
+        all[printerID] = data
+        defaults.set(all, forKey: qualityOverridesKey)
     }
 }

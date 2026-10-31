@@ -79,7 +79,7 @@ struct PDFPagePreview: View {
                     .strokeBorder(FlipColor.hairline, lineWidth: 0.5)
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(twoUp ? "Booklet sheet preview" : "Page preview")
+            .accessibilityLabel(twoUp ? L("Booklet sheet preview") : L("Page preview"))
             .accessibilityValue(
                 images.isEmpty
                 ? "Rendering"
@@ -96,9 +96,13 @@ struct PDFPagePreview: View {
                 }
                 .buttonStyle(FlipIconButtonStyle())
                 .disabled(pageIndex == 0)
-                .accessibilityLabel("Previous \(twoUp ? "sheet" : "page")")
+                .accessibilityLabel(String(format: L("Previous %@"), twoUp ? L("sheet") : L("page")))
 
-                Text(twoUp ? "Sheet \(currentSheet) of \(sheetCount)" : "Page \(max(1, currentSheet)) of \(sheetCount)")
+                Text(
+                    twoUp
+                    ? String(format: L("Sheet %lld of %lld"), currentSheet, sheetCount)
+                    : String(format: L("Page %lld of %lld"), max(1, currentSheet), sheetCount)
+                )
                     .font(.system(.caption, design: .rounded, weight: .semibold))
                     .monospacedDigit()
                     .foregroundStyle(FlipColor.secondaryInk)
@@ -113,7 +117,7 @@ struct PDFPagePreview: View {
                 }
                 .buttonStyle(FlipIconButtonStyle())
                 .disabled(pageIndex + pageStep >= pageCount)
-                .accessibilityLabel("Next \(twoUp ? "sheet" : "page")")
+                .accessibilityLabel(String(format: L("Next %@"), twoUp ? L("sheet") : L("page")))
 
                 Spacer(minLength: 2)
 
@@ -152,6 +156,135 @@ struct PDFPagePreview: View {
             guard let page = document.page(at: index) else { return nil }
             return page.thumbnail(of: NSSize(width: 420, height: 560), for: .mediaBox)
         }
+    }
+}
+
+/// A compact macOS Preview-style page rail. The checkmark is the print
+/// selection, not just a navigation cursor; the preview stays open while the
+/// selected-page PDF is regenerated.
+@MainActor
+private struct PageSelectionSidebar: View {
+    @ObservedObject var model: AppModel
+    let documentURL: URL
+
+    @State private var thumbnails: [Int: NSImage] = [:]
+    @State private var pageCount = 0
+
+    private var selectedCount: Int {
+        model.selectedPageNumbers.count
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 4) {
+                FlipEyebrow("Pages", color: FlipColor.tertiaryInk)
+                Spacer(minLength: 0)
+                Button("All") {
+                    model.selectAllPages()
+                }
+                .font(.system(size: 8, weight: .semibold))
+                .buttonStyle(.plain)
+                .foregroundStyle(selectedCount == pageCount ? FlipColor.tertiaryInk : FlipColor.coralDeep)
+                .disabled(selectedCount == pageCount)
+                .help("Select every page")
+                .accessibilityLabel("Select all pages")
+            }
+
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVStack(spacing: 7) {
+                    ForEach(1...max(1, pageCount), id: \.self) { page in
+                        pageThumbnail(page)
+                    }
+                }
+                .padding(.bottom, 2)
+            }
+            .frame(maxHeight: 166)
+        }
+        .task(id: documentURL) {
+            loadThumbnails()
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Page selection")
+    }
+
+    private func pageThumbnail(_ page: Int) -> some View {
+        let selected = model.isPageSelected(page)
+        return Button {
+            model.togglePageSelection(page)
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                Group {
+                    if let image = thumbnails[page] {
+                        Image(nsImage: image)
+                            .resizable()
+                            .interpolation(.high)
+                            .aspectRatio(contentMode: .fit)
+                    } else {
+                        RoundedRectangle(cornerRadius: 2, style: .continuous)
+                            .fill(FlipColor.toneStrong)
+                    }
+                }
+                .frame(width: 58, height: 75)
+                .background(Color.white)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                        .strokeBorder(
+                            selected ? FlipColor.coral : FlipColor.hairline,
+                            lineWidth: selected ? 1.3 : 0.5
+                        )
+                }
+                .opacity(selected ? 1 : 0.48)
+                .shadow(color: .black.opacity(0.08), radius: 1.5, x: 0, y: 1)
+
+                Circle()
+                    .fill(selected ? FlipColor.coral : FlipColor.printPaper)
+                    .frame(width: 15, height: 15)
+                    .overlay {
+                        Image(systemName: selected ? "checkmark" : "plus")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(selected ? FlipColor.onCoral : FlipColor.tertiaryInk)
+                    }
+                    .overlay(Circle().strokeBorder(FlipColor.hairline, lineWidth: 0.5))
+                    .offset(x: 4, y: -4)
+
+                Text("\(page)")
+                    .font(.system(size: 8, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(selected ? FlipColor.secondaryInk : FlipColor.tertiaryInk)
+                    .padding(.horizontal, 4)
+                    .frame(height: 13)
+                    .background(Capsule().fill(FlipColor.paper.opacity(0.9)))
+                    .overlay(Capsule().strokeBorder(FlipColor.hairline, lineWidth: 0.5))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, 3)
+            }
+            .frame(width: 78, height: 79, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(String(format: L("Page %lld"), page))
+        .accessibilityValue(selected ? L("Included in print") : L("Not included"))
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .help(
+            selected
+            ? String(format: L("Remove page %lld from the print"), page)
+            : String(format: L("Include page %lld in the print"), page)
+        )
+    }
+
+    private func loadThumbnails() {
+        guard let document = PDFDocument(url: documentURL) else {
+            pageCount = 0
+            thumbnails = [:]
+            return
+        }
+        pageCount = document.pageCount
+        var loaded: [Int: NSImage] = [:]
+        for index in 0..<document.pageCount {
+            guard let page = document.page(at: index) else { continue }
+            loaded[index + 1] = page.thumbnail(of: NSSize(width: 116, height: 150), for: .mediaBox)
+        }
+        thumbnails = loaded
     }
 }
 
@@ -259,12 +392,19 @@ struct DocumentPreviewPanel: View {
                 )
                 .accessibilityElement(children: .combine)
             } else if let activeURL {
-                PDFPagePreview(
-                    url: activeURL,
-                    twoUp: model.mode == .booklet,
-                    scale: model.effectiveScale,
-                    isGrayscale: model.isGrayscaleSelected
-                )
+                HStack(alignment: .top, spacing: 9) {
+                    if model.mode != .booklet, let document = model.selectedDocument {
+                        PageSelectionSidebar(model: model, documentURL: document.url)
+                            .frame(width: 82)
+                    }
+
+                    PDFPagePreview(
+                        url: activeURL,
+                        twoUp: model.mode == .booklet,
+                        scale: model.effectiveScale,
+                        isGrayscale: model.isGrayscaleSelected
+                    )
+                }
 
                 previewAdjustments
             } else {

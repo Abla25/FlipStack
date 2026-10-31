@@ -104,11 +104,11 @@ struct ModeSection: View {
     private func hint(for option: PrintMode) -> String {
         switch option {
         case .booklet:
-            return "Imposes the pages as folded signatures."
+            return L("Imposes the pages as folded signatures.")
         case .singleSided:
-            return "Prints each page once, without a flip."
+            return L("Prints each page once, without a flip.")
         case .manualDuplex:
-            return "Prints odd pages, pauses for a flip, then prints even pages."
+            return L("Prints odd pages, pauses for a flip, then prints even pages.")
         }
     }
 
@@ -233,11 +233,11 @@ struct ModeSection: View {
             HStack(spacing: 5) {
                 FlipMetaChip(
                     systemName: model.preferences.flipAxis.symbolName,
-                    text: "\(model.preferences.flipAxis.label) flip"
+                    text: String(format: L("%@ flip"), model.preferences.flipAxis.label)
                 )
                 FlipMetaChip(
                     systemName: model.preferences.ejectsFaceDown ? "arrow.down" : "arrow.up",
-                    text: model.preferences.ejectsFaceDown ? "Face-down tray" : "Face-up tray"
+                    text: model.preferences.ejectsFaceDown ? L("Face-down tray") : L("Face-up tray")
                 )
                 Spacer(minLength: 0)
                 Button {
@@ -613,7 +613,7 @@ struct OutputSection: View {
                 model.setGrayscale(grayscale)
             }
         } label: {
-            Text(title)
+            Text(L(title))
                 .font(.system(.caption2, design: .default, weight: .semibold))
                 .foregroundStyle(isSelected ? FlipColor.onCoral : FlipColor.secondaryInk)
                 .padding(.horizontal, 10)
@@ -697,7 +697,7 @@ struct OutputSection: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                     if let document = model.selectedDocument {
-                        Text("\(document.isLandscape ? "Landscape" : "Portrait") · \(document.formattedPageCount)")
+                        Text("\(document.isLandscape ? L("Landscape") : L("Portrait")) · \(document.formattedPageCount)")
                             .font(FlipType.caption)
                             .foregroundStyle(FlipColor.tertiaryInk)
                             .lineLimit(1)
@@ -724,15 +724,15 @@ struct OutputSection: View {
                                     model.setValue(choice.keyword, for: option)
                                 } label: {
                                     if choice.keyword == model.selectedValue(for: option) {
-                                        Label(choice.displayLabel, systemImage: "checkmark")
+                                        Label(L(choice.displayLabel), systemImage: "checkmark")
                                     } else {
-                                        Text(choice.displayLabel)
+                                        Text(L(choice.displayLabel))
                                     }
                                 }
                             }
                         } label: {
                             HStack(spacing: 4) {
-                                Text(model.selectedPaperLabel ?? "System default")
+                                Text(model.selectedPaperLabel.map(L) ?? L("System default"))
                                     .font(FlipType.footnoteStrong)
                                     .foregroundStyle(FlipColor.ink)
                                     .lineLimit(1)
@@ -762,15 +762,15 @@ struct OutputSection: View {
                                     model.setValue(choice.keyword, for: option)
                                 } label: {
                                     if choice.keyword == model.selectedValue(for: option) {
-                                        Label(choice.displayLabel, systemImage: "checkmark")
+                                        Label(L(choice.displayLabel), systemImage: "checkmark")
                                     } else {
-                                        Text(choice.displayLabel)
+                                        Text(L(choice.displayLabel))
                                     }
                                 }
                             }
                         } label: {
                             HStack(spacing: 3) {
-                                Text(model.selectedMediaLabel ?? "Driver default")
+                                Text(model.selectedMediaLabel.map(L) ?? L("Driver default"))
                                     .font(FlipType.caption)
                                     .foregroundStyle(FlipColor.tertiaryInk)
                                     .lineLimit(1)
@@ -787,7 +787,7 @@ struct OutputSection: View {
                         .accessibilityLabel("Media type")
                         .accessibilityValue(model.selectedMediaLabel ?? "Driver default")
                     } else if let media = model.selectedMediaLabel {
-                        Text(media)
+                        Text(L(media))
                             .font(FlipType.caption)
                             .foregroundStyle(FlipColor.tertiaryInk)
                             .lineLimit(1)
