@@ -220,6 +220,42 @@ final class CUPSClientTests: XCTestCase {
         XCTAssertEqual(job?.state, .processing)
     }
 
+    func testJobPrefersCompletionHistoryOverStaleActiveEntry() async throws {
+        let runner = CUPSStubCommandRunner { _, arguments in
+            switch arguments {
+            case ["-W", "not-completed", "-o", "L1800"]:
+                return cupsTestResult("L1800-71  demo-user  1024   Fri Oct 30 20:52:21 2026\n")
+            case ["-p", "L1800"]:
+                return cupsTestResult("printer L1800 is idle.  enabled since Fri Oct 30 20:52:21 2026\n")
+            case ["-W", "completed", "-o", "L1800"]:
+                return cupsTestResult("L1800-71  demo-user  1024   Fri Oct 30 20:52:21 2026\n")
+            default:
+                return cupsTestResult(status: 1, stderr: "unexpected\n")
+            }
+        }
+
+        let job = try await CUPSClient(runner: runner).job(id: 71, printerID: "L1800")
+        XCTAssertEqual(job?.state, .completed)
+    }
+
+    func testJobDoesNotTrustAnOlderCompletionWithTheSameID() async throws {
+        let runner = CUPSStubCommandRunner { _, arguments in
+            switch arguments {
+            case ["-W", "not-completed", "-o", "L1800"]:
+                return cupsTestResult("L1800-72  demo-user  1024   Fri Oct 30 20:52:21 2026\n")
+            case ["-p", "L1800"]:
+                return cupsTestResult("printer L1800 now printing L1800-72.  enabled since Fri Oct 30 20:52:21 2026\n")
+            case ["-W", "completed", "-o", "L1800"]:
+                return cupsTestResult("L1800-72  demo-user  1024   Thu Oct 29 20:52:21 2026\n")
+            default:
+                return cupsTestResult(status: 1, stderr: "unexpected\n")
+            }
+        }
+
+        let job = try await CUPSClient(runner: runner).job(id: 72, printerID: "L1800")
+        XCTAssertEqual(job?.state, .processing)
+    }
+
     func testJobFallsBackToCompletionHistory() async throws {
         let runner = CUPSStubCommandRunner { _, arguments in
             switch arguments {

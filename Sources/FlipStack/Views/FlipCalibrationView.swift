@@ -120,8 +120,8 @@ struct FlipCalibrationView: View {
         VStack(alignment: .leading, spacing: 14) {
             calibrationHeading(
                 eyebrow: "Check the sheet",
-                title: "How did it land?",
-                subtitle: "First note which side landed facing up. Then confirm the turn direction FlipStack recommends for this document."
+                title: "Take the sheet out. Don't turn it yet.",
+                subtitle: "Look at which side is facing up, then confirm the turn FlipStack should use for the stack."
             )
 
             HStack(alignment: .top, spacing: 13) {
@@ -161,7 +161,7 @@ struct FlipCalibrationView: View {
 
     private func trayQuestion(_ calibration: FlipCalibration) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            calibrationQuestionLabel("1", "When it landed: which side was up?")
+            calibrationQuestionLabel("1", "Which side is facing up?")
             HStack(spacing: 6) {
                 calibrationChoice(
                     title: "Printed side up",

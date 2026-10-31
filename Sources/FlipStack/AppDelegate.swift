@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private var model: AppModel?
     private var orchestrator: DuplexOrchestrator?
     private var menuBar: MenuBarController?
+    private var studioWindow: StudioWindowController?
     private var notificationService: NotificationService?
     private var pendingDocumentURL: URL?
 
@@ -26,11 +27,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             let defaults = UserDefaults(suiteName: suiteName) ?? .standard
             defaults.removePersistentDomain(forName: suiteName)
             preferencesStore = PreferencesStore(defaults: defaults)
-            preferencesStore.lastPrinterID = DemoSession.demoPrinterID()
-            preferencesStore.save(
-                DemoSession.demoPreferences(for: demo.scenario),
-                for: DemoSession.demoPrinterID()
-            )
+            if demo.scenario != .noPrinter {
+                preferencesStore.lastPrinterID = DemoSession.demoPrinterID()
+                preferencesStore.save(
+                    DemoSession.demoPreferences(for: demo.scenario),
+                    for: DemoSession.demoPrinterID()
+                )
+            }
             spooler = demo.spooler
             ppdProvider = demo.ppdProvider
             statusProvider = demo.statusProvider
@@ -55,6 +58,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         )
         let menuBar = MenuBarController(model: model, orchestrator: orchestrator)
         menuBar.allowsAutomaticPresentation = Self.argumentValue("--capture-panel", in: arguments) == nil
+        let studioWindow = StudioWindowController(model: model, orchestrator: orchestrator)
+        menuBar.mainWindowIsVisible = { [weak studioWindow] in
+            studioWindow?.window?.isVisible == true
+        }
 
         notifications.onOpen = { [weak menuBar] in
             menuBar?.present()
@@ -70,8 +77,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         self.orchestrator = orchestrator
         self.model = model
         self.menuBar = menuBar
+        self.studioWindow = studioWindow
 
         configureMainMenu(model: model)
+        NotificationCenter.default.addObserver(
+            forName: .flipStackOpenStudioWindow,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.openStudioWindow() }
+        }
         model.start()
 
         if let pendingDocumentURL {
@@ -97,6 +112,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                     ) ?? false
                     NSLog("FlipStack demo screenshot \(ok ? "written" : "failed")")
                     NSApp.terminate(nil)
+                } else if arguments.contains("--capture-studio"),
+                          let path = Self.argumentValue("--capture-studio", in: arguments) {
+                    self?.openStudioWindow()
+                    try? await Task.sleep(nanoseconds: 600_000_000)
+                    _ = self?.studioWindow?.renderScreenshot(to: URL(fileURLWithPath: path))
+                    NSLog("FlipStack studio screenshot written")
+                    NSApp.terminate(nil)
+                } else if arguments.contains("--open-studio") {
+                    self?.openStudioWindow()
                 } else {
                     menuBar?.present()
                 }
@@ -126,6 +150,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         if arguments.contains("--open-panel") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak menuBar] in
                 menuBar?.present()
+            }
+        }
+
+        if arguments.contains("--open-studio") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [weak self] in
+                self?.openStudioWindow()
             }
         }
 
@@ -206,6 +236,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         let viewMenu = NSMenu(title: "View")
         viewItem.submenu = viewMenu
         mainMenu.addItem(viewItem)
+        let openWindowItem = NSMenuItem(
+            title: "Open FlipStack Window",
+            action: #selector(openStudioWindow),
+            keyEquivalent: "n"
+        )
+        openWindowItem.target = self
+        viewMenu.addItem(openWindowItem)
+        viewMenu.addItem(.separator())
         let refreshItem = NSMenuItem(
             title: "Refresh Printers",
             action: #selector(refreshPrinters),
@@ -213,6 +251,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         )
         refreshItem.target = self
         viewMenu.addItem(refreshItem)
+
+        let windowItem = NSMenuItem(title: "Window", action: nil, keyEquivalent: "")
+        let windowMenu = NSMenu(title: "Window")
+        windowItem.submenu = windowMenu
+        mainMenu.addItem(windowItem)
+        windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        windowMenu.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        NSApp.windowsMenu = windowMenu
 
         NSApp.mainMenu = mainMenu
     }
@@ -222,8 +268,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     @objc private func printDocument() {
-        menuBar?.present()
         model?.requestPrint()
+    }
+
+    @objc func openStudioWindow() {
+        menuBar?.close()
+        studioWindow?.show()
     }
 
     @objc private func refreshPrinters() {
@@ -243,7 +293,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         _ sender: NSApplication,
         hasVisibleWindows flag: Bool
     ) -> Bool {
-        menuBar?.present()
+        if flag {
+            return true
+        }
+        if let studioWindow {
+            studioWindow.show()
+        } else {
+            menuBar?.present()
+        }
         return true
     }
 
@@ -257,8 +314,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 && !model.orchestrator.phase.isActive
                 && model.flipAxisSetup == nil
                 && model.flipCalibration == nil
+        case #selector(openStudioWindow):
+            return studioWindow != nil
         case #selector(refreshPrinters):
             return !model.isLoadingPrinters
+                && model.flipCalibration == nil
+                && !model.orchestrator.phase.isActive
         default:
             return true
         }

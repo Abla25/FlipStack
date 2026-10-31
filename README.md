@@ -2,7 +2,7 @@
 
 FlipStack is a menu-bar print manager for printers that cannot turn a page over by themselves. It handles everyday single-sided jobs, guided manual duplex, and folded booklets from one quiet panel. It prints the fronts, guides you through turning the whole stack as one block, and prints the backs. Page order stays correct. Nothing is shuffled, and no page reversal is used.
 
-FlipStack lives in the menu bar, works with the printers already configured in macOS, and reads each queue's real PPD for the options that queue actually supports. If your printer can print one side at a time, FlipStack can help it print two.
+FlipStack lives in the menu bar (and can also open as a normal resizable window), works with the printers already configured in macOS, and reads each queue's real PPD for the options that queue actually supports. If your printer can print one side at a time, FlipStack can help it print two.
 
 ## How the magic works
 
@@ -29,10 +29,10 @@ There are no timer-based "the printer is probably done" transitions. FlipStack w
 
 - **Everyday single-sided printing.** One clean pass for ordinary documents, envelopes, and labels, with copies, page ranges, and the same PPD-driven options.
 - **Guided manual duplex.** Two passes, one clear flip prompt, and a state machine that keeps the document in order from start to finish.
-- **Automatic flip calibration.** On the first two-sided job, FlipStack can print one generic orientation sheet and turn the answer into a saved flip axis and tray setting before the real document is sent. Re-run it from printer settings at any time.
+- **Guided flip calibration.** On the first two-sided job, FlipStack opens a setup screen and prints one generic orientation sheet only after you confirm. Its answers become a saved flip axis and tray setting before the real document is sent. Re-run it from printer settings at any time.
 - **PPD-driven options.** Color or black-and-white, paper size, media type, and print quality come from the queue's real PPD. FlipStack does not invent driver choices, and remembers the choices per printer.
 - **Quality presets that actually apply.** Eco, Standard, High, and Photo resolve to real PPD choices for resolution, media, color, and optional ICC profile settings. Anything the driver does not expose stays untouched.
-- **Layout and scale controls.** Automatic or forced landscape orientation, fit-to-page, or an exact 50–150% print scale works on both passes. Exact scaling is applied to a temporary PDF before submission; the preview updates with the scale.
+- **Layout and scale controls.** Match the PDF, portrait, or landscape; fit-to-page or an exact 50–150% print scale. The page dimensions, queue paper, exact percentage, color mode, and quality appear before the action bar. Exact scaling is applied to a temporary PDF before submission; the preview updates with the scale.
 - **Print preview.** See the selected pages inside the panel before printing. Booklet previews pair the imposed PDF pages back into the actual 2-up sheet sides and let you inspect fronts and backs.
 - **Page ranges done right.** Selected pages are compiled in order before the two-pass flow, so the sheet pairing stays correct even when the range starts on an even page. Ranges work in single-sided, duplex, and booklet modes.
 - **Booklet imposition.** Two-up booklet printing with configurable signatures, plus fold and staple hints. Booklets use the same guided front-and-back workflow.
@@ -47,9 +47,9 @@ There are no timer-based "the printer is probably done" transitions. FlipStack w
 
 The screenshots below use a demo queue so no real document or printer data is shown.
 
-### Ready for a document
+### First-time setup
 
-![FlipStack menu-bar panel with a printer selected and an empty document drop area](docs/screenshots/empty.png)
+![FlipStack menu-bar panel with a printer selected, a document drop area, and a guided first-time setup card](docs/screenshots/empty.png)
 
 ### A document ready to print
 
@@ -61,7 +61,7 @@ The screenshots below use a demo queue so no real document or printer data is sh
 
 ### Calibrate the flip
 
-![FlipStack automatic flip calibration asking which side of the orientation sheet landed up and confirming the turn direction](docs/screenshots/calibration.png)
+![FlipStack guided flip calibration asking which side of the orientation sheet landed up and confirming the turn direction](docs/screenshots/calibration.png)
 
 ### Flip when the fronts are done
 
@@ -93,7 +93,7 @@ The screenshots below use a demo queue so no real document or printer data is sh
 2. Open the DMG and drag **FlipStack.app** to **Applications**.
 3. Launch FlipStack from Applications. Gatekeeper verifies the Developer ID signature and notarization.
 4. On the first flip prompt, allow notifications if you want FlipStack to get your attention while another app is in front. Notifications are optional; the flip popover opens either way.
-5. Use the FlipStack icon in the menu bar. The app does not appear in the Dock.
+5. Use the FlipStack icon in the menu bar for the quick panel, or right-click it and choose **Open FlipStack Window** for the full window. The app does not keep a Dock icon while the window is closed.
 
 Release builds are universal: the same DMG runs natively on Apple silicon and Intel Macs.
 
@@ -159,15 +159,15 @@ Unsigned or ad-hoc builds are for local development only. The release workflow r
 7. When the flip prompt appears, take the whole stack, flip it as instructed, reinsert it, and press **Continue**.
 8. Watch the second pass and the queue from the same panel.
 
-The first time you print a two-sided job on a given printer, FlipStack automatically prints one generic orientation sheet before the document. The sheet uses the queue's current paper and media and contains no document content. It asks which side landed facing up, recommends a long-edge turn for portrait/book-style documents or a short-edge turn for landscape/calendar-style documents, and waits for both answers to be confirmed. The real document waits until you save the calibration. You can cancel into manual setup instead, and both paths are saved for that printer. Re-run calibration or print a standalone orientation sheet later from the printer settings. Single-sided jobs do not need this setup.
+The first time you print a two-sided job on a given printer, FlipStack opens a guided setup screen. The generic orientation sheet prints only after you press **Print setup sheet**. The sheet uses the queue's current paper and media and contains no document content. It asks which side landed facing up, recommends a long-edge turn for portrait/book-style documents or a short-edge turn for landscape/calendar-style documents, and waits for both answers to be confirmed. The real document waits until you save the calibration. You can cancel into manual setup instead, and both paths are saved for that printer. Re-run calibration or print a standalone orientation sheet later from the printer settings. Single-sided jobs do not need this setup.
 
 Booklet mode pads the document to a multiple of four pages, imposes two pages per side, and supports signatures for longer documents. FlipStack uses the long-edge flip for booklets and shows the fold and staple instructions after the sheets are printed.
 
 For two-sided jobs, FlipStack prints one copy at a time so every back lands on its matching front. To print several copies, print another after the first completes. Single-sided jobs can print up to 20 copies in one job. Page ranges are compiled in order before printing: the two-pass flow always alternates front and back from the first selected page, even when the range starts on an even page.
 
-Use the eye button on the document row to open the inline print preview. The preview has its own scale slider and color/black-and-white toggle so the page updates live; for booklets, switch between fronts and backs to inspect the actual 2-up sheet sides. Close the preview to return to the print controls.
+Use the eye button on the document row to open the inline print preview. The preview has the same compact scale stepper and color/black-and-white control so the page updates live; for booklets, switch between fronts and backs to inspect the actual 2-up sheet sides. Close the preview to return to the print controls.
 
-Quality presets are applied to the real driver choices. Eco favours the lowest supported resolution and plain media; Standard picks the balanced option; High picks the best non-photo quality; Photo uses maximum quality, photo media, color, and the driver's photo/ICC profile when present. Choose a preset, or keep fine-tuning the individual driver options; the preset indicator shows Custom when the current combination does not match a preset. Layout orientation, fit-to-page or exact scale, and color/black-and-white mode are applied to both passes. Exact scale is baked into a temporary PDF before submission. The preview reflects the selected scale and color mode.
+Quality presets are applied to the real driver choices. Eco avoids the absolute lowest draft resolution when a choice at or above 300 dpi exists, so it stays light without looking like a fax; Standard picks the balanced option; High picks the best non-photo quality; Photo uses maximum quality, photo media, and the driver's photo/ICC profile when present. Quality and color are independent: choosing a preset while B&W is active keeps B&W, and the preset stays selected. Choose a preset, or fine-tune paper, media, and quality; the preset indicator shows Custom when the current combination does not match. Orientation, fit-to-page or exact scale, and color mode are applied to both passes. Exact scale is baked into a temporary PDF before submission. The preview reflects the selected scale and color mode.
 
 ### Settings that are remembered
 
@@ -175,7 +175,7 @@ FlipStack saves the following per printer:
 
 - The selected PPD choices: color mode, paper size, media type, quality/resolution, and any driver color profiles.
 - The quality preset is derived from those choices, so the last effective preset is restored.
-- Layout: automatic/landscape orientation, fit-to-page or exact scale, and the selected color/black-and-white PPD choice.
+- Layout: Match PDF/portrait/landscape orientation, fit-to-page or exact scale, and the selected color/black-and-white PPD choice.
 - The physical flip axis, the face-down output-tray setting, and whether setup has been completed, including a calibration result.
 - The last selected printer and the last print mode (single, duplex, or booklet).
 
@@ -263,7 +263,7 @@ FlipStack (menu-bar app, SwiftUI, AppKit)
 
 | Module | Responsibility |
 | --- | --- |
-| `Sources/FlipStack` | Menu-bar panel, SwiftUI views, AppKit window behavior, notifications, per-printer preferences |
+| `Sources/FlipStack` | Menu-bar quick panel, optional normal window, SwiftUI views, AppKit window behavior, notifications, per-printer preferences |
 | `Sources/FlipStackCore/Models` | Printer, job, PPD, duplex, and booklet value types; the manual-duplex state model |
 | `Sources/FlipStackCore/Status` | IPP and SNMP printer status, state reasons, and supplies |
 | `Sources/FlipStackCore/Compatibility` | Quality presets and PPD color/profile mapping |

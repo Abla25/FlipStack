@@ -10,6 +10,8 @@ import SwiftUI
 final class DemoSession {
     enum Scenario: String {
         case empty
+        case onboarding
+        case noPrinter
         case ready
         case flip
         case printing
@@ -26,6 +28,7 @@ final class DemoSession {
         case rangePrinting
         case preview
         case previewAdjusted
+        case grayscale
         case bookletPreview
         case quality
         case firstPrintSetup
@@ -65,6 +68,7 @@ final class DemoSession {
     nonisolated static func demoPreferences(for scenario: Scenario) -> PrinterPreferences {
         if scenario == .firstPrintSetup
             || scenario == .firstPrintPending
+            || scenario == .onboarding
             || scenario == .calibrationApplied {
             return .unconfigured
         }
@@ -78,6 +82,7 @@ final class DemoSession {
     /// Waits until the view that the screenshot is meant to document is on
     /// screen, then lets layout and the final animation settle.
     func prepareAndWait(model: AppModel, timeout: TimeInterval = 20) async {
+        if scenario == .noPrinter { return }
         let printerDeadline = Date().addingTimeInterval(10)
         while model.selectedPrinter == nil && Date() < printerDeadline {
             try? await Task.sleep(nanoseconds: 100_000_000)
@@ -90,7 +95,7 @@ final class DemoSession {
         }
 
         switch scenario {
-        case .empty:
+        case .empty, .onboarding, .noPrinter:
             break
         case .range:
             await model.acceptDocument(url: documentURL)
@@ -111,6 +116,11 @@ final class DemoSession {
             }
             model.togglePreview()
             await waitForPreview(model: model, timeout: timeout)
+        case .grayscale:
+            await model.acceptDocument(url: documentURL)
+            if model.supportsColorModeToggle {
+                model.setGrayscale(true)
+            }
         case .bookletPreview:
             await model.acceptDocument(url: documentURL)
             model.mode = .booklet
@@ -119,7 +129,7 @@ final class DemoSession {
         case .quality:
             await model.acceptDocument(url: documentURL)
             model.applyQualityPreset(.photo)
-            model.forceLandscape = true
+            model.pageOrientation = .landscape
             model.fitToPage = true
         case .firstPrintPending:
             await model.acceptDocument(url: documentURL)
@@ -366,7 +376,7 @@ actor DemoSpooler: PrintSpooling {
     }
 
     func listPrinters() async throws -> [Printer] {
-        [printer]
+        scenario == .noPrinter ? [] : [printer]
     }
 
     func printer(id: String) async throws -> Printer {

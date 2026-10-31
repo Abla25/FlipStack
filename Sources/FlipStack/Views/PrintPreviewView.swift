@@ -179,27 +179,11 @@ struct DocumentPreviewPanel: View {
                 Text("Scale")
                     .font(FlipType.captionStrong)
                     .foregroundStyle(FlipColor.secondaryInk)
-                    .frame(width: 36, alignment: .leading)
+                    .frame(width: 34, alignment: .leading)
 
-                Slider(
-                    value: Binding(
-                        get: { Double(model.fitToPage ? 100 : model.scalePercent) },
-                        set: { model.setScalePercent(Int($0.rounded())) }
-                    ),
-                    in: 50...150,
-                    step: 5
-                )
-                .controlSize(.mini)
-                .tint(FlipColor.coral)
-                .disabled(model.isPreparingPrint)
-                .accessibilityLabel("Preview print scale")
-                .accessibilityValue(model.fitToPage ? "Fit to page" : "\(model.scalePercent) percent")
-
-                Text(model.fitToPage ? "Fit" : "\(model.scalePercent)%")
-                    .font(.system(.caption2, design: .rounded, weight: .semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(FlipColor.secondaryInk)
-                    .frame(width: 30, alignment: .trailing)
+                FlipScaleStepper(model: model, compact: true)
+                    .disabled(model.isPreparingPrint)
+                    .accessibilityLabel("Preview print scale")
             } else {
                 Text("2-up booklet")
                     .font(FlipType.captionStrong)

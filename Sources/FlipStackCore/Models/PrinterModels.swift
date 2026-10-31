@@ -33,6 +33,9 @@ public struct Printer: Identifiable, Hashable, Codable, Sendable {
     public var isDefault: Bool
     public var acceptsJobs: Bool
     public var ppdPath: String?
+    /// The CUPS job currently printing on this queue, when `lpstat -p`
+    /// reports one. Used to avoid attributing another job's activity to ours.
+    public var printingJobID: Int?
 
     public init(
         id: String,
@@ -44,7 +47,8 @@ public struct Printer: Identifiable, Hashable, Codable, Sendable {
         stateReasons: [String] = [],
         isDefault: Bool = false,
         acceptsJobs: Bool = true,
-        ppdPath: String? = nil
+        ppdPath: String? = nil,
+        printingJobID: Int? = nil
     ) {
         self.id = id
         self.name = name
@@ -56,6 +60,7 @@ public struct Printer: Identifiable, Hashable, Codable, Sendable {
         self.isDefault = isDefault
         self.acceptsJobs = acceptsJobs
         self.ppdPath = ppdPath
+        self.printingJobID = printingJobID
     }
 
     public var displayName: String {

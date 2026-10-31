@@ -134,6 +134,16 @@ struct HeaderView: View {
             Spacer(minLength: 6)
 
             Button {
+                NotificationCenter.default.post(name: .flipStackOpenStudioWindow, object: nil)
+            } label: {
+                Image(systemName: "macwindow")
+            }
+            .buttonStyle(FlipIconButtonStyle())
+            .help("Open FlipStack in a normal window")
+            .accessibilityLabel("Open FlipStack window")
+            .accessibilityHint("Opens the print studio in a resizable desktop window.")
+
+            Button {
                 guard !isLocked, !model.isLoadingPrinters, !model.isRefreshing else { return }
                 Task { await model.refreshAll() }
             } label: {

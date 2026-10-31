@@ -24,6 +24,7 @@ final class MenuBarController: NSObject {
     private var lastAnnouncedPhase: String?
     private var lastCalibrationStage: FlipCalibration.Stage?
     var allowsAutomaticPresentation = true
+    var mainWindowIsVisible: () -> Bool = { false }
 
     init(model: AppModel, orchestrator: DuplexOrchestrator) {
         self.model = model
@@ -68,9 +69,16 @@ final class MenuBarController: NSObject {
     private func showContextMenu() {
         guard let button = statusItem.button else { return }
         let menu = NSMenu()
-        let open = NSMenuItem(title: "Open FlipStack", action: #selector(openFromMenu), keyEquivalent: "")
-        open.target = self
-        menu.addItem(open)
+        let openWindow = NSMenuItem(
+            title: "Open FlipStack Window…",
+            action: #selector(AppDelegate.openStudioWindow),
+            keyEquivalent: ""
+        )
+        openWindow.target = NSApp.delegate
+        menu.addItem(openWindow)
+        let openPanel = NSMenuItem(title: "Open Quick Panel", action: #selector(openFromMenu), keyEquivalent: "")
+        openPanel.target = self
+        menu.addItem(openPanel)
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit FlipStack", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
@@ -121,6 +129,7 @@ final class MenuBarController: NSObject {
         effectView.state = .active
         effectView.wantsLayer = true
         effectView.layer?.cornerRadius = FlipMetrics.panelRadius
+        effectView.layer?.cornerCurve = .continuous
         effectView.layer?.masksToBounds = true
         effectView.layer?.borderWidth = 0.5
         effectView.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.45).cgColor
@@ -246,7 +255,9 @@ final class MenuBarController: NSObject {
     func close() {
         guard isVisible else { return }
         isVisible = false
-        model.isShowingQueue = false
+        if !mainWindowIsVisible() {
+            model.isShowingQueue = false
+        }
         removeMonitors()
         let reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         if reduceMotion {
@@ -282,9 +293,11 @@ final class MenuBarController: NSObject {
                 .environment(\.dynamicTypeSize, largeText ? .accessibility2 : .large)
         }
         .frame(width: FlipMetrics.panelWidth, height: height)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .clipShape(
+            RoundedRectangle(cornerRadius: FlipMetrics.panelRadius, style: .continuous)
+        )
         .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
+            RoundedRectangle(cornerRadius: FlipMetrics.panelRadius, style: .continuous)
                 .stroke(Color.primary.opacity(0.12), lineWidth: 0.5)
         }
 
@@ -361,7 +374,7 @@ final class MenuBarController: NSObject {
                 self.announceIfNeeded(phase)
                 switch phase {
                 case .preparing, .printing, .awaitingFlip:
-                    if self.allowsAutomaticPresentation {
+                    if self.allowsAutomaticPresentation, !self.mainWindowIsVisible() {
                         self.present()
                     }
                 default:
@@ -376,6 +389,7 @@ final class MenuBarController: NSObject {
             .sink { [weak self] document in
                 guard document != nil else { return }
                 guard self?.allowsAutomaticPresentation == true else { return }
+                guard self?.mainWindowIsVisible() == false else { return }
                 self?.present()
             }
             .store(in: &cancellables)

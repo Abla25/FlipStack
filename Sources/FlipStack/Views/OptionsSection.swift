@@ -315,19 +315,16 @@ struct OutputSection: View {
                 }
             }
 
+            pageSetupCard
+
             pageSelectionControl
 
-            if model.mode != .booklet {
-                layoutControl
-                scaleControl
+            if model.supportsColorModeToggle {
+                colorModeControl
             }
 
             if !model.qualityPresets.isEmpty {
                 qualityPresetControl
-            }
-
-            if model.supportsColorModeToggle {
-                colorModeControl
             }
 
             if !model.colorProfileOptions.isEmpty {
@@ -336,51 +333,8 @@ struct OutputSection: View {
                 }
             }
 
-            if !model.driverOptions.isEmpty {
-                driverOptionsSummary
-                if isOptionsExpanded {
-                    if let expanded = expandedOption {
-                        DriverChoiceList(
-                            option: expanded,
-                            selectedKeyword: model.selectedValue(for: expanded),
-                            onSelect: { keyword in
-                                withAnimation(FlipMotion.quick(reduceMotion)) {
-                                    model.setValue(keyword, for: expanded)
-                                    expandedOptionKeyword = nil
-                                }
-                            },
-                            onClose: {
-                                withAnimation(FlipMotion.quick(reduceMotion)) {
-                                    expandedOptionKeyword = nil
-                                }
-                            }
-                        )
-                        .transition(
-                            reduceMotion
-                            ? .opacity
-                            : .opacity.combined(with: .move(edge: .top))
-                        )
-                    } else {
-                        LazyVGrid(
-                            columns: [
-                                GridItem(.flexible(), spacing: 8),
-                                GridItem(.flexible(), spacing: 8)
-                            ],
-                            spacing: 8
-                        ) {
-                            ForEach(model.driverOptions) { option in
-                                DriverOptionChip(
-                                    option: option,
-                                    selectedKeyword: model.selectedValue(for: option),
-                                    isExpanded: false,
-                                    action: {
-                                        toggleExpanded(option)
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
+            if model.ppd == nil, !model.isLoadingPPD {
+                driverNote
             } else if model.isLoadingPPD {
                 HStack(spacing: 7) {
                     ProgressView().controlSize(.small)
@@ -388,8 +342,6 @@ struct OutputSection: View {
                         .font(FlipType.footnote)
                         .foregroundStyle(FlipColor.secondaryInk)
                 }
-            } else {
-                driverNote
             }
         }
         .onChange(of: model.selectedPrinter?.id) { _ in
@@ -580,10 +532,17 @@ struct OutputSection: View {
 
     private var qualityPresetControl: some View {
         HStack(spacing: 5) {
-            Text(model.activeQualityPreset == nil ? "Quality · Custom" : "Quality")
+            Text("Quality")
                 .font(FlipType.captionStrong)
                 .foregroundStyle(FlipColor.secondaryInk)
                 .lineLimit(1)
+
+            if model.activeQualityPreset == nil {
+                Text("Custom")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(FlipColor.tertiaryInk)
+                    .lineLimit(1)
+            }
 
             Spacer(minLength: 4)
 
@@ -618,6 +577,7 @@ struct OutputSection: View {
             }
         }
         .disabled(isBusy)
+        .help("Quality is independent of Color / B&W. Choosing a quality preset never switches the print back to color.")
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Print quality")
         .accessibilityValue(model.activeQualityPreset?.title ?? "Custom driver settings")
@@ -724,124 +684,202 @@ struct OutputSection: View {
         }
     }
 
-    private var layoutControl: some View {        HStack(spacing: 5) {
-            Text("Layout")
-                .font(FlipType.captionStrong)
-                .foregroundStyle(FlipColor.secondaryInk)
-
-            Spacer(minLength: 4)
-
-            layoutChip(
-                title: "Auto",
-                selected: !model.forceLandscape,
-                help: "Use the document's own page orientation."
-            ) {
-                withAnimation(FlipMotion.quick(reduceMotion)) {
-                    model.forceLandscape = false
+    /// The page facts come first, like a print panel: the PDF's own size, the
+    /// paper the queue will feed, then orientation, scale, and media.
+    private var pageSetupCard: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    FlipEyebrow("PDF page", color: FlipColor.tertiaryInk)
+                    Text(model.documentPageSizeText ?? "No document")
+                        .font(FlipType.footnoteStrong)
+                        .foregroundStyle(FlipColor.ink)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                    if let document = model.selectedDocument {
+                        Text("\(document.isLandscape ? "Landscape" : "Portrait") · \(document.formattedPageCount)")
+                            .font(FlipType.caption)
+                            .foregroundStyle(FlipColor.tertiaryInk)
+                            .lineLimit(1)
+                    }
                 }
-            }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(
+                    "PDF page, \(model.documentPageSizeText ?? "no document"), \(model.selectedDocument?.isLandscape == true ? "landscape" : "portrait")"
+                )
 
-            layoutChip(
-                title: "Landscape",
-                selected: model.forceLandscape,
-                help: "Rotate each page to landscape."
-            ) {
-                withAnimation(FlipMotion.quick(reduceMotion)) {
-                    model.forceLandscape = true
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(FlipColor.tertiaryInk)
+                    .padding(.top, 16)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .trailing, spacing: 3) {
+                    FlipEyebrow("Paper", color: FlipColor.tertiaryInk)
+                    if let option = model.paperSizeOption {
+                        Menu {
+                            ForEach(option.choices) { choice in
+                                Button {
+                                    model.setValue(choice.keyword, for: option)
+                                } label: {
+                                    if choice.keyword == model.selectedValue(for: option) {
+                                        Label(choice.displayLabel, systemImage: "checkmark")
+                                    } else {
+                                        Text(choice.displayLabel)
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(model.selectedPaperLabel ?? "System default")
+                                    .font(FlipType.footnoteStrong)
+                                    .foregroundStyle(FlipColor.ink)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 7, weight: .bold))
+                                    .foregroundStyle(FlipColor.tertiaryInk)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .help("Paper size reported by this printer driver.")
+                        .accessibilityLabel("Paper size")
+                        .accessibilityValue(model.selectedPaperLabel ?? "System default")
+                    } else {
+                        Text("System default")
+                            .font(FlipType.footnoteStrong)
+                            .foregroundStyle(FlipColor.ink)
+                            .lineLimit(1)
+                    }
+                    if let option = model.mediaTypeOption {
+                        Menu {
+                            ForEach(option.choices) { choice in
+                                Button {
+                                    model.setValue(choice.keyword, for: option)
+                                } label: {
+                                    if choice.keyword == model.selectedValue(for: option) {
+                                        Label(choice.displayLabel, systemImage: "checkmark")
+                                    } else {
+                                        Text(choice.displayLabel)
+                                    }
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Text(model.selectedMediaLabel ?? "Driver default")
+                                    .font(FlipType.caption)
+                                    .foregroundStyle(FlipColor.tertiaryInk)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                                Image(systemName: "chevron.down")
+                                    .font(.system(size: 6, weight: .bold))
+                                    .foregroundStyle(FlipColor.tertiaryInk)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                        .help("Media type reported by this printer driver.")
+                        .accessibilityLabel("Media type")
+                        .accessibilityValue(model.selectedMediaLabel ?? "Driver default")
+                    } else if let media = model.selectedMediaLabel {
+                        Text(media)
+                            .font(FlipType.caption)
+                            .foregroundStyle(FlipColor.tertiaryInk)
+                            .lineLimit(1)
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .trailing)
             }
+            .padding(.horizontal, 11)
+            .padding(.top, 10)
 
-            Rectangle()
-                .fill(FlipColor.hairline)
-                .frame(width: 0.5, height: 14)
-                .accessibilityHidden(true)
+            FlipHairline()
+                .padding(.top, 9)
 
-            layoutChip(
-                title: "Fit page",
-                systemName: "arrow.up.left.and.arrow.down.right",
-                selected: model.fitToPage,
-                help: "Scale pages to fit the selected paper size."
-            ) {
-                withAnimation(FlipMotion.quick(reduceMotion)) {
-                    model.fitToPage.toggle()
+            if model.mode == .booklet {
+                HStack(spacing: 6) {
+                    Image(systemName: "book.closed")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(FlipColor.coralDeep)
+                    Text("Imposed 2-up on landscape sheets. Fold and flip between passes.")
+                        .font(FlipType.caption)
+                        .foregroundStyle(FlipColor.secondaryInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
                 }
+                .padding(.horizontal, 11)
+                .padding(.top, 9)
+                .padding(.bottom, 10)
+                .accessibilityElement(children: .combine)
+            } else {
+                HStack(spacing: 8) {
+                    Text("Scale")
+                        .font(FlipType.captionStrong)
+                        .foregroundStyle(FlipColor.secondaryInk)
+                    Spacer(minLength: 4)
+                    FlipScaleStepper(model: model)
+                }
+                .padding(.horizontal, 11)
+                .padding(.top, 9)
+
+                HStack(spacing: 5) {
+                    Text("Orientation")
+                        .font(FlipType.captionStrong)
+                        .foregroundStyle(FlipColor.secondaryInk)
+                    Spacer(minLength: 4)
+                    ForEach(PageOrientationChoice.allCases) { orientation in
+                        orientationChip(orientation)
+                    }
+                }
+                .padding(.horizontal, 11)
+                .padding(.top, 7)
+                .padding(.bottom, 10)
             }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
+                .fill(FlipColor.tone)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
+                .strokeBorder(FlipColor.hairline, lineWidth: 0.5)
         }
         .disabled(isBusy)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Layout")
-        .accessibilityValue(
-            "\(model.forceLandscape ? "Landscape" : "Automatic orientation"), \(model.fitToPage ? "fit to page" : "\(model.scalePercent) percent scale")"
-        )
     }
 
-    private func layoutChip(
-        title: String,
-        systemName: String? = nil,
-        selected: Bool,
-        help: String,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 3) {
-                if let systemName {
-                    Image(systemName: systemName)
-                        .font(.system(size: 8, weight: .semibold))
-                }
-                Text(title)
-                    .font(.system(.caption2, design: .default, weight: .semibold))
+    private func orientationChip(_ orientation: PageOrientationChoice) -> some View {
+        let isSelected = model.pageOrientation == orientation
+        return Button {
+            withAnimation(FlipMotion.quick(reduceMotion)) {
+                model.pageOrientation = orientation
             }
-            .foregroundStyle(selected ? FlipColor.onCoral : FlipColor.secondaryInk)
-            .padding(.horizontal, 8)
-            .frame(height: 22)
-            .background(
-                Capsule().fill(selected ? FlipColor.coral : FlipColor.tone)
-            )
-            .overlay {
-                if !selected {
-                    Capsule().strokeBorder(FlipColor.hairline, lineWidth: 0.5)
+        } label: {
+            Text(orientation.label)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(isSelected ? FlipColor.onCoral : FlipColor.secondaryInk)
+                .padding(.horizontal, 7)
+                .frame(height: 23)
+                .background(
+                    Capsule().fill(isSelected ? FlipColor.coral : Color.clear)
+                )
+                .overlay {
+                    if !isSelected {
+                        Capsule().strokeBorder(FlipColor.hairline, lineWidth: 0.5)
+                    }
                 }
-            }
-            .contentShape(Capsule())
+                .contentShape(Capsule())
         }
         .buttonStyle(.plain)
-        .help(help)
-        .accessibilityLabel(title)
-        .accessibilityValue(selected ? "Selected" : "Not selected")
-        .accessibilityAddTraits(selected ? .isSelected : [])
-        .accessibilityHint(help)
-    }
-
-    private var scaleControl: some View {
-        HStack(spacing: 8) {
-            Text("Scale")
-                .font(FlipType.captionStrong)
-                .foregroundStyle(FlipColor.secondaryInk)
-                .frame(width: 44, alignment: .leading)
-
-            Slider(
-                value: Binding(
-                    get: { Double(model.fitToPage ? 100 : model.scalePercent) },
-                    set: { model.setScalePercent(Int($0.rounded())) }
-                ),
-                in: 50...150,
-                step: 5
-            )
-            .controlSize(.mini)
-            .tint(FlipColor.coral)
-            .disabled(isBusy)
-            .help("Drag to set an exact print scale. Changing the scale turns off Fit page.")
-            .accessibilityLabel("Print scale")
-            .accessibilityValue(model.fitToPage ? "Fit to page" : "\(model.scalePercent) percent")
-            .accessibilityHint("Adjust from 50 to 150 percent. Changing the scale turns off Fit page.")
-
-            Text(model.fitToPage ? "Fit" : "\(model.scalePercent)%")
-                .font(.system(.caption, design: .rounded, weight: .semibold))
-                .monospacedDigit()
-                .foregroundStyle(FlipColor.secondaryInk)
-                .frame(width: 38, alignment: .trailing)
-        }
-        .accessibilityElement(children: .contain)
+        .help(orientation == .automatic ? "Use each page's own orientation." : "Rotate pages to \(orientation.label.lowercased()).")
+        .accessibilityLabel(orientation.label)
+        .accessibilityValue(isSelected ? "Selected" : "Not selected")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var copiesStepper: some View {

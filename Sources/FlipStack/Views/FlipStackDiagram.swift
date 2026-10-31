@@ -12,6 +12,8 @@ struct FlipStackDiagram: View {
     let reduceMotion: Bool
     var isLandscape: Bool = false
     var showsLabels: Bool = true
+    var showsGroundShadow: Bool = true
+    var showsBadges: Bool = true
 
     @ScaledMetric(relativeTo: .body) private var scaledWidth: CGFloat = 128
     @ScaledMetric(relativeTo: .body) private var scaledHeight: CGFloat = 84
@@ -39,20 +41,22 @@ struct FlipStackDiagram: View {
     var body: some View {
         VStack(spacing: 6) {
             ZStack {
-                Ellipse()
-                    .fill(FlipColor.printPaperShadow)
-                    .frame(width: width * 0.7, height: 11)
-                    .blur(radius: 5)
-                    .offset(y: height * 0.57)
+                if showsGroundShadow {
+                    Ellipse()
+                        .fill(FlipColor.printPaperShadow)
+                        .frame(width: width * 0.7, height: 11)
+                        .blur(radius: 5)
+                        .offset(y: height * 0.57)
+                }
 
                 physicalBlock
 
-                if !isFlipped {
+                if showsBadges, !isFlipped {
                     directionBadge
                         .offset(x: width * 0.5 + 1, y: -height * 0.44)
                 }
 
-                if isFlipped {
+                if showsBadges, isFlipped {
                     checkBadge
                         .offset(x: width * 0.5 + 1, y: -height * 0.44)
                         .transition(.opacity)
@@ -132,7 +136,7 @@ struct FlipStackDiagram: View {
                                 .strokeBorder(FlipColor.ink.opacity(0.16), lineWidth: 0.5)
                         }
                         .frame(width: width, height: height)
-                        .offset(x: CGFloat(edge) * 1.7, y: CGFloat(edge) * 1.4)
+                        .offset(x: CGFloat(edge) * 2.3, y: CGFloat(edge) * 1.9)
                 }
             }
 

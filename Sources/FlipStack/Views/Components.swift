@@ -128,6 +128,164 @@ struct FlipMetaChip: View {
     }
 }
 
+/// A compact macOS-print-panel style scale control. Percent is exact and
+/// editable; the minus/plus buttons move in five-percent steps. `Fit` is a
+/// separate mode, never a hidden side effect of dragging a slider.
+@MainActor
+struct FlipScaleStepper: View {
+    @ObservedObject var model: AppModel
+    var showsFit = true
+    var compact = false
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @FocusState private var isEditing: Bool
+    @State private var draftPercent = "100"
+    @State private var didEditDraft = false
+
+    private var displayedPercent: Int {
+        model.fitToPage ? 100 : model.scalePercent
+    }
+
+    private var draftBinding: Binding<String> {
+        Binding(
+            get: { draftPercent },
+            set: {
+                draftPercent = $0
+                if isEditing { didEditDraft = true }
+            }
+        )
+    }
+
+    var body: some View {
+        HStack(spacing: 5) {
+            if showsFit {
+                Button {
+                    withAnimation(FlipMotion.quick(reduceMotion)) {
+                        model.fitToPage.toggle()
+                    }
+                } label: {
+                    Text("Fit")
+                        .font(.system(size: compact ? 9 : 10, weight: .semibold))
+                        .foregroundStyle(model.fitToPage ? FlipColor.onCoral : FlipColor.secondaryInk)
+                        .padding(.horizontal, compact ? 7 : 9)
+                        .frame(height: compact ? 24 : 28)
+                        .background(
+                            RoundedRectangle(cornerRadius: FlipMetrics.smallRadius, style: .continuous)
+                                .fill(model.fitToPage ? FlipColor.coral : Color.clear)
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Scale each page to fit the selected paper.")
+                .accessibilityLabel("Fit to page")
+                .accessibilityValue(model.fitToPage ? "Selected" : "Not selected")
+                .accessibilityAddTraits(model.fitToPage ? .isSelected : [])
+            }
+
+            HStack(spacing: 0) {
+                stepButton(systemName: "minus", enabled: model.scalePercent > 50) {
+                    model.setScalePercent(model.scalePercent - 5)
+                }
+                .accessibilityLabel("Decrease print scale")
+
+                Rectangle()
+                    .fill(FlipColor.hairline)
+                    .frame(width: 0.5, height: 14)
+
+                TextField("", text: draftBinding)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: compact ? 10 : 11, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .multilineTextAlignment(.trailing)
+                    .foregroundStyle(model.fitToPage ? FlipColor.tertiaryInk : FlipColor.ink)
+                    .focused($isEditing)
+                    .frame(width: compact ? 27 : 31)
+                    .onSubmit {
+                        commitDraft()
+                        isEditing = false
+                    }
+                    .onChange(of: isEditing) { editing in
+                        if editing {
+                            draftPercent = "\(displayedPercent)"
+                            didEditDraft = false
+                        } else {
+                            commitDraft()
+                        }
+                    }
+                    .onChange(of: model.fitToPage) { _ in syncDraft() }
+                    .onChange(of: model.scalePercent) { _ in syncDraft() }
+                    .onAppear { syncDraft() }
+                    .accessibilityLabel("Print scale percentage")
+                    .accessibilityValue("\(displayedPercent) percent")
+                    .accessibilityHint("Type a percentage from 50 to 150.")
+
+                Text("%")
+                    .font(.system(size: compact ? 9 : 10, weight: .medium, design: .rounded))
+                    .foregroundStyle(FlipColor.tertiaryInk)
+
+                Rectangle()
+                    .fill(FlipColor.hairline)
+                    .frame(width: 0.5, height: 14)
+
+                stepButton(systemName: "plus", enabled: model.scalePercent < 150) {
+                    model.setScalePercent(model.scalePercent + 5)
+                }
+                .accessibilityLabel("Increase print scale")
+            }
+            .padding(.horizontal, 3)
+            .frame(height: compact ? 24 : 28)
+            .background(
+                RoundedRectangle(cornerRadius: FlipMetrics.smallRadius, style: .continuous)
+                    .fill(FlipColor.tone)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: FlipMetrics.smallRadius, style: .continuous)
+                    .strokeBorder(
+                        isEditing ? FlipColor.coral.opacity(0.7) : FlipColor.hairline,
+                        lineWidth: isEditing ? 1 : 0.5
+                    )
+            }
+
+        }
+        .animation(FlipMotion.quick(reduceMotion), value: model.fitToPage)
+    }
+
+    private func syncDraft() {
+        guard !isEditing else { return }
+        draftPercent = "\(displayedPercent)"
+    }
+
+    private func commitDraft() {
+        guard didEditDraft else {
+            draftPercent = "\(displayedPercent)"
+            return
+        }
+        didEditDraft = false
+        guard let value = Int(draftPercent.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            draftPercent = "\(displayedPercent)"
+            return
+        }
+        model.setScalePercent(value)
+        draftPercent = "\(model.fitToPage ? 100 : model.scalePercent)"
+    }
+
+    private func stepButton(
+        systemName: String,
+        enabled: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: compact ? 7 : 8, weight: .bold))
+                .foregroundStyle(enabled ? FlipColor.secondaryInk : FlipColor.tertiaryInk.opacity(0.45))
+                .frame(width: compact ? 22 : 25, height: compact ? 24 : 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+    }
+}
+
 struct FlipHintLine: View {
     let systemName: String
     let text: String
@@ -625,7 +783,7 @@ struct DiscoveredPrinterRow: View {
 
                 Spacer(minLength: 4)
 
-                Text("Set up")
+                Text("Add")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(FlipColor.coralDeep)
             }

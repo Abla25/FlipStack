@@ -31,10 +31,6 @@ public final class DuplexOrchestrator: ObservableObject {
     private var flipWasConfirmed = false
     private var startedAt: Date?
 
-    /// Number of consecutive polls that may fail to locate a submitted job
-    /// before the monitor gives up.
-    private static let unknownJobPollLimit = 3
-
     public init(
         spooler: any PrintSpooling,
         notifier: (any DuplexNotifying)? = nil
@@ -420,9 +416,11 @@ public final class DuplexOrchestrator: ObservableObject {
         var lastState = currentJob.state
         var lastImpressions = currentJob.impressionsCompleted
         var lastActivity = Date()
-        var unknownPolls = 0
+        var unknownSince: Date?
         var printerErrorSince: Date?
         var printerReportsProcessing = false
+        let absoluteDeadline = (startedAt ?? Date())
+            .addingTimeInterval(max(15 * 60, stuckTimeout * 2))
 
         while true {
             guard isCurrent(token), !Task.isCancelled else { return false }
@@ -454,16 +452,25 @@ public final class DuplexOrchestrator: ObservableObject {
                 guard isCurrent(token), !Task.isCancelled else { return false }
             }
 
-            if let latest {
-                unknownPolls = 0
+            if var latest {
+                // A reused numeric id must not resurrect an old completion.
+                if latest.state == .completed,
+                   let submittedAt = initialJob.createdAt,
+                   let completedAt = latest.createdAt,
+                   completedAt < submittedAt {
+                    latest = currentJob
+                }
+                unknownSince = nil
                 if latest != currentJob {
                     currentJob = latest
                     activeJob = latest
                     phase = .printing(pass: pass, job: latest)
                 }
             } else {
-                unknownPolls += 1
-                if unknownPolls >= Self.unknownJobPollLimit {
+                let now = Date()
+                if unknownSince == nil { unknownSince = now }
+                if let unknownSince,
+                   now.timeIntervalSince(unknownSince) >= 10 {
                     finishFailure(
                         .monitorFailed(
                             pass: pass,
@@ -512,18 +519,34 @@ public final class DuplexOrchestrator: ObservableObject {
             }
 
             let now = Date()
-            if currentJob.state != lastState
-                || currentJob.impressionsCompleted != lastImpressions {
-                lastState = currentJob.state
-                lastImpressions = currentJob.impressionsCompleted
+            let stateProgressed = currentJob.state == .processing && lastState != .processing
+            let impressionsProgressed = (currentJob.impressionsCompleted ?? 0)
+                > (lastImpressions ?? 0)
+            if stateProgressed || impressionsProgressed {
                 lastActivity = now
+            }
+            lastState = currentJob.state
+            lastImpressions = currentJob.impressionsCompleted
+
+            if now >= absoluteDeadline {
+                cancelJobBestEffort(currentJob)
+                finishFailure(
+                    .jobStuck(
+                        pass: pass,
+                        seconds: now.timeIntervalSince(lastActivity)
+                    ),
+                    configuration: configuration,
+                    token: token
+                )
+                return false
             }
 
             if now.timeIntervalSince(lastActivity) >= stuckTimeout {
                 // A queue that is genuinely printing can be quiet for a long
                 // time (large photo prints have no impressions counter in
-                // lpstat). Only call it stuck when the printer itself is not
-                // reporting active work, or after a much longer hard cap.
+                // lpstat). Only extend the grace when the queue's current
+                // printing job is ours; another job must not keep this one
+                // alive forever.
                 let effectiveTimeout = printerReportsProcessing ? stuckTimeout * 6 : stuckTimeout
                 if now.timeIntervalSince(lastActivity) >= effectiveTimeout {
                     cancelJobBestEffort(currentJob)
@@ -548,7 +571,9 @@ public final class DuplexOrchestrator: ObservableObject {
                 let hasProblem = printer.state == .stopped
                     || !printer.acceptsJobs
                     || printer.hasError
-                printerReportsProcessing = printer.state == .processing
+                let reportsOurJob = printer.printingJobID == nil
+                    || printer.printingJobID == initialJob.id
+                printerReportsProcessing = printer.state == .processing && reportsOurJob
                 if hasProblem {
                     if printerErrorSince == nil {
                         printerErrorSince = Date()

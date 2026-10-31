@@ -1,24 +1,45 @@
 import Foundation
 import FlipStackCore
 
+enum PageOrientationChoice: String, CaseIterable, Identifiable, Codable, Sendable {
+    case automatic
+    case portrait
+    case landscape
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .automatic: return "Match PDF"
+        case .portrait: return "Portrait"
+        case .landscape: return "Landscape"
+        }
+    }
+}
+
 struct PrintLayoutPreferences: Codable, Equatable, Sendable {
-    var forceLandscape: Bool
+    var pageOrientation: PageOrientationChoice
     var fitToPage: Bool
     var scalePercent: Int
 
     static let standard = PrintLayoutPreferences(
-        forceLandscape: false,
+        pageOrientation: .automatic,
         fitToPage: true,
         scalePercent: 100
     )
 
-    init(forceLandscape: Bool, fitToPage: Bool, scalePercent: Int = 100) {
-        self.forceLandscape = forceLandscape
+    init(
+        pageOrientation: PageOrientationChoice,
+        fitToPage: Bool,
+        scalePercent: Int = 100
+    ) {
+        self.pageOrientation = pageOrientation
         self.fitToPage = fitToPage
         self.scalePercent = min(max(scalePercent, 50), 150)
     }
 
     private enum CodingKeys: String, CodingKey {
+        case pageOrientation
         case forceLandscape
         case fitToPage
         case scalePercent
@@ -26,12 +47,27 @@ struct PrintLayoutPreferences: Codable, Equatable, Sendable {
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
-        forceLandscape = try values.decodeIfPresent(Bool.self, forKey: .forceLandscape) ?? false
+        if let raw = try values.decodeIfPresent(String.self, forKey: .pageOrientation),
+           let saved = PageOrientationChoice(rawValue: raw) {
+            pageOrientation = saved
+        } else {
+            // Migrate layouts saved before the three-way orientation choice.
+            pageOrientation = try values.decodeIfPresent(Bool.self, forKey: .forceLandscape) == true
+                ? .landscape
+                : .automatic
+        }
         fitToPage = try values.decodeIfPresent(Bool.self, forKey: .fitToPage) ?? true
         scalePercent = min(
             max(try values.decodeIfPresent(Int.self, forKey: .scalePercent) ?? 100, 50),
             150
         )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(pageOrientation.rawValue, forKey: .pageOrientation)
+        try values.encode(fitToPage, forKey: .fitToPage)
+        try values.encode(scalePercent, forKey: .scalePercent)
     }
 }
 

@@ -31,7 +31,10 @@ struct SelectedDocument: Identifiable, Equatable {
     let url: URL
     let name: String
     let pageCount: Int
-    let isLandscape: Bool
+    let pageWidth: CGFloat
+    let pageHeight: CGFloat
+
+    var isLandscape: Bool { pageWidth > pageHeight }
 
     var title: String {
         let base = (name as NSString).deletingPathExtension
@@ -40,6 +43,10 @@ struct SelectedDocument: Identifiable, Equatable {
 
     var formattedPageCount: String {
         pageCount == 1 ? "1 page" : "\(pageCount) pages"
+    }
+
+    var pageSizeText: String {
+        FlipFormat.paperDescription(width: pageWidth, height: pageHeight)
     }
 }
 
@@ -179,9 +186,9 @@ final class AppModel: ObservableObject {
     }
     @Published private(set) var activePrintMode: PrintMode = .manualDuplex
     @Published private(set) var selectedQualityPreset: PrintQualityPreset?
-    @Published var forceLandscape = false {
+    @Published var pageOrientation: PageOrientationChoice = .automatic {
         didSet {
-            guard oldValue != forceLandscape else { return }
+            guard oldValue != pageOrientation else { return }
             saveLayout()
         }
     }
@@ -295,6 +302,14 @@ final class AppModel: ObservableObject {
         self.copies = 1
         self.mode = preferencesStore.lastPrintMode ?? .manualDuplex
 
+        NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self, self.printers.isEmpty, !self.isRefreshing else { return }
+                Task { await self.refreshAll() }
+            }
+            .store(in: &cancellables)
+
         orchestrator.$phase
             .removeDuplicates()
             .receive(on: RunLoop.main)
@@ -336,9 +351,23 @@ final class AppModel: ObservableObject {
     /// sheets are landscape; standard documents follow their first page and
     /// the forced-landscape layout choice.
     var isLandscapeStack: Bool {
-        activePrintMode == .booklet
-            || forceLandscape
-            || (selectedDocument?.isLandscape ?? false)
+        if activePrintMode == .booklet { return true }
+        switch pageOrientation {
+        case .landscape: return true
+        case .portrait: return false
+        case .automatic: return selectedDocument?.isLandscape ?? false
+        }
+    }
+
+    /// The orientation sent to CUPS. Match PDF uses the first page of the
+    /// document instead of silently forcing portrait, which used to rotate
+    /// landscape scans.
+    var printOrientation: PrintOrientation {
+        switch pageOrientation {
+        case .landscape: return .landscape
+        case .portrait: return .portrait
+        case .automatic: return (selectedDocument?.isLandscape ?? false) ? .landscape : .portrait
+        }
     }
 
     var pageSelectionInfo: PageSelectionInfo {
@@ -433,6 +462,30 @@ final class AppModel: ObservableObject {
             guard let option = ppd.option(in: group), !option.choices.isEmpty else { return nil }
             return option
         }
+    }
+
+    var paperSizeOption: PPDOption? {
+        ppd?.option(in: .paperSize)
+    }
+
+    var mediaTypeOption: PPDOption? {
+        ppd?.option(in: .mediaType)
+    }
+
+    var selectedPaperLabel: String? {
+        guard let option = paperSizeOption else { return nil }
+        let keyword = selectedValue(for: option)
+        return option.choice(keyword: keyword)?.displayLabel ?? keyword
+    }
+
+    var selectedMediaLabel: String? {
+        guard let option = mediaTypeOption else { return nil }
+        let keyword = selectedValue(for: option)
+        return option.choice(keyword: keyword)?.displayLabel ?? keyword
+    }
+
+    var documentPageSizeText: String? {
+        selectedDocument?.pageSizeText
     }
 
     var colorModeOption: PPDOption? {
@@ -592,6 +645,7 @@ final class AppModel: ObservableObject {
     }
 
     var printerHealthNote: String? {
+        guard selectedPrinter != nil else { return nil }
         switch printerHealth {
         case .offline:
             return "CUPS reports this printer offline. A print job may still wake it."
@@ -678,7 +732,7 @@ final class AppModel: ObservableObject {
         isRefreshing = true
         defer { isRefreshing = false }
         Task { await refreshDiscovery(force: true) }
-        if orchestrator.phase.isActive {
+        if orchestrator.phase.isActive || flipCalibration != nil {
             await refreshQueue()
             await refreshStatus()
             return
@@ -763,6 +817,12 @@ final class AppModel: ObservableObject {
             selectedPrinter = nil
             ppd = nil
             status = nil
+            if let calibration = flipCalibration {
+                failFlipCalibration(
+                    "The printer became unavailable during setup. Reconnect it and try again.",
+                    calibrationID: calibration.id
+                )
+            }
             banner = AppBanner(
                 kind: .error,
                 title: "The print system is unavailable",
@@ -793,7 +853,7 @@ final class AppModel: ObservableObject {
         preferencesStore.lastPrinterID = printer.id
         preferences = preferencesStore.load(for: printer.id)
         let layout = preferencesStore.loadLayout(for: printer.id)
-        forceLandscape = layout.forceLandscape
+        pageOrientation = layout.pageOrientation
         fitToPage = layout.fitToPage
         scalePercent = layout.scalePercent
         closePreview()
@@ -908,7 +968,11 @@ final class AppModel: ObservableObject {
     func setValue(_ value: String, for option: PPDOption) {
         guard option.choice(keyword: value) != nil else { return }
         optionSelection[option.keyword] = value
-        selectedQualityPreset = presetResolver?.matchingPreset(for: optionSelection)
+        // Color is a separate choice. Toggling Color / B&W must not erase the
+        // quality preset the user already picked.
+        if option.group != .color {
+            selectedQualityPreset = presetResolver?.matchingPreset(for: optionSelection)
+        }
         if let id = selectedPrinter?.id {
             preferencesStore.saveOptionChoices(optionSelection, for: id)
         }
@@ -916,8 +980,16 @@ final class AppModel: ObservableObject {
 
     func applyQualityPreset(_ preset: PrintQualityPreset) {
         guard let resolver = presetResolver else { return }
+        let preserveGrayscale = isGrayscaleSelected
         let result = resolver.apply(preset, to: optionSelection)
         optionSelection = result.options
+        // Quality and color mode are independent. Applying a quality preset
+        // must not silently put a B&W print back into color.
+        if preserveGrayscale,
+           let colorOption = colorModeOption,
+           let grayscale = grayscaleChoice {
+            optionSelection[colorOption.keyword] = grayscale.keyword
+        }
         selectedQualityPreset = preset
         if let id = selectedPrinter?.id {
             preferencesStore.saveOptionChoices(optionSelection, for: id)
@@ -948,10 +1020,9 @@ final class AppModel: ObservableObject {
         let needsFlipSetup = mode.usesFlipSetup
             && (mode == .booklet || pageSelectionInfo.pageCount > 1)
         if needsFlipSetup, !preferences.hasConfiguredFlip {
+            // Explain the physical setup before sending anything. The guided
+            // screen prints one sheet only when the user explicitly confirms.
             flipAxisSetup = FlipAxisSetup(autoStartsPrint: true)
-            // Match the first-time promise: send one generic calibration sheet
-            // immediately, then hold the real document until the answers land.
-            startFlipCalibration()
             return
         }
         beginPrint()
@@ -960,6 +1031,20 @@ final class AppModel: ObservableObject {
     func openFlipAxisSetup() {
         guard flipCalibration == nil else { return }
         flipAxisSetup = FlipAxisSetup(autoStartsPrint: false)
+    }
+
+    /// Explicit first-run path: the user pressed "Print setup sheet", so start
+    /// the guided calibration immediately instead of making them confirm the
+    /// same action again on the next screen.
+    func beginGuidedSetup() {
+        guard flipCalibration == nil,
+              flipAxisSetup == nil,
+              orchestrator.phase.isIdle,
+              !isPreparingPrint,
+              !isMaintenanceBusy,
+              selectedPrinter != nil else { return }
+        flipAxisSetup = FlipAxisSetup(autoStartsPrint: false)
+        startFlipCalibration()
     }
 
     func completeFlipAxisSetup(flipAxis: FlipAxis, ejectsFaceDown: Bool) {
@@ -1009,7 +1094,8 @@ final class AppModel: ObservableObject {
         if flipAxisSetup == nil {
             flipAxisSetup = FlipAxisSetup(autoStartsPrint: false)
         }
-        let landscape = forceLandscape || (selectedDocument?.isLandscape ?? false)
+        let landscape = pageOrientation == .landscape
+            || (pageOrientation == .automatic && (selectedDocument?.isLandscape ?? false))
         let suggestedAxis: FlipAxis
         if mode == .booklet {
             suggestedAxis = .longEdge
@@ -1091,11 +1177,12 @@ final class AppModel: ObservableObject {
     /// Leaves the calibration sheet flow but keeps the manual setup surface
     /// available. The calibration job is cancelled if it is still active.
     func returnToFlipSetup() {
+        let autoStart = flipCalibration?.autoStartsPrint
+            ?? flipAxisSetup?.autoStartsPrint
+            ?? false
         cancelFlipCalibrationWork()
         flipCalibration = nil
-        if flipAxisSetup == nil {
-            flipAxisSetup = FlipAxisSetup(autoStartsPrint: false)
-        }
+        flipAxisSetup = FlipAxisSetup(autoStartsPrint: autoStart)
     }
 
     func cancelFlipCalibration() {
@@ -1149,7 +1236,7 @@ final class AppModel: ObservableObject {
         guard let id = selectedPrinter?.id else { return }
         preferencesStore.saveLayout(
             PrintLayoutPreferences(
-                forceLandscape: forceLandscape,
+                pageOrientation: pageOrientation,
                 fitToPage: fitToPage,
                 scalePercent: scalePercent
             ),
@@ -1227,20 +1314,25 @@ final class AppModel: ObservableObject {
             return
         }
         let name = url.lastPathComponent
-        var isLandscape = false
+        var pageWidth: CGFloat = 595.28
+        var pageHeight: CGFloat = 841.89
         if let firstPage = pdf.page(at: 0) {
             let bounds = firstPage.bounds(for: .mediaBox)
             let rotated90 = firstPage.rotation % 180 != 0
-            let width = rotated90 ? bounds.height : bounds.width
-            let height = rotated90 ? bounds.width : bounds.height
-            isLandscape = width > height
+            pageWidth = abs(rotated90 ? bounds.height : bounds.width)
+            pageHeight = abs(rotated90 ? bounds.width : bounds.height)
+            if pageWidth <= 0 || pageHeight <= 0 {
+                pageWidth = 595.28
+                pageHeight = 841.89
+            }
         }
         closePreview()
         selectedDocument = SelectedDocument(
             url: url,
             name: name,
             pageCount: pdf.pageCount,
-            isLandscape: isLandscape
+            pageWidth: pageWidth,
+            pageHeight: pageHeight
         )
         pageSelectionMode = .all
         pageRangeText = ""
@@ -1533,7 +1625,7 @@ final class AppModel: ObservableObject {
                     for: printer,
                     flipAxis: printMode == .booklet ? .longEdge : self.preferences.flipAxis
                 )
-                let orientation: PrintOrientation = self.forceLandscape ? .landscape : .portrait
+                let orientation = self.printOrientation
 
                 switch printMode {
                 case .singleSided:
@@ -1878,9 +1970,7 @@ final class AppModel: ObservableObject {
                 title: "FlipStack calibration sheet",
                 pageSet: .all,
                 copies: 1,
-                orientation: (forceLandscape || (selectedDocument?.isLandscape ?? false))
-                    ? .landscape
-                    : .portrait,
+                orientation: printOrientation,
                 driverOptions: options,
                 fitToPage: true
             )
@@ -1898,6 +1988,12 @@ final class AppModel: ObservableObject {
                   calibration.id == calibrationID,
                   selectedPrinter?.id == printer.id else {
                 try? await spooler.cancel(jobID: job.id, printerID: printer.id)
+                if !Task.isCancelled {
+                    failFlipCalibration(
+                        "The selected printer changed during setup. Choose it again and print a new sheet.",
+                        calibrationID: calibrationID
+                    )
+                }
                 return
             }
             calibration.jobID = job.id
@@ -1928,21 +2024,54 @@ final class AppModel: ObservableObject {
     ) async {
         let deadline = Date().addingTimeInterval(10 * 60)
         var lookupErrors = 0
-        var missingPolls = 0
+        var missingSince: Date?
 
         while !Task.isCancelled {
             guard let calibration = flipCalibration,
                   calibration.id == calibrationID,
-                  calibration.jobID == jobID,
-                  selectedPrinter?.id == printer.id else {
+                  calibration.jobID == jobID else {
+                return
+            }
+            guard selectedPrinter?.id == printer.id else {
+                failFlipCalibration(
+                    "The selected printer changed during setup. Choose it again and print a new sheet.",
+                    calibrationID: calibrationID
+                )
                 return
             }
 
             do {
                 guard let job = try await spooler.job(id: jobID, printerID: printer.id) else {
                     guard flipCalibration?.id == calibrationID else { return }
-                    missingPolls += 1
-                    if missingPolls >= 3 {
+                    if missingSince == nil { missingSince = Date() }
+                    if let recent = try? await spooler.recentJobs(
+                        printerID: printer.id,
+                        limit: 20
+                    ), let finished = recent.first(where: { $0.id == jobID }) {
+                        switch finished.state {
+                        case .completed:
+                            guard var current = flipCalibration,
+                                  current.id == calibrationID else { return }
+                            current.stage = .questions
+                            current.jobID = nil
+                            current.hasConfirmedTray = false
+                            current.hasConfirmedAxis = mode == .booklet
+                            flipCalibration = current
+                            await refreshQueue()
+                            await refreshStatus()
+                            return
+                        case .canceled, .aborted, .stopped:
+                            failFlipCalibration(
+                                "The calibration sheet was \(finished.state.label.lowercased()).",
+                                calibrationID: calibrationID
+                            )
+                            return
+                        default:
+                            break
+                        }
+                    }
+                    if let missingSince,
+                       Date().timeIntervalSince(missingSince) >= 10 {
                         failFlipCalibration(
                             "The printer no longer reports the calibration job. Check the sheet in the tray, then try again if needed.",
                             calibrationID: calibrationID
@@ -1954,7 +2083,7 @@ final class AppModel: ObservableObject {
                 }
                 guard flipCalibration?.id == calibrationID else { return }
                 lookupErrors = 0
-                missingPolls = 0
+                missingSince = nil
                 switch job.state {
                 case .completed:
                     guard var current = flipCalibration,
@@ -1978,7 +2107,7 @@ final class AppModel: ObservableObject {
                 }
             } catch {
                 lookupErrors += 1
-                if lookupErrors >= 3 {
+                if lookupErrors >= 15 {
                     failFlipCalibration(
                         "FlipStack could not read the calibration job.",
                         calibrationID: calibrationID

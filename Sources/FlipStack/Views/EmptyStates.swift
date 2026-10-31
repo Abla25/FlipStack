@@ -12,15 +12,15 @@ struct NoPrinterState: View {
             FlipPrinterArt(hasPaper: false, showsAccent: true)
                 .padding(.bottom, 20)
 
-            Text(model.discoveredPrinters.isEmpty ? "No print queue yet." : "Printers detected.")
+            Text(model.discoveredPrinters.isEmpty ? "Add a printer to begin." : "A printer is nearby.")
                 .font(FlipType.displayLarge)
                 .foregroundStyle(FlipColor.ink)
                 .accessibilityAddTraits(.isHeader)
 
             Text(
                 model.discoveredPrinters.isEmpty
-                ? "Add a printer in Printers & Scanners, then let FlipStack find it again."
-                : "A printer was found nearby. Add it in Printers & Scanners to create a print queue."
+                ? "FlipStack prints through macOS print queues. Add yours in Printers & Scanners; it appears here automatically."
+                : "Add it in Printers & Scanners to create a queue. FlipStack will find it when you come back."
             )
                 .font(FlipType.footnote)
                 .foregroundStyle(FlipColor.secondaryInk)
@@ -29,6 +29,18 @@ struct NoPrinterState: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 7)
                 .padding(.horizontal, 18)
+
+            HStack(spacing: 6) {
+                setupStep("1", "Add printer", active: true)
+                setupChevron
+                setupStep("2", "Setup sheet", active: false)
+                setupChevron
+                setupStep("3", "Print", active: false)
+            }
+            .padding(.top, 14)
+            .padding(.horizontal, 8)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Setup: add a printer in System Settings, print one setup sheet, then print.")
 
             Button {
                 PrinterSetup.openSystemSettings()
@@ -85,7 +97,7 @@ struct NoPrinterState: View {
                         Image(systemName: "arrow.clockwise")
                             .font(.system(size: 10, weight: .semibold))
                     }
-                    Text(model.isRefreshing ? "Looking again…" : "Refresh")
+                    Text(model.isRefreshing ? "Looking again…" : "Check again")
                 }
             }
             .buttonStyle(FlipTertiaryButtonStyle())
@@ -96,6 +108,28 @@ struct NoPrinterState: View {
         }
         .frame(maxWidth: .infinity, minHeight: 438)
         .accessibilityElement(children: .contain)
+    }
+
+    private func setupStep(_ number: String, _ title: String, active: Bool) -> some View {
+        HStack(spacing: 4) {
+            Text(number)
+                .font(.system(size: 8, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(active ? FlipColor.onCoral : FlipColor.secondaryInk)
+                .frame(width: 16, height: 16)
+                .background(Circle().fill(active ? FlipColor.coral : FlipColor.toneStrong))
+            Text(title)
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(active ? FlipColor.ink : FlipColor.secondaryInk)
+                .lineLimit(1)
+        }
+    }
+
+    private var setupChevron: some View {
+        Image(systemName: "chevron.right")
+            .font(.system(size: 6.5, weight: .bold))
+            .foregroundStyle(FlipColor.tertiaryInk.opacity(0.6))
+            .accessibilityHidden(true)
     }
 }
 
@@ -132,96 +166,5 @@ struct LoadingPrintersState: View {
         .frame(maxWidth: .infinity, minHeight: 438)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Looking for printers. Checking the print queues on this Mac.")
-    }
-}
-
-struct FlipPrinterArt: View {
-    let hasPaper: Bool
-    let showsAccent: Bool
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ScaledMetric(relativeTo: .body) private var artWidth: CGFloat = 164
-    @State private var breathe = false
-
-    private var height: CGFloat { artWidth * 0.78 }
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .strokeBorder(
-                    FlipColor.ink.opacity(0.09),
-                    style: StrokeStyle(lineWidth: 1, dash: [2.5, 5])
-                )
-                .frame(width: artWidth * 0.94, height: artWidth * 0.94)
-
-            if showsAccent {
-                Circle()
-                    .trim(from: 0.05, to: 0.3)
-                    .stroke(FlipColor.coral.opacity(0.65), style: StrokeStyle(lineWidth: 1.4, lineCap: .round))
-                    .frame(width: artWidth * 0.94, height: artWidth * 0.94)
-                    .rotationEffect(.degrees(-90))
-            }
-
-            // Paper ready to feed.
-            RoundedRectangle(cornerRadius: 3.5, style: .continuous)
-                .fill(hasPaper ? FlipColor.printPaper : FlipColor.tone)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 3.5, style: .continuous)
-                        .strokeBorder(FlipColor.ink.opacity(0.24), lineWidth: 1)
-                }
-                .frame(width: artWidth * 0.42, height: artWidth * 0.3)
-                .offset(y: -height * 0.37)
-
-            // Body.
-            RoundedRectangle(cornerRadius: artWidth * 0.09, style: .continuous)
-                .fill(FlipColor.printPaper)
-                .overlay {
-                    RoundedRectangle(cornerRadius: artWidth * 0.09, style: .continuous)
-                        .strokeBorder(FlipColor.ink.opacity(0.5), lineWidth: 1.4)
-                }
-                .frame(width: artWidth * 0.78, height: height * 0.57)
-                .offset(y: height * 0.08)
-
-            // Feed slot.
-            Capsule()
-                .fill(FlipColor.ink.opacity(0.2))
-                .frame(width: artWidth * 0.48, height: 2.5)
-                .offset(y: -height * 0.1)
-
-            // Output tray.
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .stroke(FlipColor.ink.opacity(0.35), lineWidth: 1.1)
-                .frame(width: artWidth * 0.6, height: height * 0.13)
-                .offset(y: height * 0.34)
-
-            if hasPaper {
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(FlipColor.coral.opacity(0.88))
-                    .frame(width: artWidth * 0.34, height: 2)
-                    .offset(y: height * 0.31)
-            }
-
-            // A quiet status light.
-            Circle()
-                .fill(showsAccent ? FlipColor.coral : FlipColor.success)
-                .frame(width: 6, height: 6)
-                .overlay {
-                    if !reduceMotion {
-                        Circle()
-                            .stroke(FlipColor.coral.opacity(0.3), lineWidth: 1)
-                            .scaleEffect(breathe ? 2.4 : 1)
-                            .opacity(breathe ? 0 : 0.8)
-                    }
-                }
-                .offset(x: artWidth * 0.27, y: height * 0.16)
-        }
-        .frame(width: artWidth, height: artWidth * 0.86)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeOut(duration: 1.9).repeatForever(autoreverses: false)) {
-                breathe = true
-            }
-        }
-        .accessibilityHidden(true)
     }
 }

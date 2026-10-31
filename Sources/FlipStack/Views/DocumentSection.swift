@@ -124,10 +124,17 @@ struct DocumentSection: View {
                     Text(documentSubtitle(document))
                         .font(FlipType.caption)
                         .foregroundStyle(FlipColor.secondaryInk)
+                    Circle()
+                        .fill(FlipColor.tertiaryInk.opacity(0.55))
+                        .frame(width: 2.5, height: 2.5)
+                    Text(document.pageSizeText)
+                        .font(FlipType.caption)
+                        .foregroundStyle(FlipColor.tertiaryInk)
+                        .lineLimit(1)
                 }
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Document, \(document.name), \(documentSubtitle(document))")
+            .accessibilityLabel("Document, \(document.name), \(documentSubtitle(document)), \(document.pageSizeText)")
 
             Spacer(minLength: 2)
 

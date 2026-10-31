@@ -32,17 +32,27 @@ struct FlipAxisSetupView: View {
             }
 
             VStack(alignment: .leading, spacing: 5) {
-                Text("How should the stack turn?")
+                Text("Set up two-sided printing")
                     .font(FlipType.displayLarge)
                     .foregroundStyle(FlipColor.ink)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
-                Text("Saved for \(printerName). It tells FlipStack which way to turn the block between passes.")
+                Text("One orientation sheet teaches FlipStack how \(printerName) stacks paper. It contains no document pages.")
                     .font(FlipType.footnote)
                     .foregroundStyle(FlipColor.secondaryInk)
                     .fixedSize(horizontal: false, vertical: true)
                     .lineSpacing(1)
             }
+
+            HStack(spacing: 5) {
+                setupStep("1", "Print sheet", active: true)
+                setupArrow
+                setupStep("2", "Two answers", active: false)
+                setupArrow
+                setupStep("3", "Ready", active: false)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Setup steps: print one sheet, answer two questions, ready")
 
             calibrationSection
                 .padding(.top, 2)
@@ -66,6 +76,28 @@ struct FlipAxisSetupView: View {
             selectedAxis = model.preferences.flipAxis
             ejectsFaceDown = model.preferences.ejectsFaceDown
         }
+    }
+
+    private func setupStep(_ number: String, _ title: String, active: Bool) -> some View {
+        HStack(spacing: 4) {
+            Text(number)
+                .font(.system(size: 8, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(active ? FlipColor.onCoral : FlipColor.secondaryInk)
+                .frame(width: 15, height: 15)
+                .background(Circle().fill(active ? FlipColor.coral : FlipColor.toneStrong))
+            Text(title)
+                .font(.system(size: 9.5, weight: .medium))
+                .foregroundStyle(active ? FlipColor.ink : FlipColor.secondaryInk)
+                .lineLimit(1)
+        }
+    }
+
+    private var setupArrow: some View {
+        Image(systemName: "chevron.right")
+            .font(.system(size: 6.5, weight: .bold))
+            .foregroundStyle(FlipColor.tertiaryInk.opacity(0.6))
+            .accessibilityHidden(true)
     }
 
     @ViewBuilder
@@ -134,10 +166,10 @@ struct FlipAxisSetupView: View {
             HStack(alignment: .top, spacing: 8) {
                 FlipIconMedallion(systemName: "viewfinder", tint: FlipColor.coralDeep, size: 28)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Automatic calibration")
+                    Text("Guided setup")
                         .font(FlipType.bodyStrong)
                         .foregroundStyle(FlipColor.ink)
-                    Text("Print one orientation sheet; FlipStack learns the tray and turn from your answers.")
+                    Text("Print the sheet, look at which side landed up, then confirm the turn. Saved for this printer.")
                         .font(FlipType.caption)
                         .foregroundStyle(FlipColor.secondaryInk)
                         .fixedSize(horizontal: false, vertical: true)
@@ -164,7 +196,7 @@ struct FlipAxisSetupView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "printer")
                         .font(.system(size: 11, weight: .semibold))
-                    Text("Print calibration sheet")
+                    Text("Print setup sheet")
                     Spacer(minLength: 4)
                     Image(systemName: "arrow.right")
                         .font(.system(size: 11, weight: .semibold))
@@ -179,21 +211,18 @@ struct FlipAxisSetupView: View {
                 : "Prints one generic orientation sheet without printing a document."
             )
 
-            HStack(spacing: 7) {
-                Button("Print orientation sheet only") {
-                    Task { await model.printOrientationSheet() }
-                }
-                .buttonStyle(FlipTertiaryButtonStyle())
-                .disabled(model.isMaintenanceBusy || model.isCalibrating || !model.orchestrator.phase.isIdle)
-                .accessibilityHint("Prints the calibration sheet without asking the setup questions.")
-
-                Spacer(minLength: 0)
-
-                Text("No document content")
+            HStack(spacing: 6) {
+                Image(systemName: "lock")
+                    .font(.system(size: 8.5, weight: .semibold))
+                    .foregroundStyle(FlipColor.tertiaryInk)
+                Text("One sheet · no document content · saved for this printer")
                     .font(.system(size: 8.5, weight: .medium))
                     .foregroundStyle(FlipColor.tertiaryInk)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Spacer(minLength: 0)
             }
+            .accessibilityElement(children: .combine)
         }
         .padding(11)
         .background(

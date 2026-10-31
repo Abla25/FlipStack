@@ -291,6 +291,39 @@ final class PrintPresetEngineTests: XCTestCase {
         XCTAssertNil(resolver.matchingPreset(for: [:]))
     }
 
+    func testColorModeDoesNotChangeTheQualityPresetMatch() throws {
+        let ppd = try CompatibilityPresetFixtures.document("Epson-L1800.ppd")
+        let resolver = PrintPresetResolver(ppd: ppd)
+
+        var grayscale = resolver.apply(.standard, to: [:]).options
+        grayscale["ColorModel"] = "Gray"
+        XCTAssertEqual(resolver.matchingPreset(for: grayscale), .standard)
+
+        var color = resolver.apply(.standard, to: [:]).options
+        color["ColorModel"] = "Color"
+        XCTAssertEqual(resolver.matchingPreset(for: color), .standard)
+    }
+
+    func testEcoAvoidsSubThreeHundredDPIWhenABetterChoiceExists() throws {
+        let contents = """
+        *PPD-Adobe: "4.3"
+        *OpenUI *Resolution/Resolution: PickOne
+        *DefaultResolution: 180dpi
+        *Resolution 180dpi/180 dpi: ""
+        *Resolution 360dpi/360 dpi: ""
+        *Resolution 720dpi/720 dpi: ""
+        *CloseUI: *Resolution
+        *OpenUI *MediaType/Media Type: PickOne
+        *DefaultMediaType: PLAIN
+        *MediaType PLAIN/Plain Paper: ""
+        *CloseUI: *MediaType
+        *End
+        """
+        let resolver = PrintPresetResolver(ppd: parser.parse(contents: contents))
+        let eco = resolver.apply(.eco, to: [:])
+        XCTAssertEqual(eco.options["Resolution"], "360dpi")
+    }
+
     func testMatchingPresetIsCaseInsensitive() throws {
         let ppd = try CompatibilityPresetFixtures.document("Epson-L1800.ppd")
         let resolver = PrintPresetResolver(ppd: ppd)

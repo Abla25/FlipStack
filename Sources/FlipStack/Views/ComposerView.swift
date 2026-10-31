@@ -22,6 +22,9 @@ struct ComposerView: View {
                 sectionBreak
 
                 OutputSection(model: model)
+            } else if !model.preferences.hasConfiguredFlip {
+                FirstRunSetupCard(model: model)
+                    .padding(.top, 14)
             } else {
                 FirstFlipGuide()
                     .padding(.top, 18)
@@ -32,6 +35,105 @@ struct ComposerView: View {
     private var sectionBreak: some View {
         FlipHairline()
             .padding(.vertical, 12)
+    }
+}
+
+/// The first job is the only time the app needs a physical lesson. Keep this
+/// card concrete: one sheet, two answers, then every duplex job is automatic.
+@MainActor
+private struct FirstRunSetupCard: View {
+    @ObservedObject var model: AppModel
+
+    private var printerName: String {
+        model.selectedPrinter?.displayName ?? "this printer"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 9) {
+                FlipIconMedallion(systemName: "viewfinder", tint: FlipColor.coralDeep, size: 28)
+                VStack(alignment: .leading, spacing: 3) {
+                    FlipEyebrow("First time with this printer", color: FlipColor.coralDeep)
+                    Text("One sheet. Two answers. Then it just works.")
+                        .font(FlipType.bodyStrong)
+                        .foregroundStyle(FlipColor.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("FlipStack prints a generic orientation sheet so it can learn how \(printerName) stacks paper. Your PDF is not used.")
+                        .font(FlipType.caption)
+                        .foregroundStyle(FlipColor.secondaryInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .lineSpacing(1)
+                }
+                Spacer(minLength: 0)
+            }
+
+            HStack(spacing: 6) {
+                setupStep("1", "Print sheet")
+                setupChevron
+                setupStep("2", "Check result")
+                setupChevron
+                setupStep("3", "Ready")
+            }
+            .padding(.vertical, 1)
+
+            HStack(spacing: 8) {
+                Button {
+                    model.beginGuidedSetup()
+                } label: {
+                    HStack(spacing: 7) {
+                        Image(systemName: "printer")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text("Print setup sheet")
+                        Spacer(minLength: 0)
+                    }
+                }
+                .buttonStyle(FlipPrimaryButtonStyle())
+                .disabled(model.isCalibrating || !model.orchestrator.phase.isIdle)
+                .help("Prints one generic orientation sheet. No document content is sent.")
+                .accessibilityHint("Prints one setup sheet, then asks two questions about how it landed.")
+
+                Button("Set up manually") {
+                    model.openFlipAxisSetup()
+                }
+                .buttonStyle(FlipTertiaryButtonStyle())
+                .disabled(model.isCalibrating || !model.orchestrator.phase.isIdle)
+                .frame(minHeight: 44)
+                .accessibilityHint("Skips the calibration sheet and chooses the turn and output face yourself.")
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: FlipMetrics.cardRadius, style: .continuous)
+                .fill(FlipColor.coral.opacity(0.055))
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: FlipMetrics.cardRadius, style: .continuous)
+                .strokeBorder(FlipColor.coral.opacity(0.28), lineWidth: 0.75)
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func setupStep(_ number: String, _ title: String) -> some View {
+        HStack(spacing: 4) {
+            Text(number)
+                .font(.system(size: 8, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(FlipColor.onCoral)
+                .frame(width: 15, height: 15)
+                .background(Circle().fill(FlipColor.coral))
+            Text(title)
+                .font(.system(size: 9.5, weight: .medium))
+                .foregroundStyle(FlipColor.secondaryInk)
+                .lineLimit(1)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var setupChevron: some View {
+        Image(systemName: "chevron.right")
+            .font(.system(size: 6.5, weight: .bold))
+            .foregroundStyle(FlipColor.tertiaryInk.opacity(0.6))
+            .accessibilityHidden(true)
     }
 }
 
@@ -134,7 +236,7 @@ struct PrimaryActionSection: View {
     }
 
     private var actionTitle: String {
-        if needsCalibration { return "Calibrate and print" }
+        if needsCalibration { return "Set up flip and print" }
         switch model.mode {
         case .singleSided: return "Print document"
         case .manualDuplex:
@@ -196,7 +298,7 @@ struct PrimaryActionSection: View {
     private var detailLine: String? {
         if let reason = disabledReason { return reason }
         if needsCalibration {
-            return "One orientation sheet on the current paper prints first; your PDF waits."
+            return "One setup sheet first. Answer two questions, then your PDF prints."
         }
         guard let sheets = sheetCount else { return nil }
         let copyPrefix = model.copies > 1

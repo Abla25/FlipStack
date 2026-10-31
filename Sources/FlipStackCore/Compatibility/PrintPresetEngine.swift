@@ -26,7 +26,7 @@ public enum PrintQualityPreset: String, CaseIterable, Codable, Sendable, Identif
     public var detail: String {
         switch self {
         case .eco:
-            return "Lowest resolution and ink use for drafts and internal copies."
+            return "A lighter draft with usable text and less ink than Photo."
         case .standard:
             return "Balanced resolution and speed for everyday documents."
         case .high:
@@ -248,9 +248,9 @@ public struct PrintPresetResolver: Sendable {
         if let mediaOption {
             keywords.insert(Self.normalizedKeyword(mediaOption.keyword))
         }
-        if let colorOption {
-            keywords.insert(Self.normalizedKeyword(colorOption.keyword))
-        }
+        // Color mode is an independent user choice (Color/B&W), not a
+        // quality dimension. A grayscale document can still use Standard,
+        // High, or Photo quality without losing its color mode.
         return keywords
     }
 
@@ -291,7 +291,10 @@ public struct PrintPresetResolver: Sendable {
 
         switch preset {
         case .eco:
-            return ranked.first
+            // A usable draft, not the absolute lowest resolution. When the PPD
+            // exposes a choice at or above 300 dpi, prefer it so Eco does not
+            // look like a fax.
+            return ranked.first(where: { $0.rank >= 300 }) ?? ranked.first
 
         case .standard:
             if let normal = ranked.first(where: { $0.semanticTier == 1 }) {

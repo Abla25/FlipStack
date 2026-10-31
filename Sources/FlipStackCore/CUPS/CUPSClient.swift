@@ -161,21 +161,25 @@ public final class CUPSClient: PrintSpooling, @unchecked Sendable {
             if let printingID = try await currentPrintingJobID(queue: queue), printingID == id {
                 active[index].state = .processing
             }
+
+            // Some backends leave a finished job visible in
+            // `lpstat -W not-completed` for a while. Completion history is
+            // authoritative: if the same id is already there, the physical
+            // job is done and the UI must not stay on "Printing".
+            if let completed = try? await completedJob(
+                id: id,
+                printerID: queue,
+                activeJob: active[index]
+            ) {
+                return completed
+            }
             return active[index]
         }
 
-        let completedResult = try await run(Tool.lpstat, ["-W", "completed", "-o", queue])
-        guard completedResult.status == 0 else {
-            throw failure(tool: "lpstat", result: completedResult, printerID: queue)
+        guard let job = try await completedJob(id: id, printerID: queue, activeJob: nil) else {
+            return nil
         }
-
-        let completed = LPStatParser.parseJobs(
-            completedResult.stdoutText,
-            printerID: queue,
-            defaultState: .completed
-        )
-        guard let job = completed.first(where: { $0.id == id }) else { return nil }
-        return try await enrichCompletedJob(job, queue: queue)
+        return job
     }
 
     public func submit(_ request: PrintRequest) async throws -> PrintJob {
@@ -209,6 +213,7 @@ public final class CUPSClient: PrintSpooling, @unchecked Sendable {
             printerID: queue,
             title: request.title,
             state: .pending,
+            createdAt: Date(),
             documentCount: submitted.documentCount
         )
     }
@@ -265,7 +270,8 @@ public final class CUPSClient: PrintSpooling, @unchecked Sendable {
                 stateReasons: detail?.stateReasons ?? [],
                 isDefault: queue.caseInsensitiveCompare(defaultName ?? "") == .orderedSame,
                 acceptsJobs: detail?.acceptsJobs ?? true,
-                ppdPath: detail?.ppdPath
+                ppdPath: detail?.ppdPath,
+                printingJobID: detail?.printingJobID
             )
         }
 
@@ -293,7 +299,8 @@ public final class CUPSClient: PrintSpooling, @unchecked Sendable {
             stateReasons: detail?.stateReasons ?? [],
             isDefault: isDefault,
             acceptsJobs: detail?.acceptsJobs ?? true,
-            ppdPath: detail?.ppdPath
+            ppdPath: detail?.ppdPath,
+            printingJobID: detail?.printingJobID
         )
     }
 
@@ -348,6 +355,35 @@ public final class CUPSClient: PrintSpooling, @unchecked Sendable {
     /// Completion history without `-l` does not say whether a job completed or
     /// was canceled. Ask for the long form before reporting terminal success.
     /// Failure to get the long form leaves the ordinary completion result.
+    private func completedJob(
+        id: Int,
+        printerID queue: String,
+        activeJob: PrintJob?
+    ) async throws -> PrintJob? {
+        let completedResult = try await run(Tool.lpstat, ["-W", "completed", "-o", queue])
+        guard completedResult.status == 0 else {
+            throw failure(tool: "lpstat", result: completedResult, printerID: queue)
+        }
+
+        let completed = LPStatParser.parseJobs(
+            completedResult.stdoutText,
+            printerID: queue,
+            defaultState: .completed
+        )
+        guard let job = completed.first(where: { $0.id == id }) else { return nil }
+        if let activeJob, activeJob.state == .completed { return activeJob }
+        // CUPS job ids can be reused after scheduler history is cleared. A
+        // completion timestamp older than the active job's creation timestamp
+        // is old history, not this job.
+        if let activeJob,
+           let activeCreated = activeJob.createdAt,
+           let completedAt = job.createdAt,
+           completedAt < activeCreated {
+            return activeJob
+        }
+        return try await enrichCompletedJob(job, queue: queue)
+    }
+
     private func enrichCompletedJob(_ job: PrintJob, queue: String) async throws -> PrintJob {
         do {
             let result = try await run(Tool.lpstat, ["-l", "-W", "completed", "-o", queue])

@@ -34,6 +34,17 @@ enum FlipColor {
     static let paperShadow = Color.black.opacity(0.18)
     static let printPaperShadow = Color.black.opacity(0.12)
 
+    // The printer is an object with its own material ramp. Paper stays the
+    // brightest thing in the scene; the appliance is warm stone, never pure
+    // white, so it reads separately from the sheets in both appearances.
+    static let deviceTop = dynamic(light: 0xFBF6EF, dark: 0x4A433D)
+    static let deviceFrontTop = dynamic(light: 0xF2E9DE, dark: 0x3E3833)
+    static let deviceFrontBottom = dynamic(light: 0xE6D9CA, dark: 0x332E2A)
+    static let deviceSide = dynamic(light: 0xDCCDBB, dark: 0x2B2724)
+    static let deviceWell = dynamic(light: 0xC9B8A6, dark: 0x1B1816)
+    static let deviceEdge = Color.black.opacity(0.13)
+    static let deviceHighlight = Color.white.opacity(0.55)
+
     static let success = dynamic(light: 0x2C7A56, dark: 0x7FD2A8)
     static let warning = dynamic(light: 0x9A6200, dark: 0xF2BE62)
     static let danger = dynamic(light: 0xB5342A, dark: 0xFF9387)
@@ -190,6 +201,57 @@ enum FlipFormat {
 
     static func percent(_ value: Double) -> String {
         "\(Int((min(max(value, 0), 1) * 100).rounded()))%"
+    }
+
+    /// A human page size for the document strip, e.g. `A4 · 210 × 297 mm`.
+    /// Points are converted without rounding away what the PDF actually says.
+    static func paperDescription(width: CGFloat, height: CGFloat) -> String {
+        guard width > 0, height > 0 else { return "Page size unknown" }
+        let short = min(width, height)
+        let long = max(width, height)
+        let millimetersShort = Int((short / 72 * 25.4).rounded())
+        let millimetersLong = Int((long / 72 * 25.4).rounded())
+        let inchesShort = Double(short / 72).formatted(.number.precision(.fractionLength(1)))
+        let inchesLong = Double(long / 72).formatted(.number.precision(.fractionLength(1)))
+
+        let standard: (name: String, dimensions: String)? = {
+            func near(_ value: CGFloat, _ target: CGFloat) -> Bool {
+                abs(value - target) < 8
+            }
+            if near(short, 595.28), near(long, 841.89) {
+                return ("A4", "\(millimetersShort) × \(millimetersLong) mm")
+            }
+            if near(short, 612), near(long, 792) {
+                return ("US Letter", "\(inchesShort) × \(inchesLong) in")
+            }
+            if near(short, 612), near(long, 1008) {
+                return ("US Legal", "\(inchesShort) × \(inchesLong) in")
+            }
+            if near(short, 419.53), near(long, 595.28) {
+                return ("A5", "\(millimetersShort) × \(millimetersLong) mm")
+            }
+            if near(short, 841.89), near(long, 1190.55) {
+                return ("A3", "\(millimetersShort) × \(millimetersLong) mm")
+            }
+            if near(short, 792), near(long, 1224) {
+                return ("Tabloid", "\(inchesShort) × \(inchesLong) in")
+            }
+            if near(short, 288), near(long, 432) {
+                return ("4 × 6 photo", "\(inchesShort) × \(inchesLong) in")
+            }
+            if near(short, 360), near(long, 504) {
+                return ("5 × 7 photo", "\(inchesShort) × \(inchesLong) in")
+            }
+            return nil
+        }()
+
+        if let standard {
+            return "\(standard.name) · \(standard.dimensions)"
+        }
+        if short < 430 {
+            return "\(inchesShort) × \(inchesLong) in"
+        }
+        return "\(millimetersShort) × \(millimetersLong) mm"
     }
 
     static func duration(_ interval: TimeInterval) -> String {
