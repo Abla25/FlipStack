@@ -161,7 +161,6 @@ struct SNMPProbe: Sendable {
             version: version,
             responded: &responded
         )
-        guard !descriptions.isEmpty else { return ([], responded) }
 
         let levels = walk(
             column: PrinterMIBColumns.suppliesLevel,
@@ -187,6 +186,10 @@ struct SNMPProbe: Sendable {
             version: version,
             responded: &responded
         )
+
+        guard !descriptions.isEmpty || !levels.isEmpty || !types.isEmpty else {
+            return ([], responded)
+        }
 
         var varbinds: [SNMPVarBind] = []
         append(descriptions, column: PrinterMIBColumns.suppliesDescription, to: &varbinds)

@@ -432,14 +432,18 @@ struct DemoStatusProvider: PrinterStatusProviding {
             supplies = [
                 SupplyLevel(id: "black", name: "Black", kind: .ink, colorName: "black", levelPercent: 7),
                 SupplyLevel(id: "cyan", name: "Cyan", kind: .ink, colorName: "cyan", levelPercent: 5),
+                SupplyLevel(id: "light-cyan", name: "Light Cyan", kind: .ink, colorName: "lightCyan", levelPercent: 38),
                 SupplyLevel(id: "magenta", name: "Magenta", kind: .ink, colorName: "magenta", levelPercent: 44),
+                SupplyLevel(id: "light-magenta", name: "Light Magenta", kind: .ink, colorName: "lightMagenta", levelPercent: 56),
                 SupplyLevel(id: "yellow", name: "Yellow", kind: .ink, colorName: "yellow", levelPercent: 61)
             ]
         } else {
             supplies = [
                 SupplyLevel(id: "black", name: "Black", kind: .ink, colorName: "black", levelPercent: 78),
                 SupplyLevel(id: "cyan", name: "Cyan", kind: .ink, colorName: "cyan", levelPercent: 56),
+                SupplyLevel(id: "light-cyan", name: "Light Cyan", kind: .ink, colorName: "lightCyan", levelPercent: 43),
                 SupplyLevel(id: "magenta", name: "Magenta", kind: .ink, colorName: "magenta", levelPercent: 63),
+                SupplyLevel(id: "light-magenta", name: "Light Magenta", kind: .ink, colorName: "lightMagenta", levelPercent: 51),
                 SupplyLevel(id: "yellow", name: "Yellow", kind: .ink, colorName: "yellow", levelPercent: 49)
             ]
         }

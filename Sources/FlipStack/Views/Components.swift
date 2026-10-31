@@ -172,18 +172,18 @@ struct FlipSupplyMeter: View {
     var width: CGFloat = 58
 
     private var color: Color { FlipColor.supply(supply) }
-    private var fraction: Double { supply.fraction ?? 0 }
+    private var fraction: Double? { supply.fraction }
     private var levelText: String {
-        guard let level = supply.levelPercent else { return "—" }
-        return "\(level)%"
+        guard supply.levelPercent != nil else { return "—" }
+        return "\(supply.levelPercent!)%"
     }
     private var shortName: String {
-        let name = (supply.colorName?.isEmpty == false ? supply.colorName! : supply.name)
-        let trimmed = name
+        let name = supply.displayName
+            .replacingOccurrences(of: "Light ", with: "Lt ")
             .replacingOccurrences(of: " Ink", with: "")
             .replacingOccurrences(of: " Toner", with: "")
             .trimmingCharacters(in: .whitespaces)
-        return trimmed.count > 10 ? String(trimmed.prefix(9)) + "…" : trimmed
+        return name.count > 12 ? String(name.prefix(11)) + "…" : name
     }
     private var accessibilityLevel: String {
         guard let level = supply.levelPercent else { return "level not reported" }
@@ -203,9 +203,11 @@ struct FlipSupplyMeter: View {
                     .fill(color.opacity(0.16))
                     .frame(width: barWidth, height: 3)
                     .overlay(alignment: .leading) {
-                        Capsule()
-                            .fill(color)
-                            .frame(width: max(1.5, barWidth * fraction), height: 3)
+                        if let fraction {
+                            Capsule()
+                                .fill(color)
+                                .frame(width: max(1.5, barWidth * fraction), height: 3)
+                        }
                     }
                 Text(levelText)
                     .font(.system(size: 8.5, weight: .semibold, design: .rounded))
@@ -216,8 +218,9 @@ struct FlipSupplyMeter: View {
             }
         }
         .frame(width: width, alignment: .leading)
+        .help(supply.levelPercent.map { "\(supply.displayName): \($0)%" } ?? "\(supply.displayName): level not reported")
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(supply.kind.label), \(supply.name)")
+        .accessibilityLabel("\(supply.kind.label), \(supply.displayName)")
         .accessibilityValue(accessibilityLevel)
     }
 }
@@ -460,19 +463,20 @@ struct FlipInkLowStrip: View {
     let supplies: [SupplyLevel]
 
     private var summary: String {
-        supplies.prefix(3).map { supply in
+        supplies.map { supply in
             if let level = supply.levelPercent {
-                return "\(supply.name) \(level)%"
+                return "\(supply.displayName) \(level)%"
             }
-            return supply.name
+            return supply.displayName
         }.joined(separator: " · ")
     }
 
     var body: some View {
-        HStack(spacing: 7) {
+        HStack(alignment: .top, spacing: 7) {
             Circle()
                 .fill(FlipColor.warning)
                 .frame(width: 5, height: 5)
+                .padding(.top, 5)
             FlipEyebrow("Supply low", color: FlipColor.warning)
             Text("·")
                 .font(FlipType.caption)
@@ -480,8 +484,8 @@ struct FlipInkLowStrip: View {
             Text(summary)
                 .font(FlipType.caption)
                 .foregroundStyle(FlipColor.secondaryInk)
-                .lineLimit(1)
-                .truncationMode(.tail)
+                .fixedSize(horizontal: false, vertical: true)
+                .lineSpacing(1)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 10)
@@ -502,6 +506,57 @@ struct FlipInkLowStrip: View {
                 return "\(supply.name), \(level)"
             }.joined(separator: "; ")
         )
+    }
+}
+
+extension PrinterHealth {
+    var color: Color {
+        switch self {
+        case .unknown: return FlipColor.neutralSupply
+        case .ready: return FlipColor.success
+        case .preparing: return FlipColor.coralDeep
+        case .printing: return FlipColor.coral
+        case .waiting: return FlipColor.coralDeep
+        case .offline: return FlipColor.warning
+        case .attention: return FlipColor.danger
+        }
+    }
+}
+
+struct FlipHealthDot: View {
+    let health: PrinterHealth
+    var size: CGFloat = 6.5
+    var animates: Bool = false
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var pulse = false
+
+    var body: some View {
+        Circle()
+            .fill(health.color)
+            .frame(width: size, height: size)
+            .overlay {
+                if animates, health == .printing, !reduceMotion {
+                    Circle()
+                        .stroke(health.color.opacity(0.4), lineWidth: 1)
+                        .scaleEffect(pulse ? 2.1 : 1)
+                        .opacity(pulse ? 0 : 0.9)
+                }
+            }
+            .onAppear { updatePulse() }
+            .onChange(of: health) { _ in updatePulse() }
+            .accessibilityHidden(true)
+    }
+
+    private func updatePulse() {
+        guard animates, health == .printing, !reduceMotion else {
+            pulse = false
+            return
+        }
+        pulse = false
+        withAnimation(.easeOut(duration: 1.6).repeatForever(autoreverses: false)) {
+            pulse = true
+        }
     }
 }
 

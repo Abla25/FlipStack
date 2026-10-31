@@ -65,6 +65,18 @@ struct QueueSection: View {
             .disabled(isRefreshing || model.selectedPrinter == nil)
             .help("Refresh queue")
             .accessibilityLabel("Refresh print queue")
+
+            Button {
+                withAnimation(FlipMotion.quick(reduceMotion)) {
+                    model.isShowingQueue = false
+                }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .bold))
+            }
+            .buttonStyle(FlipIconButtonStyle())
+            .help("Close queue")
+            .accessibilityLabel("Close print queue")
         }
         .padding(.horizontal, 16)
         .frame(height: 34)

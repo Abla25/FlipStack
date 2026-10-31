@@ -29,6 +29,10 @@ enum IPPFakes {
         attribute(tag: tag, name: name, value: int32Data(value))
     }
 
+    static func boolean(name: String, value: Bool) -> Data {
+        attribute(tag: IPPTag.boolean, name: name, value: Data([value ? 1 : 0]))
+    }
+
     static func collection(
         name: String,
         members: [(name: String, tag: UInt8, value: Data)]

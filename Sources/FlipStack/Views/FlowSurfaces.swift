@@ -163,17 +163,26 @@ struct PrintingSurface: View {
         model.activePrintMode == .singleSided
     }
 
+    private var isWaitingForPrinter: Bool {
+        model.isWaitingForPrinter
+    }
+
     private var eyebrow: String {
+        if isWaitingForPrinter { return "Waiting for printer" }
         if isSingleSided { return "Single-sided" }
         return pass == .fronts ? "Pass 1 of 2 · Fronts" : "Pass 2 of 2 · Backs"
     }
 
     private var title: String {
+        if isWaitingForPrinter { return "The printer is offline." }
         if isSingleSided { return "Printing." }
         return pass == .fronts ? "Printing fronts." : "Printing backs."
     }
 
     private var subtitle: String {
+        if isWaitingForPrinter {
+            return "The job is queued. FlipStack keeps watching; wake or reconnect the printer, or cancel the job here."
+        }
         if isSingleSided {
             return "The printer is working through the document one side at a time."
         }
@@ -186,7 +195,7 @@ struct PrintingSurface: View {
         VStack(alignment: .leading, spacing: 15) {
             FlowHeading(
                 eyebrow: eyebrow,
-                tint: FlipColor.coralDeep,
+                tint: isWaitingForPrinter ? FlipColor.warning : FlipColor.coralDeep,
                 title: title,
                 subtitle: subtitle
             )
@@ -195,7 +204,7 @@ struct PrintingSurface: View {
                 progress: orchestrator.progress,
                 activePass: pass,
                 singleSided: isSingleSided,
-                indeterminate: job.progress == nil
+                indeterminate: isWaitingForPrinter || job.progress == nil
             )
             .frame(maxWidth: .infinity)
 

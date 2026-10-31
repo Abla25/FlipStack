@@ -124,12 +124,6 @@ struct DocumentSection: View {
                     Text(documentSubtitle(document))
                         .font(FlipType.caption)
                         .foregroundStyle(FlipColor.secondaryInk)
-                    Circle()
-                        .fill(FlipColor.tertiaryInk)
-                        .frame(width: 2.5, height: 2.5)
-                    Text("PDF")
-                        .font(FlipType.caption)
-                        .foregroundStyle(FlipColor.tertiaryInk)
                 }
             }
             .accessibilityElement(children: .ignore)

@@ -9,13 +9,13 @@ import SwiftUI
 /// designed independently rather than tinted versions of each other.
 enum FlipColor {
     static let coral = dynamic(light: 0xEB4F31, dark: 0xFF7A5E)
-    static let coralDeep = dynamic(light: 0xC93D24, dark: 0xFF9A84)
+    static let coralDeep = dynamic(light: 0xB8331E, dark: 0xFF9A84)
     static let coralSoft = dynamic(light: 0xFFE9E2, dark: 0x40241D)
     static let onCoral = dynamic(light: 0x2A1008, dark: 0x211009)
 
     static let ink = Color(nsColor: .labelColor)
-    static let secondaryInk = Color(nsColor: .secondaryLabelColor)
-    static let tertiaryInk = Color(nsColor: .tertiaryLabelColor)
+    static let secondaryInk = dynamic(light: 0x5B5651, dark: 0xC7C1BA)
+    static let tertiaryInk = dynamic(light: 0x6E6862, dark: 0xAFA9A2)
 
     static let hairline = Color(nsColor: .separatorColor).opacity(0.5)
     static let border = Color(nsColor: .separatorColor).opacity(0.72)

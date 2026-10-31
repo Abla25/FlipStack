@@ -35,7 +35,7 @@ There are no timer-based "the printer is probably done" transitions. FlipStack w
 - **Print preview.** See the selected pages inside the panel before printing. Booklet previews pair the imposed PDF pages back into the actual 2-up sheet sides and let you inspect fronts and backs.
 - **Page ranges done right.** Selected pages are compiled in order before the two-pass flow, so the sheet pairing stays correct even when the range starts on an even page. Ranges work in single-sided, duplex, and booklet modes.
 - **Booklet imposition.** Two-up booklet printing with configurable signatures, plus fold and staple hints. Booklets use the same guided front-and-back workflow.
-- **Live queue, ink, and errors.** See active and recent CUPS jobs, cancel a job, watch ink and maintenance levels when the printer reports them, and read human-friendly state reasons.
+- **Live queue, ink, and errors.** See active and recent CUPS jobs, cancel a job, watch every supply the printer reports (including light cyan/light magenta/photo black), and read human-friendly state reasons. If a printer exposes no supply data, the panel says so instead of showing a fake level; the header also reports an offline device rather than pretending it is ready.
 - **Detects nearby printers.** Configured CUPS queues plus `lpinfo` discovery for USB and Wi-Fi/network devices. Detected devices that are not yet queues can be set up from the panel in Printers & Scanners.
 - **Test and alignment sheets.** Print a color and alignment test page, or a head-alignment reference, without leaving the app.
 - **Color-managed and photo-ready where the driver allows it.** Select the PPD's own color profiles and use the Photo preset to pick photo media, maximum quality, color, and a driver profile.
@@ -155,6 +155,24 @@ For two-sided jobs, FlipStack prints one copy at a time so every back lands on i
 Use the eye button on the document row to open the inline print preview. For booklets, switch between the fronts and backs to inspect the actual 2-up sheet sides. Close the preview to return to the print controls.
 
 Quality presets are applied to the real driver choices. Eco favours the lowest supported resolution and plain media; Standard picks the balanced option; High picks the best non-photo quality; Photo uses maximum quality, photo media, color, and the driver's photo/ICC profile when present. Choose a preset, or keep fine-tuning the individual driver options; the preset indicator shows Custom when the current combination does not match a preset. Layout orientation and fit-to-page are applied to both passes.
+
+### Settings that are remembered
+
+FlipStack saves the following per printer:
+
+- The selected PPD choices: color mode, paper size, media type, quality/resolution, and any driver color profiles.
+- The quality preset is derived from those choices, so the last effective preset is restored.
+- Layout: automatic/landscape orientation and fit-to-page.
+- The physical flip axis, the face-down output-tray setting, and whether setup has been completed.
+- The last selected printer and the last print mode (single, duplex, or booklet).
+
+The page range and copy count belong to the current job and are intentionally not restored on the next launch. Two-sided jobs always print one copy at a time; single-sided jobs can use up to 20 copies.
+
+### Compared with the macOS print dialog
+
+FlipStack is better for its specific job: it keeps manual duplex page order explicit, previews the actual selected pages (including booklet 2-up sides), keeps driver choices discoverable instead of hiding them behind generic presets, remembers per-printer calibration and layout, and exposes the real CUPS queue and job state.
+
+It is not a system-wide replacement for every macOS print feature. It prints through configured CUPS queues, does not auto-create queues for discovered devices, does not use hardware automatic duplex for two-sided work, and only offers vendor-specific features that the queue's PPD exposes. Specialty printer languages, input ICC profile conversion, and automatic multiple-copy manual-duplex batching are outside this version.
 
 Keyboard shortcuts: Command-O opens a PDF, Command-P starts the current job, Command-R refreshes printers and queues.
 

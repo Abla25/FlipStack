@@ -66,7 +66,7 @@ struct PDFPagePreview: View {
                     .padding(10)
                 }
             }
-            .frame(height: 214)
+            .frame(height: 178)
             .overlay {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .strokeBorder(FlipColor.hairline, lineWidth: 0.5)
@@ -223,7 +223,7 @@ struct DocumentPreviewPanel: View {
                         .foregroundStyle(FlipColor.secondaryInk)
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: 246)
+                .frame(height: 210)
                 .background(
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .fill(FlipColor.tone)

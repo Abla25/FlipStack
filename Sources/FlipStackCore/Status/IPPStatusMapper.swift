@@ -18,6 +18,9 @@ enum IPPStatusMapper {
             fallback: printer.stateReasons
         )
         let ippSupplies = supplies(from: response)
+        let acceptsJobs = response.firstValue(named: "printer-is-accepting-jobs")?.intValue.map { $0 != 0 }
+        let queuedJobCount = response.firstValue(named: "queued-job-count")?.intValue
+        let stateMessage = response.firstValue(named: "printer-state-message")?.stringValue
 
         if !ippSupplies.isEmpty {
             return PrinterStatus(
@@ -25,7 +28,10 @@ enum IPPStatusMapper {
                 state: state,
                 stateReasons: reasons,
                 supplies: ippSupplies,
-                origin: .ipp
+                origin: .ipp,
+                acceptsJobs: acceptsJobs,
+                queuedJobCount: queuedJobCount,
+                stateMessage: stateMessage
             )
         }
 
@@ -36,7 +42,10 @@ enum IPPStatusMapper {
                 stateReasons: reasons,
                 supplies: snmpSupplies,
                 origin: .snmp,
-                note: "Supply levels read from SNMP."
+                note: "Supply levels read from SNMP.",
+                acceptsJobs: acceptsJobs,
+                queuedJobCount: queuedJobCount,
+                stateMessage: stateMessage
             )
         }
 
@@ -45,7 +54,10 @@ enum IPPStatusMapper {
             state: state,
             stateReasons: reasons,
             origin: .ipp,
-            note: "No supply levels reported by IPP"
+            note: "No supply levels reported by IPP",
+            acceptsJobs: acceptsJobs,
+            queuedJobCount: queuedJobCount,
+            stateMessage: stateMessage
         )
     }
 
@@ -64,7 +76,8 @@ enum IPPStatusMapper {
                 stateReasons: printer.stateReasons,
                 supplies: snmpSupplies,
                 origin: .snmp,
-                note: "\(baseNote) Supply levels from SNMP."
+                note: "\(baseNote) Supply levels from SNMP.",
+                acceptsJobs: printer.acceptsJobs
             )
         }
 
@@ -77,7 +90,8 @@ enum IPPStatusMapper {
             state: printer.state,
             stateReasons: printer.stateReasons,
             origin: .unavailable,
-            note: note
+            note: note,
+            acceptsJobs: printer.acceptsJobs
         )
     }
 

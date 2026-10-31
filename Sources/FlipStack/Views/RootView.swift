@@ -71,6 +71,19 @@ struct RootView: View {
                 }
                 .frame(maxWidth: .infinity)
             }
+            .mask {
+                VStack(spacing: 0) {
+                    Rectangle()
+                    if showsComposerActionBar {
+                        LinearGradient(
+                            colors: [.black, .clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .frame(height: model.isShowingQueue ? 28 : 9)
+                    }
+                }
+            }
 
             if showsComposerActionBar {
                 PrimaryActionBar(model: model)
@@ -91,11 +104,7 @@ struct RootView: View {
     private var showsComposerActionBar: Bool {
         guard orchestrator.phase.isIdle,
               model.flipAxisSetup == nil,
-              !model.isShowingQueue,
-              !model.isLoadingPrinters,
               !model.isPreparingPrint,
-              !model.isShowingPreview,
-              !model.isPreparingPreview,
               model.selectedDocument != nil,
               !model.printers.isEmpty else {
             return false

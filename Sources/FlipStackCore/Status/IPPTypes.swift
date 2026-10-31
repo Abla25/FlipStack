@@ -259,6 +259,9 @@ public struct IPPRequest: Hashable, Sendable {
     public static let defaultRequestedAttributes: [String] = [
         "printer-state",
         "printer-state-reasons",
+        "printer-state-message",
+        "printer-is-accepting-jobs",
+        "queued-job-count",
         "printer-info",
         "printer-make-and-model",
         "printer-marker-supplies",
@@ -300,8 +303,13 @@ public struct IPPRequest: Hashable, Sendable {
         appendStringAttribute(IPPTag.charset, name: "attributes-charset", value: "utf-8", to: &data)
         appendStringAttribute(IPPTag.naturalLanguage, name: "attributes-natural-language", value: "en", to: &data)
         appendStringAttribute(IPPTag.uri, name: "printer-uri", value: printerURI, to: &data)
-        for attribute in requestedAttributes {
-            appendStringAttribute(IPPTag.keyword, name: "requested-attributes", value: attribute, to: &data)
+        for (index, attribute) in requestedAttributes.enumerated() {
+            appendStringAttribute(
+                IPPTag.keyword,
+                name: index == 0 ? "requested-attributes" : "",
+                value: attribute,
+                to: &data
+            )
         }
 
         data.append(IPPTag.endOfAttributes)

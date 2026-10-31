@@ -207,7 +207,7 @@ struct ModeSection: View {
         HStack(spacing: 14) {
             FlipMetric(value: "\(plan.sheetCount)", label: "Sheets")
             metricDivider
-            FlipMetric(value: "\(plan.signatureCount)", label: "Signatures")
+            FlipMetric(value: "\(plan.signatureCount)", label: plan.signatureCount == 1 ? "Signature" : "Signatures")
             metricDivider
             FlipMetric(value: "\(blankCount(plan))", label: "Blanks")
             Spacer(minLength: 0)
@@ -255,17 +255,19 @@ struct ModeSection: View {
                 .accessibilityHint("Opens the flip axis and tray setup inline.")
             }
 
-            Text(
-                model.preferences.hasConfiguredFlip
-                ? (model.preferences.ejectsFaceDown
-                   ? "Your tray stacks pages face-down, so you’ll only reinsert the block between passes."
-                   : "Your tray stacks pages face-up, so you’ll turn the block over between passes.")
-                : "Tell FlipStack how this printer stacks pages before the first job."
-            )
-            .font(FlipType.footnote)
-            .foregroundStyle(FlipColor.secondaryInk)
-            .fixedSize(horizontal: false, vertical: true)
-            .lineSpacing(1)
+            if !model.isShowingQueue {
+                Text(
+                    model.preferences.hasConfiguredFlip
+                    ? (model.preferences.ejectsFaceDown
+                       ? "Your tray stacks pages face-down, so you’ll only reinsert the block between passes."
+                       : "Your tray stacks pages face-up, so you’ll turn the block over between passes.")
+                    : "Tell FlipStack how this printer stacks pages before the first job."
+                )
+                .font(FlipType.footnote)
+                .foregroundStyle(FlipColor.secondaryInk)
+                .fixedSize(horizontal: false, vertical: true)
+                .lineSpacing(1)
+            }
         }
     }
 }
@@ -703,8 +705,13 @@ struct OutputSection: View {
                 }
             }
 
+            Rectangle()
+                .fill(FlipColor.hairline)
+                .frame(width: 0.5, height: 14)
+                .accessibilityHidden(true)
+
             layoutChip(
-                title: "Fit",
+                title: "Fit page",
                 systemName: "arrow.up.left.and.arrow.down.right",
                 selected: model.fitToPage,
                 help: "Scale pages to fit the selected paper size."

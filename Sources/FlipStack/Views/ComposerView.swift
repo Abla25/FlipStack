@@ -108,7 +108,9 @@ struct PrimaryActionBar: View {
         }
         .background {
             ZStack {
-                Rectangle().fill(.ultraThinMaterial)
+                // A thick material keeps scrolling content from showing through
+                // sliced at the action bar edge while preserving the glass feel.
+                Rectangle().fill(.thickMaterial)
                 Rectangle().fill(Color.primary.opacity(0.012))
             }
         }
@@ -126,7 +128,7 @@ struct PrimaryActionSection: View {
         case .singleSided: return "Print document"
         case .manualDuplex:
             return model.pageSelectionInfo.pageCount == 1 ? "Print page" : "Print fronts"
-        case .booklet: return "Prepare booklet"
+        case .booklet: return "Print booklet"
         }
     }
 
@@ -235,7 +237,7 @@ struct PrimaryActionSection: View {
             .buttonStyle(FlipPrimaryButtonStyle())
             .disabled(!canStart)
             .help(disabledReason ?? detailLine ?? actionTitle)
-            .accessibilityLabel(actionTitle)
+            .accessibilityLabel(model.isPreparingPrint ? "Preparing print job" : actionTitle)
             .accessibilityHint(disabledReason ?? detailLine ?? "Starts printing. Command-P also works.")
 
             if let detailLine {

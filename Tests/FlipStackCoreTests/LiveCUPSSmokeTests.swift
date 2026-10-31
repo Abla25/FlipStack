@@ -49,6 +49,11 @@ final class LiveCUPSSmokeTests: XCTestCase {
         print("L1800 status: state=\(status.state.rawValue) origin=\(status.origin.rawValue) reasons=\(status.stateReasons) supplies=\(status.supplies.map { "\($0.name):\($0.levelPercent.map(String.init) ?? "?")" }) note=\(status.note ?? "-")")
         XCTAssertEqual(status.printerID, l1800.id)
 
+        for printer in printers where printer.id != l1800.id {
+            let other = await IPPStatusClient().status(for: printer)
+            print("STATUS \(printer.id): state=\(other.state.rawValue) origin=\(other.origin.rawValue) accepts=\(other.acceptsJobs.map(String.init) ?? "?") queued=\(other.queuedJobCount.map(String.init) ?? "?") reasons=\(other.stateReasons) supplies=\(other.supplies.map { "\($0.name):\($0.levelPercent.map(String.init) ?? "?")" }) note=\(other.note ?? "-")")
+        }
+
         let devices = try await CUPSDeviceDiscovery().discoverDevices()
         print("Discovered devices: \(devices.map { "\($0.transport.rawValue):\($0.name)" })")
         for discovered in devices {

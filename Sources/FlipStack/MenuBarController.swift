@@ -93,6 +93,7 @@ final class MenuBarController: NSObject {
 
     private func configurePanel() {
         panel.level = .popUpMenu
+        panel.title = "FlipStack"
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
         panel.becomesKeyOnlyIfNeeded = false
@@ -126,6 +127,7 @@ final class MenuBarController: NSObject {
 
         let root = RootView(model: model, orchestrator: orchestrator)
         hostingView = NSHostingView(rootView: root)
+        hostingView.setAccessibilityLabel("FlipStack print manager")
         hostingView.translatesAutoresizingMaskIntoConstraints = false
         effectView.addSubview(hostingView)
         NSLayoutConstraint.activate([

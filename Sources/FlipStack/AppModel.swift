@@ -4,6 +4,28 @@ import FlipStackCore
 import PDFKit
 import UniformTypeIdentifiers
 
+enum PrinterHealth: Equatable {
+    case unknown
+    case ready
+    case preparing
+    case printing
+    case waiting
+    case offline
+    case attention
+
+    var label: String {
+        switch self {
+        case .unknown: return "Unknown"
+        case .ready: return "Ready"
+        case .preparing: return "Preparing"
+        case .printing: return "Printing"
+        case .waiting: return "Your turn"
+        case .offline: return "Offline"
+        case .attention: return "Needs attention"
+        }
+    }
+}
+
 struct SelectedDocument: Identifiable, Equatable {
     let id = UUID()
     let url: URL
@@ -93,6 +115,9 @@ final class AppModel: ObservableObject {
     @Published private(set) var isDiscoveringPrinters = false
     @Published private(set) var discoveryNote: String?
 
+    private var isRefreshingStatus = false
+    private var isRefreshingQueue = false
+
     // MARK: Document and options
 
     @Published private(set) var selectedDocument: SelectedDocument?
@@ -168,6 +193,9 @@ final class AppModel: ObservableObject {
     @Published var isShowingQueue = false {
         didSet {
             guard oldValue != isShowingQueue else { return }
+            if isShowingQueue {
+                closePreview()
+            }
             updateQueuePolling()
         }
     }
@@ -389,6 +417,92 @@ final class AppModel: ObservableObject {
             return .processing
         }
         return base
+    }
+
+    /// A more honest headline than "Ready" for queues whose backend reports
+    /// the device offline. FlipStack still lets a job try to wake the printer,
+    /// but the header must not pretend the device is reachable.
+    var printerHealth: PrinterHealth {
+        guard selectedPrinter != nil else { return .unknown }
+        if isPreparingPrint {
+            return .preparing
+        }
+        if case .preparing = orchestrator.phase {
+            return .preparing
+        }
+        if case .awaitingFlip = orchestrator.phase {
+            return .waiting
+        }
+        if case .printing(_, let job) = orchestrator.phase, job.isActive {
+            if let status,
+               status.stateReasons.contains("offline-report"),
+               job.state != .processing {
+                return .offline
+            }
+            return .printing
+        }
+        if case .failed(let failure) = orchestrator.phase, failure.pass != nil {
+            return .attention
+        }
+        guard let status else { return .unknown }
+        let state = status.state
+        let accepting = status.acceptsJobs ?? selectedPrinter?.acceptsJobs ?? true
+        let reasons = status.stateReasons
+        if Date().timeIntervalSince(status.fetchedAt) > 120 {
+            return .unknown
+        }
+        if state == .stopped || !accepting {
+            return .attention
+        }
+        if reasons.contains("offline-report") {
+            return .offline
+        }
+        if reasons.contains(where: PrinterReason.isError) {
+            return .attention
+        }
+        if state == .processing {
+            return .printing
+        }
+        if status.origin == .unavailable, state == .idle {
+            return .unknown
+        }
+        if state == .unknown {
+            return .unknown
+        }
+        return .ready
+    }
+
+    var isWaitingForPrinter: Bool {
+        guard case .printing(_, let job) = orchestrator.phase, job.isActive else { return false }
+        guard let status else { return false }
+        return status.stateReasons.contains("offline-report") && job.state != .processing
+    }
+
+    var printerHealthNote: String? {
+        switch printerHealth {
+        case .offline:
+            return "CUPS reports this printer offline. A print job may still wake it."
+        case .attention:
+            return activeStateReasons.first ?? "The printer queue needs attention."
+        case .unknown:
+            if status == nil {
+                return "Checking live printer status…"
+            }
+            return "Live printer status is unavailable; queue state is shown from CUPS."
+        case .ready, .printing, .preparing, .waiting:
+            return nil
+        }
+    }
+
+    /// Shown when the queue is healthy but the printer does not expose marker
+    /// supplies (common on USB-only photo printers such as the L1800).
+    var supplyFallbackNote: String? {
+        guard selectedPrinter != nil, let status else { return nil }
+        if !status.supplies.isEmpty { return nil }
+        // The health note already explains an entirely unavailable status;
+        // avoid saying the same thing twice in the header.
+        if status.origin == .unavailable { return nil }
+        return "Supply levels are not reported by this printer."
     }
 
     var activeStateReasons: [String] {
@@ -812,6 +926,7 @@ final class AppModel: ObservableObject {
             closePreview()
             return
         }
+        isShowingQueue = false
         Task { await preparePreview() }
     }
 
@@ -1250,13 +1365,18 @@ final class AppModel: ObservableObject {
     // MARK: Status and queue
 
     func refreshStatus() async {
-        guard let printer = selectedPrinter else { return }
+        guard let printer = selectedPrinter, !isRefreshingStatus else { return }
+        isRefreshingStatus = true
+        defer { isRefreshingStatus = false }
         let newStatus = await statusProvider.status(for: printer)
         guard selectedPrinter?.id == printer.id else { return }
         status = newStatus
         if var current = selectedPrinter {
             current.state = newStatus.state
             current.stateReasons = newStatus.stateReasons
+            if let acceptsJobs = newStatus.acceptsJobs {
+                current.acceptsJobs = acceptsJobs
+            }
             selectedPrinter = current
             if let index = printers.firstIndex(where: { $0.id == current.id }) {
                 printers[index] = current
@@ -1265,7 +1385,9 @@ final class AppModel: ObservableObject {
     }
 
     func refreshQueue() async {
-        guard let printer = selectedPrinter else { return }
+        guard let printer = selectedPrinter, !isRefreshingQueue else { return }
+        isRefreshingQueue = true
+        defer { isRefreshingQueue = false }
         do {
             async let active = spooler.activeJobs(printerID: printer.id)
             async let recent = spooler.recentJobs(printerID: printer.id, limit: 8)

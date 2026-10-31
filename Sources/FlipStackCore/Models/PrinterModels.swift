@@ -189,6 +189,35 @@ public struct SupplyLevel: Identifiable, Hashable, Codable, Sendable {
         self.isEstimated = isEstimated
     }
 
+    /// Marker descriptions from drivers are often abbreviations (`MB`, `PK`,
+    /// `LC`). Prefer a readable color name when one is available.
+    public var displayName: String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let shortNames = [
+            "mb": "Matte Black",
+            "pk": "Photo Black",
+            "lc": "Light Cyan",
+            "lm": "Light Magenta",
+            "lk": "Light Black",
+            "pc": "Photo Cyan",
+            "pm": "Photo Magenta",
+            "vm": "Vivid Magenta",
+            "vlm": "Vivid Light Magenta",
+            "vlc": "Vivid Light Cyan"
+        ]
+        if let friendly = shortNames[trimmed.lowercased()] {
+            return friendly
+        }
+        let color = colorName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if trimmed.isEmpty {
+            return color.isEmpty ? kind.label : color
+        }
+        if trimmed.count <= 3, color.count > trimmed.count {
+            return color
+        }
+        return trimmed
+    }
+
     public var isLow: Bool {
         guard let levelPercent else { return false }
         return levelPercent <= 12
@@ -220,6 +249,9 @@ public struct PrinterStatus: Hashable, Codable, Sendable {
     public var origin: StatusOrigin
     public var fetchedAt: Date
     public var note: String?
+    public var acceptsJobs: Bool?
+    public var queuedJobCount: Int?
+    public var stateMessage: String?
 
     public init(
         printerID: String,
@@ -228,7 +260,10 @@ public struct PrinterStatus: Hashable, Codable, Sendable {
         supplies: [SupplyLevel] = [],
         origin: StatusOrigin = .unavailable,
         fetchedAt: Date = Date(),
-        note: String? = nil
+        note: String? = nil,
+        acceptsJobs: Bool? = nil,
+        queuedJobCount: Int? = nil,
+        stateMessage: String? = nil
     ) {
         self.printerID = printerID
         self.state = state
@@ -237,6 +272,9 @@ public struct PrinterStatus: Hashable, Codable, Sendable {
         self.origin = origin
         self.fetchedAt = fetchedAt
         self.note = note
+        self.acceptsJobs = acceptsJobs
+        self.queuedJobCount = queuedJobCount
+        self.stateMessage = stateMessage
     }
 
     public static func unknown(for printer: Printer) -> PrinterStatus {

@@ -61,11 +61,16 @@ enum IPPSupplyNormalizer {
 
         // Check multi-word colors before their base color.
         let ordered: [(String, String)] = [
+            ("vividlightmagenta", "Vivid Light Magenta"),
+            ("vividlightcyan", "Vivid Light Cyan"),
             ("photoblack", "Photo Black"),
             ("matteblack", "Matte Black"),
             ("lightblack", "Light Black"),
             ("lightcyan", "Light Cyan"),
             ("lightmagenta", "Light Magenta"),
+            ("photocyan", "Photo Cyan"),
+            ("photomagenta", "Photo Magenta"),
+            ("vividmagenta", "Vivid Magenta"),
             ("darkgray", "Dark Gray"),
             ("darkgrey", "Dark Gray"),
             ("lightgray", "Light Gray"),
@@ -137,7 +142,10 @@ enum IPPSupplyNormalizer {
     static func kind(inToken raw: String) -> SupplyKind? {
         let key = normalizedToken(raw)
         guard !key.isEmpty else { return nil }
-        if key.contains("waste") { return .waste }
+        if key.contains("waste") || key.contains("inkpad") || key.contains("purge")
+            || key.contains("absorber") || key.contains("borderless") {
+            return .waste
+        }
         if key.contains("toner") { return .toner }
         if key.contains("ink") { return .ink }
         if key.contains("drum") || key.contains("opc") || key.contains("photoconductor") {
@@ -169,10 +177,26 @@ enum IPPSupplyNormalizer {
         "magenta": "Magenta",
         "yellow": "Yellow",
         "lightcyan": "Light Cyan",
+        "lc": "Light Cyan",
         "lightmagenta": "Light Magenta",
+        "lm": "Light Magenta",
         "photoblack": "Photo Black",
+        "pk": "Photo Black",
         "matteblack": "Matte Black",
+        "mb": "Matte Black",
+        "mk": "Matte Black",
         "lightblack": "Light Black",
+        "lk": "Light Black",
+        "photocyan": "Photo Cyan",
+        "pc": "Photo Cyan",
+        "photomagenta": "Photo Magenta",
+        "pm": "Photo Magenta",
+        "vividmagenta": "Vivid Magenta",
+        "vm": "Vivid Magenta",
+        "vividlightmagenta": "Vivid Light Magenta",
+        "vlm": "Vivid Light Magenta",
+        "vividlightcyan": "Vivid Light Cyan",
+        "vlc": "Vivid Light Cyan",
         "gray": "Gray",
         "grey": "Gray",
         "darkgray": "Dark Gray",

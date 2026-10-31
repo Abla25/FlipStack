@@ -19,8 +19,24 @@ struct HeaderView: View {
 
     private var modelLine: String {
         if model.isLoadingPPD { return "Reading driver options…" }
-        if let name = printer?.modelName, !name.isEmpty { return name }
-        if let name = model.ppd?.displayName, !name.isEmpty { return name }
+        if let name = printer?.modelName, !name.isEmpty,
+           name.caseInsensitiveCompare(printer?.displayName ?? "") != .orderedSame {
+            return name
+        }
+        if let name = model.ppd?.displayName, !name.isEmpty,
+           name.caseInsensitiveCompare(printer?.displayName ?? "") != .orderedSame {
+            return name
+        }
+        if let uri = printer?.deviceURI?.lowercased() {
+            if uri.hasPrefix("usb://") || uri.hasPrefix("hp:/") {
+                return "USB printer"
+            }
+            if uri.hasPrefix("dnssd://") || uri.hasPrefix("ipp://")
+                || uri.hasPrefix("ipps://") || uri.hasPrefix("socket://")
+                || uri.hasPrefix("lpd://") {
+                return "Network printer"
+            }
+        }
         guard let printer else { return "No printer selected" }
         return "Print queue · \(printer.id)"
     }
@@ -43,14 +59,28 @@ struct HeaderView: View {
                 noticeRow
                     .padding(.horizontal, FlipMetrics.gutter)
                     .padding(.top, 7)
+            } else if let healthNote = model.printerHealthNote,
+                      model.printerHealth == .offline
+                        || model.printerHealth == .unknown
+                        || model.printerHealth == .attention {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: model.printerHealth == .offline ? "exclamationmark.triangle" : "info.circle")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(model.printerHealth == .offline ? FlipColor.warning : FlipColor.tertiaryInk)
+                    Text(healthNote)
+                        .font(FlipType.caption)
+                        .foregroundStyle(FlipColor.secondaryInk)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .lineSpacing(1)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, FlipMetrics.gutter)
+                .padding(.top, 7)
+                .accessibilityElement(children: .combine)
             }
 
-            if let printer,
-               let supplies = model.displayStatus?.supplies,
-               !supplies.isEmpty {
-                supplyRow(for: printer, supplies: supplies)
-                    .padding(.horizontal, FlipMetrics.gutter)
-                    .padding(.top, 10)
+            if let printer {
+                supplySection(for: printer)
             }
 
             if isPickerOpen {
@@ -110,7 +140,7 @@ struct HeaderView: View {
                 }
             }
             .buttonStyle(FlipIconButtonStyle())
-            .allowsHitTesting(!isLocked && !model.isLoadingPrinters && !model.isRefreshing)
+            .disabled(isLocked || model.isLoadingPrinters || model.isRefreshing)
             .opacity(isLocked ? 0.45 : 1)
             .help(isLocked ? "Refresh is unavailable while a print is in progress" : "Refresh printers, status and queue")
             .accessibilityLabel("Refresh printers and status")
@@ -156,6 +186,7 @@ struct HeaderView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .disabled(isLocked)
                     .allowsHitTesting(!isLocked && model.printers.count > 1)
                     .help(isLocked ? "Printer switching is unavailable during a print" : "Switch printer")
                     .accessibilityLabel("Printer, \(printer.displayName)")
@@ -190,21 +221,27 @@ struct HeaderView: View {
             if let printer {
                 VStack(alignment: .trailing, spacing: 5) {
                     HStack(spacing: 5) {
-                        FlipStatusDot(
-                            state: model.printerState,
+                        FlipHealthDot(
+                            health: model.printerHealth,
                             size: 6.5,
                             animates: true
                         )
-                        Text(model.printerState.label)
+        Text(model.printerHealth.label)
                             .font(FlipType.captionStrong)
-                            .foregroundStyle(FlipColor.secondaryInk)
+                            .foregroundStyle(
+                                model.printerHealth == .offline
+                                ? FlipColor.warning
+                                : (model.printerHealth == .waiting || model.printerHealth == .preparing)
+                                    ? FlipColor.coralDeep
+                                    : FlipColor.secondaryInk
+                            )
                     }
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("Printer state")
                     .accessibilityValue(
                         stateReasons.isEmpty
-                        ? model.printerState.label
-                        : "\(model.printerState.label), \(stateReasons.joined(separator: ", "))"
+                        ? model.printerHealth.label
+                        : "\(model.printerHealth.label), \(stateReasons.joined(separator: ", "))"
                     )
 
                     if printer.isDefault {
@@ -239,28 +276,60 @@ struct HeaderView: View {
         .accessibilityValue(stateReasons.joined(separator: ", "))
     }
 
-    private func supplyRow(for printer: Printer, supplies: [SupplyLevel]) -> some View {
-        HStack(alignment: .bottom, spacing: 8) {
-            ForEach(Array(supplies.prefix(4))) { supply in
-                FlipSupplyMeter(supply: supply, width: 62)
+    @ViewBuilder
+    private func supplySection(for printer: Printer) -> some View {
+        if let supplies = model.displayStatus?.supplies, !supplies.isEmpty {
+            supplyRow(for: printer, supplies: supplies)
+                .padding(.horizontal, FlipMetrics.gutter)
+                .padding(.top, 10)
+        } else if let note = model.supplyFallbackNote {
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: "drop.triangle")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(FlipColor.secondaryInk)
+                    .frame(width: 11, height: 12, alignment: .top)
+                Text(note)
+                    .font(FlipType.caption)
+                    .foregroundStyle(FlipColor.secondaryInk)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
             }
-            if supplies.count > 4 {
-                Text("+\(supplies.count - 4)")
-                    .font(FlipType.captionStrong)
-                    .foregroundStyle(FlipColor.tertiaryInk)
-                    .padding(.bottom, 2)
-                    .accessibilityLabel("\(supplies.count - 4) more supplies")
-            }
-            Spacer(minLength: 0)
+            .padding(.horizontal, FlipMetrics.gutter)
+            .padding(.top, 8)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Supply levels. \(note)")
         }
+    }
+
+    private func supplyRow(for printer: Printer, supplies: [SupplyLevel]) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            ForEach(Array(stride(from: 0, to: supplies.count, by: 6)), id: \.self) { start in
+                let end = min(start + 6, supplies.count)
+                let row = Array(supplies[start..<end])
+                let width = supplyWidth(for: row.count)
+                HStack(alignment: .top, spacing: 6) {
+                    ForEach(row) { supply in
+                        FlipSupplyMeter(supply: supply, width: width)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Supply levels for \(printer.displayName)")
+    }
+
+    private func supplyWidth(for count: Int) -> CGFloat {
+        guard count > 0 else { return 0 }
+        let available = FlipMetrics.panelWidth - FlipMetrics.gutter * 2
+        return min(84, max(42, (available - CGFloat(count - 1) * 6) / CGFloat(count)))
     }
 
     // MARK: Picker
 
     private func togglePicker() {
-        guard !isLocked else { return }
+        guard !isLocked, model.printers.count > 1 else { return }
         let opening = !isPickerOpen
         withAnimation(FlipMotion.standard(reduceMotion)) {
             isPickerOpen.toggle()
@@ -322,7 +391,7 @@ struct HeaderView: View {
                 .padding(.horizontal, 5)
                 .padding(.bottom, 5)
             }
-            .frame(maxHeight: 204)
+            .frame(maxHeight: 172)
         }
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -338,6 +407,7 @@ struct HeaderView: View {
     private func printerRow(_ candidate: Printer) -> some View {
         let isSelected = candidate.id == model.selectedPrinter?.id
         let isHovered = candidate.id == hoveredPrinterID
+        let health = health(for: candidate)
 
         return Button {
             guard !isLocked else { return }
@@ -347,7 +417,7 @@ struct HeaderView: View {
             Task { await model.selectPrinter(candidate) }
         } label: {
             HStack(spacing: 8) {
-                FlipStatusDot(state: candidate.state, size: 6)
+                FlipHealthDot(health: health, size: 6)
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 5) {
                         Text(candidate.displayName)
@@ -387,9 +457,25 @@ struct HeaderView: View {
             hoveredPrinterID = hovering ? candidate.id : (hoveredPrinterID == candidate.id ? nil : hoveredPrinterID)
         }
         .disabled(isLocked)
-        .accessibilityLabel("\(candidate.displayName), \(candidate.state.label)")
+        .accessibilityLabel("\(candidate.displayName), \(health.label)")
         .accessibilityValue(isSelected ? "Selected" : "Not selected")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityHint("Switches FlipStack to this printer.")
+    }
+
+    private func health(for candidate: Printer) -> PrinterHealth {
+        if candidate.state == .stopped || !candidate.acceptsJobs {
+            return .attention
+        }
+        if candidate.stateReasons.contains("offline-report") {
+            return .offline
+        }
+        if candidate.state == .processing {
+            return .printing
+        }
+        if candidate.state == .idle {
+            return .ready
+        }
+        return .unknown
     }
 }

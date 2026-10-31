@@ -54,6 +54,29 @@ final class IPPStatusTests: XCTestCase {
         XCTAssertEqual(status.supplies.map(\.id), repeatStatus.supplies.map(\.id))
     }
 
+    func testQueuePolicyAndStateMessageAreParsed() throws {
+        let attributes = [
+            IPPFakes.integer(IPPTag.enumeration, name: "printer-state", value: 3),
+            IPPFakes.string(IPPTag.keyword, name: "printer-state-reasons", value: "none"),
+            IPPFakes.boolean(name: "printer-is-accepting-jobs", value: true),
+            IPPFakes.integer(name: "queued-job-count", value: 2),
+            IPPFakes.string(IPPTag.textWithoutLanguage, name: "printer-state-message", value: "Ready to print")
+        ]
+        let response = try IPPResponseParser.parse(
+            IPPFakes.response(groups: [(IPPTag.printerAttributes, attributes)])
+        )
+        let status = IPPStatusMapper.status(
+            from: response,
+            printer: Printer(id: "office", name: "Office")
+        )
+
+        XCTAssertEqual(status.acceptsJobs, true)
+        XCTAssertEqual(status.queuedJobCount, 2)
+        XCTAssertEqual(status.stateMessage, "Ready to print")
+        XCTAssertEqual(status.origin, .ipp)
+        XCTAssertEqual(status.state, .idle)
+    }
+
     func testStoppedResponseWithMediaAndCoverReasons() throws {
         let attributes = [
             IPPFakes.integer(IPPTag.enumeration, name: "printer-state", value: 5),
@@ -277,15 +300,21 @@ final class IPPStatusTests: XCTestCase {
             name: "printer-uri",
             value: "http://localhost:631/printers/Office%20Printer"
         ))
-        for attribute in IPPRequest.defaultRequestedAttributes {
+        for (index, attribute) in IPPRequest.defaultRequestedAttributes.enumerated() {
             XCTAssertTrue(
-                containsAttribute(data, tag: IPPTag.keyword, name: "requested-attributes", value: attribute),
+                containsAttribute(
+                    data,
+                    tag: IPPTag.keyword,
+                    name: index == 0 ? "requested-attributes" : "",
+                    value: attribute
+                ),
                 "Missing requested attribute \(attribute)"
             )
         }
         XCTAssertEqual(
             occurrences(of: Data("requested-attributes".utf8), in: data),
-            IPPRequest.defaultRequestedAttributes.count
+            1,
+            "IPP 1setOf values must share one requested-attributes attribute name."
         )
         XCTAssertEqual(request.operationID, 0x000B)
     }
@@ -418,8 +447,22 @@ final class IPPStatusTests: XCTestCase {
         XCTAssertEqual(IPPSupplyNormalizer.colorName(fromToken: "lightMagenta"), "Light Magenta")
         XCTAssertEqual(IPPSupplyNormalizer.colorName(fromToken: "photoBlack"), "Photo Black")
         XCTAssertEqual(IPPSupplyNormalizer.colorName(fromToken: "matteBlack"), "Matte Black")
+        XCTAssertEqual(IPPSupplyNormalizer.colorName(fromToken: "MB"), "Matte Black")
+        XCTAssertEqual(IPPSupplyNormalizer.colorName(fromToken: "PK"), "Photo Black")
+        XCTAssertEqual(IPPSupplyNormalizer.colorName(fromToken: "LC"), "Light Cyan")
+        XCTAssertEqual(IPPSupplyNormalizer.colorName(fromToken: "LM"), "Light Magenta")
+        XCTAssertEqual(IPPSupplyNormalizer.colorName(fromToken: "photoCyan"), "Photo Cyan")
+        XCTAssertEqual(IPPSupplyNormalizer.colorName(fromToken: "vividLightMagenta"), "Vivid Light Magenta")
         XCTAssertEqual(IPPSupplyNormalizer.colorName(fromToken: "Magenta"), "Magenta")
         XCTAssertEqual(IPPSupplyNormalizer.colorName(fromToken: "#123456"), "#123456")
+        XCTAssertEqual(
+            SupplyLevel(name: "MB", colorName: "Black", levelPercent: 50).displayName,
+            "Matte Black"
+        )
+        XCTAssertEqual(
+            SupplyLevel(name: "Photo Black", colorName: "Black", levelPercent: 50).displayName,
+            "Photo Black"
+        )
         XCTAssertNil(IPPSupplyNormalizer.colorName(fromToken: "none"))
         XCTAssertEqual(
             IPPSupplyNormalizer.colorName(inText: "Black Ink Cartridge"),

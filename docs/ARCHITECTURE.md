@@ -312,18 +312,21 @@ backPageSequence  = [2, 7, 4, 5, 10, 11]
 
 ## 7. Status pipeline
 
-`IPPStatusClient` implements `PrinterStatusProviding.status(for:) async -> PrinterStatus` and never throws. It prefers the local CUPS queue so status matches `lp`/`lpstat`: IPP `Get-Printer-Attributes` to `ipp://localhost:631/printers/<queue>`, requesting `printer-state`, `printer-state-reasons`, `printer-is-accepting-jobs`, `printer-marker-supplies` (and standard `printer-supply`/`printer-supply-description` where available), `printer-name`, `printer-make-and-model`, and `printer-state-message`.
+`IPPStatusClient` implements `PrinterStatusProviding.status(for:) async -> PrinterStatus` and never throws. It prefers the local CUPS queue so status matches `lp`/`lpstat`: IPP `Get-Printer-Attributes` to `ipp://localhost:631/printers/<queue>`, requesting `printer-state`, `printer-state-reasons`, `printer-state-message`, `printer-is-accepting-jobs`, `queued-job-count`, `printer-marker-supplies` (and standard `printer-supply`/`printer-supply-description` where available). `requested-attributes` is encoded as one IPP `1setOf` attribute with multiple keyword values; repeating the attribute name makes CUPS return only the first requested value.
 
 | Attribute | Mapping |
 |---|---|
 | `printer-state` 3 / 4 / 5 | `PrinterState.idle` "Ready" / `.processing` "Printing" / `.stopped` "Stopped" |
 | missing/unknown | `.unknown` "Unknown"; never render as Ready |
+| `offline-report` while idle | `PrinterHealth.offline` "Offline" with a wake-on-print note, not Ready |
+| no marker supplies | a designed "supply levels are not reported" fallback, not a fake 0% |
 | `printer-state-reasons` | raw strings in `stateReasons`; `PrinterReason.humanReadable` for labels |
-| `printer-is-accepting-jobs` | `Printer.acceptsJobs` |
+| `printer-is-accepting-jobs` | `PrinterStatus.acceptsJobs`, merged into `Printer.acceptsJobs` by `AppModel.refreshStatus` |
+| `queued-job-count` / `printer-state-message` | `PrinterStatus.queuedJobCount` / `.stateMessage` |
 | marker supplies | `[SupplyLevel]` with kind, color, optional percent, estimate flag |
 | success / failure | `StatusOrigin.ipp` / fall through to SNMP, lpstat, or `.unavailable` |
 
-Supply percentages are normalized only when level and capacity are meaningful; `SupplyLevel.levelPercent` is `nil` when unknown and must not render as 0%. `isLow` is at most 12%, `isCritical` at most 4%. `StatusOrigin.lpstat` is queue-only and cannot supply live marker levels. `.unavailable` uses `PrinterStatus.unknown(for:)`, preserving the last known state and adding "Live status is not available right now."
+Supply percentages are normalized only when level and capacity are meaningful; `SupplyLevel.levelPercent` is `nil` when unknown and must not render as 0%. The header renders every reported marker in an adaptive grid, including light cyan/light magenta/photo black/waste, and shows a designed unavailable-supplies message when a USB queue exposes no markers. `isLow` is at most 12%, `isCritical` at most 4%. `StatusOrigin.lpstat` is queue-only and cannot supply live marker levels. `.unavailable` uses `PrinterStatus.unknown(for:)`, preserving the last known state and adding "Live status is not available right now."
 
 **SNMP fallback.** If IPP fails and the queue has a network URI, query SNMPv2c read-only: 2 s timeout, one retry, no SET. USB-only queues stay `.unavailable`.
 
@@ -342,9 +345,9 @@ Supply percentages are normalized only when level and capacity are meaningful; `
 
 `hrPrinterStatus` 3/4 -> idle/processing; `hrDeviceStatus` down -> stopped when state is ambiguous. Alerts and error bits become state reasons where a stable keyword exists, or human-readable text otherwise. SNMP success sets `.snmp`; partial success keeps known state and leaves unknown supplies empty.
 
-UI badges read the model, not raw protocol values: `PrinterState.label`, `Printer.hasError`, `PrinterStatus.actionableReasons` (labels such as "Out of paper", "Paper jam", "Ink empty", "Cover open", "Printer offline"), `Printer.isOffline`, `SupplyLevel.isLow`/`.isCritical` (unknown omitted), `StatusOrigin` (IPP live, SNMP fallback, lpstat queue-only, unavailable), and `PrinterStatus.note`.
+UI badges read the model, not raw protocol values: `PrinterHealth` (Ready/Preparing/Printing/Your turn/Offline/Needs attention/Unknown), `PrinterState.label`, `Printer.hasError`, `PrinterStatus.actionableReasons` (labels such as "Out of paper", "Paper jam", "Ink empty", "Cover open", "Printer offline"), `Printer.isOffline`, `SupplyLevel.displayName`/`.isLow`/`.isCritical` (unknown omitted), `StatusOrigin` (IPP live, SNMP fallback, lpstat queue-only, unavailable), and `PrinterStatus.note`.
 
-Cadence: idle status + queue every 20 s (`AppModel.startMonitoring`); immediate refresh when the popover opens; job state every 0.75 s while a FlipStack job is active; status at pass boundaries; printer-error polling every 0.75 s up to 8 s; status failures back off 20 -> 40 -> 60 s; SNMP is attempted only on the slower fallback cadence (at most once per 60 s); one in-flight request per printer. The 20 s monitor is UI freshness, not job completion.
+Cadence: idle status + queue every 20 s (`AppModel.startMonitoring`); immediate refresh when the popover opens; job state every 0.75 s while a FlipStack job is active; status at pass boundaries; printer-error polling every 0.75 s up to 8 s. The queue refreshes every 3 s while its drawer is open. The 20 s monitor is UI freshness, not job completion. Status and queue refreshes are single-flight for the selected queue; there is no exponential backoff or per-printer status cache yet, so a slow or unreachable queue can occupy one refresh cycle. SNMP is attempted for a network queue when IPP succeeds without marker supplies or when IPP fails.
 
 ## 8. UI architecture
 
