@@ -86,6 +86,10 @@ final class NotificationService: NSObject, DuplexNotifying {
         }
     }
 
+    func clearFlipNotification() {
+        removeFlipNotification()
+    }
+
     func languageDidChange() {
         guard let center else { return }
         registerCategory(on: center)

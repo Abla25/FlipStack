@@ -331,7 +331,7 @@ struct DocumentPreviewPanel: View {
                         model.setGrayscale(!model.isGrayscaleSelected)
                     }
                 } label: {
-                    Text(model.isGrayscaleSelected ? "B&W" : "Color")
+                    Text(model.isGrayscaleSelected ? L("B&W") : L("Color"))
                         .font(.system(.caption2, design: .default, weight: .semibold))
                         .foregroundStyle(FlipColor.secondaryInk)
                         .padding(.horizontal, 7)
@@ -433,7 +433,7 @@ struct DocumentPreviewPanel: View {
                 model.showPreviewBacks(backs)
             }
         } label: {
-            Text(title)
+            Text(L(title))
                 .font(.system(.caption2, design: .default, weight: .semibold))
                 .foregroundStyle(isSelected ? FlipColor.onCoral : FlipColor.secondaryInk)
                 .padding(.horizontal, 8)

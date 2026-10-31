@@ -155,8 +155,8 @@ struct FlipAxisSetupView: View {
 
     private var manualActionTitle: String {
         model.flipAxisSetup?.autoStartsPrint == true
-        ? "Use manual setup and print"
-        : "Save manual setup"
+        ? L("Use manual setup and print")
+        : L("Save manual setup")
     }
 
     // MARK: Calibration

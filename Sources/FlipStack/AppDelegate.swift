@@ -86,6 +86,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
         configureMainMenu(model: model)
         NotificationCenter.default.addObserver(
+            forName: .flipStackConfirmHandled,
+            object: nil,
+            queue: .main
+        ) { [weak notifications] _ in
+            Task { @MainActor in notifications?.clearFlipNotification() }
+        }
+        NotificationCenter.default.addObserver(
             forName: .flipStackLanguageChanged,
             object: nil,
             queue: .main
@@ -93,6 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             Task { @MainActor in
                 guard let self, let model else { return }
                 self.configureMainMenu(model: model)
+                self.menuBar?.refreshLocalizedChrome()
                 self.notificationService?.languageDidChange()
             }
         }
@@ -129,14 +137,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                         largeText: arguments.contains("--large-text"),
                         height: customHeight ?? FlipMetrics.panelHeight
                     ) ?? false
-                    NSLog("FlipStack demo screenshot \(ok ? "written" : "failed")")
+                    NSLog("%@", "FlipStack demo screenshot \(ok ? "written" : "failed")")
                     NSApp.terminate(nil)
                 } else if arguments.contains("--capture-studio"),
                           let path = Self.argumentValue("--capture-studio", in: arguments) {
                     self?.openStudioWindow()
                     try? await Task.sleep(nanoseconds: 600_000_000)
                     _ = self?.studioWindow?.renderScreenshot(to: URL(fileURLWithPath: path))
-                    NSLog("FlipStack studio screenshot written")
+                    NSLog("%@", "FlipStack studio screenshot written")
                     NSApp.terminate(nil)
                 } else if arguments.contains("--open-studio") {
                     self?.openStudioWindow()
@@ -197,7 +205,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                         largeText: arguments.contains("--large-text"),
                         height: customHeight ?? FlipMetrics.panelHeight
                     ) ?? false
-                    NSLog("FlipStack screenshot \(ok ? "written" : "failed")")
+                    NSLog("%@", "FlipStack screenshot \(ok ? "written" : "failed")")
                     NSApp.terminate(nil)
                 }
             }
@@ -356,6 +364,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         case #selector(openDocument):
             return !model.isPreparingPrint
                 && !model.orchestrator.phase.isActive
+                && !model.isShowingSettings
                 && model.flipAxisSetup == nil
                 && model.flipCalibration == nil
         case #selector(openStudioWindow):
@@ -363,6 +372,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         case #selector(openSettings):
             return model.orchestrator.phase.isIdle
                 && !model.isPreparingPrint
+                && !model.isMaintenanceBusy
                 && model.flipCalibration == nil
                 && model.flipAxisSetup == nil
         case #selector(refreshPrinters):

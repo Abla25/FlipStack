@@ -528,8 +528,7 @@ final class DuplexOrchestratorTests: XCTestCase {
         orchestrator.confirmFlip()
         await waitForTask(task)
 
-        let expectedFailure = DuplexFailure.printerStopped(
-            pass: .backs,
+        let expectedFailure = DuplexFailure.printerStoppedBeforeBacks(
             reasons: ["media-jam-error"]
         )
         XCTAssertEqual(orchestrator.phase, .failed(expectedFailure))

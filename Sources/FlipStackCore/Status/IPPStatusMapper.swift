@@ -8,7 +8,7 @@ enum IPPStatusMapper {
         snmpSupplies: [SupplyLevel] = []
     ) -> PrinterStatus {
         guard response.isSuccess else {
-            let note = response.statusNote ?? "Live status is not available right now."
+            let note = response.statusNote ?? L("Live status is not available right now.")
             return fallback(for: printer, note: note, snmpSupplies: snmpSupplies)
         }
 
@@ -42,7 +42,7 @@ enum IPPStatusMapper {
                 stateReasons: reasons,
                 supplies: snmpSupplies,
                 origin: .snmp,
-                note: "Supply levels read from SNMP.",
+                note: L("Supply levels read from SNMP."),
                 acceptsJobs: acceptsJobs,
                 queuedJobCount: queuedJobCount,
                 stateMessage: stateMessage
@@ -54,7 +54,7 @@ enum IPPStatusMapper {
             state: state,
             stateReasons: reasons,
             origin: .ipp,
-            note: "No supply levels reported by IPP",
+            note: L("No supply levels reported by IPP"),
             acceptsJobs: acceptsJobs,
             queuedJobCount: queuedJobCount,
             stateMessage: stateMessage
@@ -67,7 +67,7 @@ enum IPPStatusMapper {
         snmpSupplies: [SupplyLevel] = []
     ) -> PrinterStatus {
         let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
-        let baseNote = trimmed.isEmpty ? "Live status is not available right now." : trimmed
+        let baseNote = trimmed.isEmpty ? L("Live status is not available right now.") : trimmed
 
         if !snmpSupplies.isEmpty {
             return PrinterStatus(

@@ -62,7 +62,7 @@ final class DemoSession {
                 pageCount: (scenario == .ready || scenario == .range || scenario == .booklet || scenario == .completed || scenario == .completedSingle || scenario == .rangePrinting || scenario == .preview || scenario == .bookletPreview) ? 8 : 5
             )
         } catch {
-            NSLog("FlipStack demo document failed: \(error)")
+            NSLog("%@", "FlipStack demo document failed: \(error)")
             return nil
         }
     }

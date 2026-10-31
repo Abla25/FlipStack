@@ -180,7 +180,7 @@ final class CUPSClientTests: XCTestCase {
 
     func testRecentJobsSortsNewestFirstAndAppliesLimit() async throws {
         let runner = CUPSStubCommandRunner { _, arguments in
-            XCTAssertEqual(arguments, ["-W", "completed", "-o", "L1800"])
+            XCTAssertEqual(arguments, ["-l", "-W", "completed", "-o", "L1800"])
             return cupsTestResult("""
             L1800-49  demo-user  1024   Fri Oct 30 20:50:21 2026
             L1800-51  demo-user  1024   Fri Oct 30 20:52:21 2026
@@ -191,6 +191,21 @@ final class CUPSClientTests: XCTestCase {
         let jobs = try await CUPSClient(runner: runner).recentJobs(printerID: "L1800", limit: 2)
         XCTAssertEqual(jobs.map(\.id), [51, 50])
         XCTAssertEqual(jobs.map(\.state), [.completed, .completed])
+    }
+
+    func testRecentJobsDoesNotTreatCanceledHistoryAsCompleted() async throws {
+        let runner = CUPSStubCommandRunner { _, arguments in
+            XCTAssertEqual(arguments, ["-l", "-W", "completed", "-o", "L1800"])
+            return cupsTestResult("""
+            L1800-61  demo-user  1024  Fri Oct 30 20:52:21 2026
+            Status:
+            Alerts: job-canceled-by-user
+            """)
+        }
+
+        let jobs = try await CUPSClient(runner: runner).recentJobs(printerID: "L1800", limit: 5)
+        XCTAssertEqual(jobs.count, 1)
+        XCTAssertEqual(jobs[0].state, .canceled)
     }
 
     func testRecentJobsWithZeroLimitSkipsCUPS() async throws {
@@ -316,8 +331,9 @@ final class CUPSClientTests: XCTestCase {
         let directory = try CUPSTestTemporaryDirectory(prefix: "FlipStackSubmit")
         let file = try directory.write(Data("pdf".utf8), name: "A Report With Spaces.pdf")
 
+        var spooledPath: String?
         let runner = CUPSStubCommandRunner { _, arguments in
-            XCTAssertEqual(arguments, [
+            XCTAssertEqual(Array(arguments.dropLast()), [
                 "-d", "Test_Queue",
                 "-t", "A Report",
                 "-n", "1",
@@ -325,9 +341,15 @@ final class CUPSClientTests: XCTestCase {
                 "-o", "number-up=2",
                 "-o", "orientation-requested=3",
                 "-o", "scaling=100",
-                "-o", "Duplex=NoTumble",
-                file.path
+                "-o", "Duplex=NoTumble"
             ])
+            spooledPath = arguments.last
+            XCTAssertNotEqual(arguments.last, file.path)
+            XCTAssertEqual((arguments.last as NSString?)?.lastPathComponent, "document.pdf")
+            XCTAssertEqual(
+                arguments.last.flatMap { try? Data(contentsOf: URL(fileURLWithPath: $0)) },
+                Data("pdf".utf8)
+            )
             return cupsTestResult("request id is Test_Queue-88 (1 file(s))\n")
         }
 
@@ -340,6 +362,7 @@ final class CUPSClientTests: XCTestCase {
             driverOptions: ["Duplex": "NoTumble"]
         )
         let job = try await CUPSClient(runner: runner).submit(request)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: spooledPath ?? ""))
 
         XCTAssertEqual(job.id, 88)
         XCTAssertEqual(job.printerID, "Test_Queue")

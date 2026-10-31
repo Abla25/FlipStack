@@ -506,6 +506,10 @@ public enum DuplexFailure: Error, Equatable, Sendable {
     case invalidDocument(String)
     case printerUnavailable(String)
     case printerStopped(pass: DuplexPass, reasons: [String])
+    /// The queue was rejected before the backs job existed. Kept distinct
+    /// from a stop during the backs print so Retry backs cannot duplicate
+    /// sheets that may already be in the tray.
+    case printerStoppedBeforeBacks(reasons: [String])
     case submitFailed(pass: DuplexPass, message: String)
     case jobFailed(pass: DuplexPass, state: JobState, reasons: [String])
     case jobStuck(pass: DuplexPass, seconds: TimeInterval)
@@ -514,8 +518,11 @@ public enum DuplexFailure: Error, Equatable, Sendable {
 
     public var pass: DuplexPass? {
         switch self {
-        case .printerStopped(let pass, _),
-             .submitFailed(let pass, _),
+        case .printerStopped(let pass, _):
+            return pass
+        case .printerStoppedBeforeBacks:
+            return .backs
+        case .submitFailed(let pass, _),
              .jobFailed(let pass, _, _),
              .jobStuck(let pass, _),
              .monitorFailed(let pass, _),
@@ -531,6 +538,7 @@ public enum DuplexFailure: Error, Equatable, Sendable {
         case .invalidDocument: return L("Cannot print this document")
         case .printerUnavailable: return L("Printer unavailable")
         case .printerStopped: return L("The printer stopped")
+        case .printerStoppedBeforeBacks: return L("The printer stopped")
         case .submitFailed: return L("Could not start printing")
         case .jobFailed: return L("Printing did not finish")
         case .jobStuck: return L("The job is stuck")
@@ -545,7 +553,7 @@ public enum DuplexFailure: Error, Equatable, Sendable {
             return message
         case .printerUnavailable(let message):
             return message
-        case .printerStopped(_, let reasons):
+        case .printerStopped(_, let reasons), .printerStoppedBeforeBacks(let reasons):
             let detail = reasons.compactMap(PrinterReason.humanReadable).joined(separator: ", ")
             return detail.isEmpty ? L("The queue is stopped mid-job.") : detail
         case .submitFailed(_, let message):
@@ -565,11 +573,12 @@ public enum DuplexFailure: Error, Equatable, Sendable {
 
     public var canRetryBacks: Bool {
         switch self {
-        case .printerStopped(let pass, _), .submitFailed(let pass, _):
-            // These fail before the backs job exists, so the stack is still
-            // intact and a second-pass retry cannot double-print a sheet.
-            // Job/stuck/monitor failures may have printed some backs; restart.
+        case .printerStoppedBeforeBacks:
+            return true
+        case .submitFailed(let pass, _):
             return pass == .backs
+        case .printerStopped:
+            return false
         default:
             return false
         }
@@ -581,21 +590,23 @@ public extension DuplexFailure {
     var recoverySuggestion: String {
         switch self {
         case .invalidDocument:
-            return "Choose another PDF."
+            return L("Choose another PDF.")
         case .printerUnavailable:
-            return "Check that the printer is connected and the queue is enabled."
+            return L("Check that the printer is connected and the queue is enabled.")
+        case .printerStoppedBeforeBacks:
+            return L("Clear the error on the printer, then retry the backs or start over.")
         case .printerStopped:
-            return "Clear the error on the printer, then retry the backs or start over."
+            return L("Check the tray. If any backs printed, start over to keep the order correct.")
         case .submitFailed:
-            return "Check the queue, then start the job again."
+            return L("Check the queue, then start the job again.")
         case .jobFailed:
-            return "Remove the sheets, then start over to keep the order correct."
+            return L("Remove the sheets, then start over to keep the order correct.")
         case .jobStuck:
-            return "Cancel the job in the queue, then start over."
+            return L("Cancel the job in the queue, then start over.")
         case .monitorFailed:
-            return "Reopen FlipStack and check the queue."
+            return L("Reopen FlipStack and check the queue.")
         case .cancelled:
-            return "Nothing else will be printed."
+            return L("Nothing else will be printed.")
         }
     }
 }

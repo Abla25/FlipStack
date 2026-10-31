@@ -121,8 +121,8 @@ struct ModeSection: View {
                 Spacer()
                 Text(
                     model.bookletSignatureSheets == 0 && model.bookletPlan != nil
-                    ? "Auto · \(model.bookletPlan?.signatureSheetCount ?? 0) sheets"
-                    : "Sheets per signature"
+                    ? String(format: L("Auto · %lld sheets"), model.bookletPlan?.signatureSheetCount ?? 0)
+                    : L("Sheets per signature")
                 )
                 .font(FlipType.caption)
                 .foregroundStyle(FlipColor.secondaryInk)
@@ -146,7 +146,11 @@ struct ModeSection: View {
                 if plan.hasBlankPages {
                     FlipHintLine(
                         systemName: "doc.text",
-                        text: "\(FlipFormat.pages(plan.sourcePageCount)) don’t fill the last signature, so \(blankCount(plan)) blank \(blankCount(plan) == 1 ? "page" : "pages") will be added.",
+                        text: String(
+                            format: L("%@ don’t fill the last signature, so %lld blank pages will be added."),
+                            FlipFormat.pages(plan.sourcePageCount),
+                            blankCount(plan)
+                        ),
                         tint: FlipColor.warning
                     )
                 }
@@ -246,7 +250,7 @@ struct ModeSection: View {
                     HStack(spacing: 3) {
                         Image(systemName: "slider.horizontal.3")
                             .font(.system(size: 8, weight: .semibold))
-                        Text(model.preferences.hasConfiguredFlip ? "Edit" : "Set up")
+                        Text(model.preferences.hasConfiguredFlip ? L("Edit") : L("Set up"))
                     }
                 }
                 .buttonStyle(FlipTertiaryButtonStyle())
@@ -493,7 +497,7 @@ struct OutputSection: View {
                     Image(systemName: "number")
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(FlipColor.tertiaryInk)
-                    TextField("For example 1–4, 7", text: $model.pageRangeText)
+                    TextField(L("For example 1–4, 7"), text: $model.pageRangeText)
                         .textFieldStyle(.plain)
                         .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(FlipColor.ink)
@@ -691,7 +695,7 @@ struct OutputSection: View {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 3) {
                     FlipEyebrow("PDF page", color: FlipColor.tertiaryInk)
-                    Text(model.documentPageSizeText ?? "No document")
+                    Text(model.documentPageSizeText ?? L("No document"))
                         .font(FlipType.footnoteStrong)
                         .foregroundStyle(FlipColor.ink)
                         .lineLimit(1)

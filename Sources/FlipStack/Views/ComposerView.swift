@@ -246,7 +246,17 @@ struct PrimaryActionSection: View {
     }
 
     private var printerIsStopped: Bool {
-        model.printerState == .stopped
+        guard let printer = model.selectedPrinter else { return false }
+        if (!printer.stateReasons.contains("offline-report") && printer.state == .stopped)
+            || !printer.acceptsJobs || printer.hasError {
+            return true
+        }
+        if let status = model.status {
+            if status.acceptsJobs == false { return true }
+            if status.state == .stopped && !status.stateReasons.contains("offline-report") { return true }
+            if status.stateReasons.contains(where: { PrinterReason.isError($0) && $0 != "offline-report" }) { return true }
+        }
+        return false
     }
 
     private var canStart: Bool {
@@ -271,6 +281,9 @@ struct PrimaryActionSection: View {
         }
         if model.isLoadingPPD {
             return L("Reading the printer driver…")
+        }
+        if model.status == nil {
+            return L("Checking the printer…")
         }
         if printerIsStopped {
             return L("The printer is stopped. Resume its queue, then try again.")
@@ -338,7 +351,7 @@ struct PrimaryActionSection: View {
                             .font(.system(size: 12, weight: .semibold))
                     }
 
-                    Text(model.isPreparingPrint ? "Preparing…" : actionTitle)
+                    Text(model.isPreparingPrint ? L("Preparing…") : actionTitle)
                         .lineLimit(1)
 
                     Spacer(minLength: 4)

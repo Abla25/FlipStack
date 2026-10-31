@@ -356,15 +356,32 @@ final class AppModel: ObservableObject {
     // MARK: Derived values
 
     var canPrint: Bool {
-        selectedPrinter != nil
-            && selectedDocument != nil
-            && pageSelectionInfo.isValid
-            && pageSelectionInfo.pageCount > 0
-            && !isLoadingPPD
-            && !isPreparingPrint
-            && !isMaintenanceBusy
-            && flipCalibration == nil
-            && orchestrator.phase.isIdle
+        guard let printer = selectedPrinter,
+              let status,
+              selectedDocument != nil,
+              pageSelectionInfo.isValid,
+              pageSelectionInfo.pageCount > 0,
+              !isLoadingPPD,
+              !isPreparingPrint,
+              !isMaintenanceBusy,
+              !isShowingSettings,
+              flipAxisSetup == nil,
+              flipCalibration == nil,
+              orchestrator.phase.isIdle else { return false }
+        if (!printer.stateReasons.contains("offline-report") && printer.state == .stopped)
+            || !printer.acceptsJobs || printer.hasError {
+            return false
+        }
+        if status.acceptsJobs == false {
+            return false
+        }
+        if status.state == .stopped && !status.stateReasons.contains("offline-report") {
+            return false
+        }
+        if status.stateReasons.contains(where: { PrinterReason.isError($0) && $0 != "offline-report" }) {
+            return false
+        }
+        return true
     }
 
     var isCalibrating: Bool { flipCalibration != nil }
@@ -480,7 +497,9 @@ final class AppModel: ObservableObject {
               page >= 1, page <= document.pageCount else { return }
         var selected = selectedPageNumbers
         if selected.isEmpty {
-            selected = Set(1...document.pageCount)
+            // An invalid/empty typed range should not expand to "everything
+            // except the clicked page" when the user toggles a thumbnail.
+            selected = []
         }
         if selected.contains(page) {
             guard selected.count > 1 else { return }
@@ -1018,6 +1037,7 @@ final class AppModel: ObservableObject {
     func selectPrinter(_ printer: Printer) async {
         guard orchestrator.phase.isIdle,
               !isPreparingPrint,
+              !isMaintenanceBusy,
               flipCalibration == nil,
               flipAxisSetup == nil else { return }
         selectedPrinter = printer
@@ -1071,7 +1091,7 @@ final class AppModel: ObservableObject {
                 ppd = nil
                 presetResolver = nil
                 selectedQualityPreset = nil
-                ppdNote = "No driver PPD was found for this queue. Only the system defaults will be used."
+                ppdNote = L("No driver PPD was found for this queue. Only the system defaults will be used.")
                 return
             }
             ppd = parsed
@@ -1085,8 +1105,25 @@ final class AppModel: ObservableObject {
                 selection[keyword] = choice
             }
             if savedChoices.isEmpty {
+                let baseColorOption = parsed.option(in: .color)
+                let baseColorKeyword = baseColorOption.flatMap { option in
+                    selection[option.keyword]
+                }
+                let baseWasGrayscale = baseColorOption.flatMap { option -> Bool? in
+                    guard let keyword = baseColorKeyword,
+                          let choice = option.choice(keyword: keyword) else { return nil }
+                    let token = "\(choice.keyword) \(choice.displayLabel)".lowercased()
+                    return token.contains("gray") || token.contains("grey")
+                        || token.contains("mono") || token.contains("black")
+                } ?? false
+
                 let standard = resolver.apply(.standard, to: selection)
                 selection = standard.options
+                if baseWasGrayscale,
+                   let colorOption = baseColorOption,
+                   let grayscaleKeyword = baseColorKeyword {
+                    selection[colorOption.keyword] = grayscaleKeyword
+                }
                 selectedQualityPreset = standard.isComplete
                     ? .standard
                     : resolver.matchingPreset(for: selection)
@@ -1100,7 +1137,7 @@ final class AppModel: ObservableObject {
             ppd = nil
             presetResolver = nil
             selectedQualityPreset = nil
-            ppdNote = "The driver description could not be read. Only the system defaults will be used."
+            ppdNote = L("The driver description could not be read. Only the system defaults will be used.")
             banner = AppBanner(
                 kind: .warning,
                 title: L("Driver options unavailable"),
@@ -1112,8 +1149,10 @@ final class AppModel: ObservableObject {
     private func defaultSelection(for document: PPDDocument) -> [String: String] {
         var selection: [String: String] = [:]
         for group in [PPDOptionGroup.color, .paperSize, .mediaType, .quality] {
-            if let option = document.option(in: group), let value = option.selectedDefault {
-                selection[option.keyword] = value
+            for option in document.options where option.group == group {
+                if let value = option.selectedDefault {
+                    selection[option.keyword] = value
+                }
             }
         }
         for option in profileOptions(in: document) {
@@ -1183,10 +1222,11 @@ final class AppModel: ObservableObject {
         guard let ppd else { return [:] }
         var options: [String: String] = [:]
         for group in [PPDOptionGroup.color, .paperSize, .mediaType, .quality] {
-            guard let option = ppd.option(in: group) else { continue }
-            let value = selectedValue(for: option)
-            guard !value.isEmpty, option.choice(keyword: value) != nil else { continue }
-            options[option.keyword] = value
+            for option in ppd.options where option.group == group && !option.choices.isEmpty {
+                let value = selectedValue(for: option)
+                guard !value.isEmpty, option.choice(keyword: value) != nil else { continue }
+                options[option.keyword] = value
+            }
         }
         for option in profileOptions(in: ppd) {
             let value = selectedValue(for: option)
@@ -1199,7 +1239,7 @@ final class AppModel: ObservableObject {
     // MARK: Preferences
 
     func requestPrint() {
-        guard canPrint, flipAxisSetup == nil, flipCalibration == nil else { return }
+        guard canPrint, !isShowingSettings, flipAxisSetup == nil, flipCalibration == nil else { return }
         let needsFlipSetup = mode.usesFlipSetup
             && (mode == .booklet || pageSelectionInfo.pageCount > 1)
         if needsFlipSetup, !preferences.hasConfiguredFlip {
@@ -1213,12 +1253,19 @@ final class AppModel: ObservableObject {
 
     func openFlipAxisSetup() {
         guard flipCalibration == nil else { return }
-        flipAxisSetup = FlipAxisSetup(autoStartsPrint: false)
+        if let existing = flipAxisSetup {
+            // Do not silently drop a waiting PDF when the maintenance menu is
+            // opened while first-run setup is already on screen.
+            flipAxisSetup = FlipAxisSetup(autoStartsPrint: existing.autoStartsPrint)
+        } else {
+            flipAxisSetup = FlipAxisSetup(autoStartsPrint: false)
+        }
     }
 
     func openSettings() {
         guard orchestrator.phase.isIdle,
               !isPreparingPrint,
+              !isMaintenanceBusy,
               flipCalibration == nil,
               flipAxisSetup == nil else { return }
         closePreview()
@@ -1450,12 +1497,13 @@ final class AppModel: ObservableObject {
     func chooseDocument() {
         guard !isPreparingPrint,
               !orchestrator.phase.isActive,
+              !isShowingSettings,
               flipAxisSetup == nil,
               flipCalibration == nil else { return }
         let panel = NSOpenPanel()
-        panel.title = "Choose a PDF"
-        panel.message = "Pick the document FlipStack should print."
-        panel.prompt = "Choose"
+        panel.title = L("Choose a PDF")
+        panel.message = L("Pick the document FlipStack should print.")
+        panel.prompt = L("Choose")
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
@@ -1484,6 +1532,7 @@ final class AppModel: ObservableObject {
     func acceptDocument(url: URL) async {
         guard !isPreparingPrint,
               !orchestrator.phase.isActive,
+              !isShowingSettings,
               flipAxisSetup == nil,
               flipCalibration == nil else { return }
         if !orchestrator.phase.isIdle {
@@ -1551,6 +1600,8 @@ final class AppModel: ObservableObject {
         pageSelectionMode = .all
         pageRangeText = ""
         bookletPlan = nil
+        localJobIDs.removeAll()
+        localJobTitles.removeAll()
     }
 
     // MARK: Preview
@@ -1852,7 +1903,9 @@ final class AppModel: ObservableObject {
                         title: source.title
                     )
                     job.firstPass.orientation = orientation
-                    job.secondPass.orientation = orientation
+                    job.secondPass.orientation = preferences.flipAxis == .shortEdge
+                        ? orientation.rotated180
+                        : orientation
                     guard isCurrent() else {
                         finishPreparation()
                         return
@@ -1969,8 +2022,11 @@ final class AppModel: ObservableObject {
             await task.value
             guard let self else { return }
             switch self.orchestrator.phase {
-            case .completed, .cancelled:
-                self.discardWorkingFiles()
+            case .completed, .cancelled, .failed:
+                self.localJobIDs.removeAll()
+                self.localJobTitles.removeAll()
+                if case .completed = self.orchestrator.phase { self.discardWorkingFiles() }
+                if case .cancelled = self.orchestrator.phase { self.discardWorkingFiles() }
             default:
                 break
             }
@@ -1981,6 +2037,9 @@ final class AppModel: ObservableObject {
 
     func confirmFlip() {
         orchestrator.confirmFlip()
+        // The flip notification is a transient handoff. Once the user has
+        // confirmed in-app it must not linger with a stale Cancel action.
+        NotificationCenter.default.post(name: .flipStackConfirmHandled, object: nil)
     }
 
     func cancelFlow() {
@@ -2016,6 +2075,8 @@ final class AppModel: ObservableObject {
     func resetFlow() {
         guard !orchestrator.phase.isActive else { return }
         orchestrator.reset()
+        localJobIDs.removeAll()
+        localJobTitles.removeAll()
         discardWorkingFiles()
     }
 
@@ -2173,7 +2234,9 @@ final class AppModel: ObservableObject {
                 title: L("FlipStack calibration sheet"),
                 pageSet: .all,
                 copies: 1,
-                orientation: printOrientation,
+                // The orientation sheet is designed in portrait and its edge
+                // labels are only meaningful in that orientation.
+                orientation: .portrait,
                 driverOptions: options,
                 fitToPage: true
             )
@@ -2258,7 +2321,7 @@ final class AppModel: ObservableObject {
                                   current.id == calibrationID else { return }
                             if let started = current.jobStartedAt,
                                let finishedAt = finished.createdAt,
-                               finishedAt < started {
+                               finishedAt.addingTimeInterval(1) < started {
                                 break
                             }
                             current.stage = .questions
@@ -2300,7 +2363,7 @@ final class AppModel: ObservableObject {
                           current.id == calibrationID else { return }
                     if let started = current.jobStartedAt,
                        let finishedAt = job.createdAt,
-                       finishedAt < started {
+                       finishedAt.addingTimeInterval(1) < started {
                         break
                     }
                     current.stage = .questions
@@ -2439,4 +2502,9 @@ final class AppModel: ObservableObject {
 
 extension Notification.Name {
     static let flipStackLanguageChanged = Notification.Name("FlipStack.languageChanged")
+}
+
+
+extension Notification.Name {
+    static let flipStackConfirmHandled = Notification.Name("FlipStack.flipConfirmHandled")
 }

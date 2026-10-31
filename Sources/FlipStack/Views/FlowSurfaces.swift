@@ -593,7 +593,7 @@ struct CancelledSurface: View {
         case .some(.fronts):
             return L("The job stopped during the fronts. No backs will be printed.")
         case .some(.backs):
-            return L("The fronts finished. The backs were not printed.")
+            return L("The fronts finished. Some backs may have printed; check the tray before starting over.")
         case .none:
             return L("No more pages will be printed.")
         }

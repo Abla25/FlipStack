@@ -152,6 +152,10 @@ struct FlipScaleStepper: View {
             set: {
                 draftPercent = $0
                 if isEditing { didEditDraft = true }
+                let cleaned = $0.trimmingCharacters(in: .whitespacesAndNewlines)
+                if let value = Int(cleaned), (50...150).contains(value) {
+                    model.setScalePercent(value)
+                }
             }
         )
     }
@@ -183,8 +187,8 @@ struct FlipScaleStepper: View {
             }
 
             HStack(spacing: 0) {
-                stepButton(systemName: "minus", enabled: model.scalePercent > 50) {
-                    model.setScalePercent(model.scalePercent - 5)
+                stepButton(systemName: "minus", enabled: displayedPercent > 50) {
+                    model.setScalePercent(displayedPercent - 5)
                 }
                 .accessibilityLabel("Decrease print scale")
 
@@ -227,8 +231,8 @@ struct FlipScaleStepper: View {
                     .fill(FlipColor.hairline)
                     .frame(width: 0.5, height: 14)
 
-                stepButton(systemName: "plus", enabled: model.scalePercent < 150) {
-                    model.setScalePercent(model.scalePercent + 5)
+                stepButton(systemName: "plus", enabled: displayedPercent < 150) {
+                    model.setScalePercent(displayedPercent + 5)
                 }
                 .accessibilityLabel("Increase print scale")
             }

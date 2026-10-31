@@ -162,6 +162,7 @@ struct FooterBar: View {
             .disabled(
                 !model.orchestrator.phase.isIdle
                     || model.isPreparingPrint
+                    || model.isMaintenanceBusy
                     || model.flipCalibration != nil
                     || model.flipAxisSetup != nil
             )

@@ -30,6 +30,9 @@ public final class DuplexOrchestrator: ObservableObject {
     /// `@Published` observer). It also makes repeated confirms idempotent.
     private var flipWasConfirmed = false
     private var startedAt: Date?
+    /// Deadline anchor for the current pass. A long delay on the flip prompt
+    /// or a retry must not consume the next pass's watchdog budget.
+    private var passStartedAt: Date?
 
     public init(
         spooler: any PrintSpooling,
@@ -139,6 +142,7 @@ public final class DuplexOrchestrator: ObservableObject {
         document = nil
         configuration = nil
         startedAt = nil
+        passStartedAt = nil
     }
 
     // MARK: - Run setup
@@ -159,6 +163,7 @@ public final class DuplexOrchestrator: ObservableObject {
         self.activePass = .fronts
         self.activeJob = nil
         self.startedAt = Date()
+        self.passStartedAt = Date()
         self.progress = 0
         self.phase = .preparing
 
@@ -192,6 +197,7 @@ public final class DuplexOrchestrator: ObservableObject {
         if startedAt == nil {
             startedAt = Date()
         }
+        self.passStartedAt = Date()
         self.progress = 0.55
         self.phase = .preparing
 
@@ -419,7 +425,7 @@ public final class DuplexOrchestrator: ObservableObject {
         var unknownSince: Date?
         var printerErrorSince: Date?
         var printerReportsProcessing = false
-        let absoluteDeadline = (startedAt ?? Date())
+        let absoluteDeadline = (passStartedAt ?? startedAt ?? Date())
             .addingTimeInterval(max(15 * 60, stuckTimeout * 2))
 
         while true {
@@ -574,6 +580,13 @@ public final class DuplexOrchestrator: ObservableObject {
                 let reportsOurJob = printer.printingJobID == nil
                     || printer.printingJobID == initialJob.id
                 printerReportsProcessing = printer.state == .processing && reportsOurJob
+                // A different job ahead of ours may legitimately run longer
+                // than the stuck timeout. Waiting in the queue is not a stall.
+                if printer.state == .processing,
+                   let ahead = printer.printingJobID,
+                   ahead != initialJob.id {
+                    lastActivity = Date()
+                }
                 if hasProblem {
                     if printerErrorSince == nil {
                         printerErrorSince = Date()
@@ -622,7 +635,9 @@ public final class DuplexOrchestrator: ObservableObject {
 
             if printer.state == .stopped || !printer.acceptsJobs || printer.hasError {
                 finishFailure(
-                    .printerStopped(pass: pass, reasons: printer.stateReasons),
+                    pass == .backs
+                        ? .printerStoppedBeforeBacks(reasons: printer.stateReasons)
+                        : .printerStopped(pass: pass, reasons: printer.stateReasons),
                     configuration: configuration,
                     token: token
                 )

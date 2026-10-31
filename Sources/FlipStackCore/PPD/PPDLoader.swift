@@ -85,7 +85,8 @@ public struct PPDLoader: PPDProviding {
 
         if let ppdPath = printer.ppdPath,
            let path = normalizedPath(ppdPath),
-           isReadableRegularFile(URL(fileURLWithPath: path)) {
+           isReadableRegularFile(URL(fileURLWithPath: path)),
+           isAllowedPPDPath(URL(fileURLWithPath: path)) {
             return URL(fileURLWithPath: path)
         }
 
@@ -120,6 +121,24 @@ public struct PPDLoader: PPDProviding {
             }
         }
         return nil
+    }
+
+    /// A queue response must not be able to point the parser at an arbitrary
+    /// readable file (for example a document or keychain export). Only the
+    /// CUPS PPD directories (plus explicitly injected test/search roots) are
+    /// valid PPD locations.
+    private func isAllowedPPDPath(_ url: URL) -> Bool {
+        let resolved = url.resolvingSymlinksInPath().standardizedFileURL.path
+        let allowedRoots = [
+            "/etc/cups/ppd",
+            "/private/etc/cups/ppd",
+            "/Library/Printers/PPDs"
+        ] + searchDirectories.map {
+            $0.resolvingSymlinksInPath().standardizedFileURL.path
+        }
+        return allowedRoots.contains { root in
+            resolved == root || resolved.hasPrefix(root + "/")
+        }
     }
 
     private func normalizedPath(_ value: String) -> String? {

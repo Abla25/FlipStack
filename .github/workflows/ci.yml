@@ -42,10 +42,13 @@ jobs:
       - name: Run tests
         run: swift test --parallel
 
-      - name: Lint property lists
+      - name: Lint property lists and localizations
         run: |
           plutil -lint Resources/Info.plist
           plutil -lint Resources/FlipStack.entitlements
+          for table in Resources/*.lproj/Localizable.strings; do
+            plutil -lint "$table"
+          done
 
       - name: Bundle app
         env:
@@ -64,6 +67,10 @@ jobs:
           test -f "$APP/Contents/Resources/AppIcon.icns"
           test -f "$APP/Contents/Resources/LICENSE"
           test -f "$APP/Contents/Resources/PRIVACY.md"
+          test -f "$APP/Contents/Resources/en.lproj/Localizable.strings"
+          test -f "$APP/Contents/Resources/it.lproj/Localizable.strings"
+          test -f "$APP/Contents/Resources/es.lproj/Localizable.strings"
+          test -f "$APP/Contents/Resources/fr.lproj/Localizable.strings"
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist" | grep -qx 'app.flipstack.FlipStack'
           /usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist" | grep -qx 'FlipStack'
           /usr/libexec/PlistBuddy -c 'Print :LSUIElement' "$APP/Contents/Info.plist" | grep -qx 'true'

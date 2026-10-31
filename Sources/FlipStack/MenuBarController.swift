@@ -144,7 +144,7 @@ final class MenuBarController: NSObject {
 
         let root = RootView(model: model, orchestrator: orchestrator)
         hostingView = NSHostingView(rootView: root)
-        hostingView.setAccessibilityLabel("FlipStack print manager")
+        hostingView.setAccessibilityLabel(L("FlipStack print manager"))
         // The popover owns its own frame. Without this, a tall document/options
         // tree can feed its ideal height back into the panel and make the
         // window thousands of points tall after a real PDF is loaded.
@@ -328,7 +328,7 @@ final class MenuBarController: NSObject {
             )
             return true
         } catch {
-            NSLog("FlipStack render failed: \(error)")
+            NSLog("%@", "FlipStack render failed: \(error)")
             return false
         }
     }
@@ -360,7 +360,11 @@ final class MenuBarController: NSObject {
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
             guard let self else { return event }
             if event.keyCode == 53 {
-                self.close()
+                if self.model.isShowingSettings {
+                    self.model.closeSettings()
+                } else {
+                    self.close()
+                }
                 return nil
             }
             return event
@@ -444,6 +448,29 @@ final class MenuBarController: NSObject {
                 }
             }
             .store(in: &cancellables)
+    }
+
+    /// Refresh language-dependent status-item chrome without waiting for the
+    /// next phase change.
+    func refreshLocalizedChrome() {
+        guard let button = statusItem.button else { return }
+        button.setAccessibilityLabel(L("FlipStack print manager"))
+        button.setAccessibilityHelp(L("Opens the FlipStack popover."))
+        if let calibration = model.flipCalibration {
+            switch calibration.stage {
+            case .printing:
+                button.toolTip = L("FlipStack · calibrating")
+                button.setAccessibilityLabel(L("FlipStack, calibrating the flip"))
+            case .questions:
+                button.toolTip = L("FlipStack · calibration ready")
+                button.setAccessibilityLabel(L("FlipStack, calibration ready"))
+            case .failed:
+                button.toolTip = L("FlipStack · calibration needs attention")
+                button.setAccessibilityLabel(L("FlipStack, calibration needs attention"))
+            }
+        } else {
+            updateIcon(for: orchestrator.phase)
+        }
     }
 
     private func updateIcon(for phase: DuplexPhase) {

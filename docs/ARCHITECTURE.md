@@ -510,7 +510,7 @@ Never claim success because the queue looks empty or a timer elapsed; only termi
 
 ## 12. Distribution, signing, notarization, DMG, secrets, update cadence
 
-SwiftPM produces an executable, not an `.app`. A release script assembles `FlipStack.app/Contents/{Info.plist,PkgInfo,MacOS/FlipStack,Resources/AppIcon.icns}`. `Info.plist`: `CFBundlePackageType=APPL`, `CFBundleExecutable=FlipStack`, `CFBundleIdentifier` (e.g. `com.flipstack.app`), `CFBundleShortVersionString`, monotonic `CFBundleVersion`, `LSMinimumSystemVersion=13.0`, `LSUIElement=true`, `NSHighResolutionCapable=true`, `CFBundleIconFile`. `FlipStackMain` and `AppDelegate` set `NSApp.setActivationPolicy(.accessory)`; `LSUIElement` keeps it out of Dock/app switcher. Build universal with `swift build -c release --arch arm64 --arch x86_64` (or `lipo`); verify with `file`/`lipo -info`.
+SwiftPM produces an executable, not an `.app`. A release script assembles `FlipStack.app/Contents/{Info.plist,PkgInfo,MacOS/FlipStack,Resources/{AppIcon.icns,LICENSE,PRIVACY.md,it.lproj,es.lproj,fr.lproj}}`. `Info.plist`: `CFBundlePackageType=APPL`, `CFBundleExecutable=FlipStack`, `CFBundleIdentifier=app.flipstack.FlipStack`, `CFBundleShortVersionString`, monotonic `CFBundleVersion`, `LSMinimumSystemVersion=13.0`, `LSUIElement=true`, `NSHighResolutionCapable=true`, `CFBundleIconFile`. `FlipStackMain` and `AppDelegate` set `NSApp.setActivationPolicy(.accessory)`; `LSUIElement` keeps it out of Dock/app switcher. Build universal with `swift build -c release --arch arm64 --arch x86_64` (or `lipo`); verify with `file`/`lipo -info`.
 
 ```
 codesign --force --options runtime --timestamp \

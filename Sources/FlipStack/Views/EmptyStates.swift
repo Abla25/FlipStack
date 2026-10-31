@@ -97,7 +97,7 @@ struct NoPrinterState: View {
                         Image(systemName: "arrow.clockwise")
                             .font(.system(size: 10, weight: .semibold))
                     }
-                    Text(model.isRefreshing ? "Looking again…" : "Check again")
+                    Text(model.isRefreshing ? L("Looking again…") : L("Check again"))
                 }
             }
             .buttonStyle(FlipTertiaryButtonStyle())

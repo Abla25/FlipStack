@@ -148,7 +148,10 @@ final class PPDLoaderTests: XCTestCase {
         let searchDirectory = try CUPSTestTemporaryDirectory(prefix: "FlipStackPPDPathSearch")
         try searchDirectory.copyFixture("Brother-HL-L2350DW.ppd")
 
-        let loader = PPDLoader(searchDirectories: [searchDirectory.url])
+        // The loader intentionally trusts only the CUPS PPD directories plus
+        // explicitly injected search roots; include the fixture directory so
+        // this test exercises ppdPath precedence without weakening production.
+        let loader = PPDLoader(searchDirectories: [searchDirectory.url, directory.url])
         let printer = Printer(
             id: "Custom_Queue",
             name: "Custom Queue",

@@ -30,7 +30,7 @@ final class StudioWindowController: NSWindowController, NSWindowDelegate {
             defer: false
         )
         window.title = "FlipStack"
-        window.subtitle = model.selectedPrinter?.displayName ?? "Print Studio"
+        window.subtitle = model.selectedPrinter?.displayName ?? L("Print Studio")
         window.titlebarAppearsTransparent = false
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
@@ -76,7 +76,7 @@ final class StudioWindowController: NSWindowController, NSWindowDelegate {
     func show() {
         guard let window else { return }
         NSApp.setActivationPolicy(.regular)
-        window.subtitle = model.selectedPrinter?.displayName ?? "Print Studio"
+        window.subtitle = model.selectedPrinter?.displayName ?? L("Print Studio")
         if window.isMiniaturized {
             window.deminiaturize(nil)
         }
@@ -96,7 +96,7 @@ final class StudioWindowController: NSWindowController, NSWindowDelegate {
     }
 
     @objc private func refreshSubtitle() {
-        window?.subtitle = model.selectedPrinter?.displayName ?? "Print Studio"
+        window?.subtitle = model.selectedPrinter?.displayName ?? L("Print Studio")
         window?.makeFirstResponder(firstResponderSink)
     }
 
@@ -117,9 +117,13 @@ final class StudioWindowController: NSWindowController, NSWindowDelegate {
                 withIntermediateDirectories: true
             )
             try data.write(to: url, options: .atomic)
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o600],
+                ofItemAtPath: url.path
+            )
             return true
         } catch {
-            NSLog("FlipStack window render failed: \(error)")
+            NSLog("%@", "FlipStack window render failed: \(error)")
             return false
         }
     }

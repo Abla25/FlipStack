@@ -462,7 +462,7 @@ struct HeaderView: View {
                                 .foregroundStyle(FlipColor.tertiaryInk)
                         }
                     }
-                    Text(candidate.modelName ?? "Print queue · \(candidate.id)")
+                    Text(candidate.modelName ?? String(format: L("Print queue · %@"), candidate.id))
                         .font(FlipType.caption)
                         .foregroundStyle(FlipColor.tertiaryInk)
                         .lineLimit(1)

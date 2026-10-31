@@ -54,6 +54,17 @@ public enum PrintOrientation: String, Codable, Sendable, CaseIterable {
     case reverseLandscape
     case reversePortrait
 
+    /// The same page turned 180 degrees, used for the backs of a short-edge
+    /// manual flip.
+    public var rotated180: PrintOrientation {
+        switch self {
+        case .portrait: return .reversePortrait
+        case .landscape: return .reverseLandscape
+        case .reverseLandscape: return .landscape
+        case .reversePortrait: return .portrait
+        }
+    }
+
     /// IPP `orientation-requested` values.
     public var cupsValue: String {
         switch self {
@@ -223,20 +234,20 @@ public enum CUPSCommandError: LocalizedError, Equatable, Sendable {
     public var errorDescription: String? {
         switch self {
         case .toolNotFound(let tool):
-            return "The system print tool “\(tool)” was not found."
+            return String(format: L("The system print tool “%@” was not found."), tool)
         case .commandFailed(let tool, let status, let message):
             let detail = message.trimmingCharacters(in: .whitespacesAndNewlines)
             return "\(tool) exited with status \(status)\(detail.isEmpty ? "." : ": \(detail)")"
         case .invalidOutput(let value):
-            return "Unexpected output from the print system: \(value)"
+            return String(format: L("Unexpected output from the print system: %@"), value)
         case .printerNotFound(let printer):
-            return "Printer “\(printer)” is not available."
+            return String(format: L("Printer “%@” is not available."), printer)
         case .jobNotFound(let id):
-            return "Print job \(id) could not be found."
+            return String(format: L("Print job %lld could not be found."), id)
         case .fileNotFound(let path):
-            return "The file at \(path) does not exist."
+            return String(format: L("The file at %@ does not exist."), path)
         case .timedOut(let tool):
-            return "\(tool) did not respond in time."
+            return String(format: L("%@ did not respond in time."), tool)
         }
     }
 }

@@ -124,7 +124,9 @@ public final class CUPSClient: PrintSpooling, @unchecked Sendable {
     public func recentJobs(printerID: String, limit: Int) async throws -> [PrintJob] {
         guard limit > 0 else { return [] }
         let queue = try validatedPrinterID(printerID)
-        let result = try await run(Tool.lpstat, ["-W", "completed", "-o", queue])
+        // The long form includes job state/alerts, so canceled and aborted
+        // history entries are not mistaken for successful completion.
+        let result = try await run(Tool.lpstat, ["-l", "-W", "completed", "-o", queue])
 
         guard result.status == 0 else {
             throw failure(tool: "lpstat", result: result, printerID: queue)
@@ -193,8 +195,33 @@ public final class CUPSClient: PrintSpooling, @unchecked Sendable {
             throw CUPSCommandError.fileNotFound(path)
         }
 
+        // Never expose the user's document path or filename in `lp` argv,
+        // where `ps` can see it. CUPS reads this private, neutrally named copy
+        // during submission; the directory is removed immediately afterward.
+        let spoolDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("FlipStack", isDirectory: true)
+            .appendingPathComponent("Spool-\(UUID().uuidString)", isDirectory: true)
+        let neutralURL = spoolDirectory.appendingPathComponent("document.pdf")
+        do {
+            try FileManager.default.createDirectory(
+                at: spoolDirectory,
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
+            )
+            try FileManager.default.copyItem(at: request.fileURL, to: neutralURL)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o600],
+                ofItemAtPath: neutralURL.path
+            )
+        } catch {
+            try? FileManager.default.removeItem(at: spoolDirectory)
+            throw CUPSCommandError.fileNotFound(path)
+        }
+        defer { try? FileManager.default.removeItem(at: spoolDirectory) }
+
         var validated = request
         validated.printerID = queue
+        validated.fileURL = neutralURL
         let arguments = CUPSOptionBuilder.arguments(for: validated)
 
         let result = try await run(Tool.lp, arguments)
