@@ -472,7 +472,7 @@ Never claim success because the queue looks empty or a timer elapsed; only termi
 
 `DuplexConfiguration` exposes `pollInterval`, `jobStuckTimeout`, and `printerErrorGracePeriod`; tests use small values (0.01 s, 0.2 s, 0.05 s) for fast, deterministic runs. Real-queue tests are env-gated and not in CI.
 
-**CI.** GitHub Actions macOS runners (Apple Silicon primary, Intel compatibility job where available) with Xcode 15/Swift 5.9; `swift test --parallel` and `swift build -c release` on PRs and `main`; cache `.build`; `Package.swift` copies `Fixtures` as resources, so tests never read host `/etc/cups` or `/Library/Printers`. No signing in CI; release is separate. Manual UI checklist: menu bar, Reduce Motion, VoiceOver, large Dynamic Type, notification Continue/Cancel, popover fallback.
+**CI.** GitHub Actions on the current `macos-15` runner (Swift 5.9 language mode, Xcode 16 toolchain); `swift test --parallel` and `swift build -c release` on PRs and `main`; cache `.build`; `Package.swift` copies `Fixtures` as resources, so tests never read host `/etc/cups` or `/Library/Printers`. No signing in CI; release is separate and builds both arm64 and x86_64. Manual UI checklist: menu bar, Reduce Motion, VoiceOver, large Dynamic Type, notification Continue/Cancel, popover fallback.
 
 ## 12. Distribution, signing, notarization, DMG, secrets, update cadence
 
