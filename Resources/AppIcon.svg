@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- FlipStack app icon: two offset sheets and a single flip arrow. Flat colors only. -->
+  <rect x="56" y="56" width="912" height="912" rx="214" fill="#FF5A3C"/>
+
+  <!-- Flip arrow: an open ring around the stack with the arrowhead at lower right. -->
+  <path d="M 247 734 A 346 346 0 1 1 777 734" fill="none" stroke="#FFFFFF" stroke-width="58" stroke-linecap="round"/>
+  <path d="M 729 791 L 827 750 L 753 688 Z" fill="#FFFFFF"/>
+
+  <!-- Back sheet, slightly rotated. -->
+  <g transform="rotate(-10 405 420)">
+    <rect x="235" y="190" width="330" height="440" rx="38" fill="#FFC0B0"/>
+    <rect x="283" y="255" width="170" height="16" rx="8" fill="#FFA894"/>
+  </g>
+
+  <!-- Front sheet. -->
+  <g transform="rotate(7 515 500)">
+    <rect x="345" y="228" width="350" height="470" rx="40" fill="#FFF9F3"/>
+    <rect x="395" y="286" width="78" height="16" rx="8" fill="#FF5A3C"/>
+    <rect x="395" y="340" width="222" height="16" rx="8" fill="#2B1A17"/>
+    <rect x="395" y="384" width="250" height="16" rx="8" fill="#2B1A17"/>
+    <rect x="395" y="428" width="184" height="16" rx="8" fill="#2B1A17"/>
+  </g>
+</svg>

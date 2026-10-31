@@ -1,0 +1,37 @@
+name: Feature request
+description: Suggest an improvement for FlipStack.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Explain the problem first, then the change you would like to see. FlipStack stays focused on manual duplex and local CUPS printing.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the printing workflow or limitation behind the request.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: What should FlipStack do differently?
+    validations:
+      required: true
+  - type: input
+    id: hardware
+    attributes:
+      label: Relevant printer or setup
+      description: Optional. Model, connection type, and why the current behavior does not fit.
+    validations:
+      required: false
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Optional. Other apps, workarounds, or designs you have tried.
+    validations:
+      required: false

@@ -1,0 +1,53 @@
+name: Bug report
+description: Report a problem with FlipStack.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve FlipStack. Remove serial numbers, hostnames, user names, and other personal data before posting logs or screenshots.
+  - type: input
+    id: version
+    attributes:
+      label: FlipStack version
+      description: The version shown in the release DMG filename or the app's About panel.
+      placeholder: 1.0.0
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac type
+      placeholder: macOS 14.6, Apple silicon
+    validations:
+      required: true
+  - type: input
+    id: printer
+    attributes:
+      label: Printer and connection
+      description: Model, USB or network, and whether the output tray ejects face-up or face-down.
+      placeholder: Epson L1800, USB, face-up output
+    validations:
+      required: false
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What did you do, and what happened?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant queue output
+      description: Optional. Paste output from lpstat or the CUPS web interface after removing personal data.
+      render: shell
+    validations:
+      required: false

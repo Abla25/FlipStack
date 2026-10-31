@@ -1,0 +1,323 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, without the leading v (for example 1.0.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Sign, notarize, and publish
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Show tool versions
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Resolve version
+        id: version
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          set -euo pipefail
+          if [[ "$REF_TYPE" == "tag" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="$INPUT_VERSION"
+          fi
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "error: version must be MAJOR.MINOR.PATCH (got: $version)" >&2
+            exit 1
+          fi
+          {
+            echo "version=$version"
+            echo "tag=v$version"
+            echo "build_number=$GITHUB_RUN_NUMBER"
+          } >> "$GITHUB_OUTPUT"
+          echo "Resolved release v$version (build $GITHUB_RUN_NUMBER)"
+
+      - name: Validate release secrets
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in \
+            MACOS_CERTIFICATE_P12 \
+            MACOS_CERTIFICATE_PASSWORD \
+            KEYCHAIN_PASSWORD \
+            APPLE_ID \
+            APPLE_TEAM_ID \
+            APPLE_APP_PASSWORD
+          do
+            if [[ -z "${!name:-}" ]]; then
+              missing+=("$name")
+            fi
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "error: missing required repository secret(s): ${missing[*]}" >&2
+            exit 1
+          fi
+          echo "Required release secrets are present."
+
+      - name: Run tests
+        run: swift test --parallel
+
+      - name: Sign, notarize, and package
+        id: package
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          BUILD_NUMBER: ${{ steps.version.outputs.build_number }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+
+          APP="$PWD/dist/FlipStack.app"
+          ENTITLEMENTS="$PWD/Resources/FlipStack.entitlements"
+          RELEASE_DIR="$PWD/dist/release"
+          CERT_PATH="$RUNNER_TEMP/flipstack-cert.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/flipstack-signing.keychain-db"
+          APP_ZIP="$RUNNER_TEMP/FlipStack-${VERSION}-macOS.zip"
+          DMG_STAGING=""
+
+          cleanup() {
+            rm -f "$CERT_PATH"
+            if [[ -n "$DMG_STAGING" ]]; then
+              rm -rf "$DMG_STAGING"
+            fi
+            security delete-keychain "$KEYCHAIN_PATH" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          echo "Importing Developer ID certificate into a temporary keychain"
+          security delete-keychain "$KEYCHAIN_PATH" >/dev/null 2>&1 || true
+          printf '%s' "$MACOS_CERTIFICATE_P12" | base64 --decode > "$CERT_PATH"
+          if [[ ! -s "$CERT_PATH" ]]; then
+            echo "error: the certificate secret could not be decoded" >&2
+            exit 1
+          fi
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -l -u -t 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$MACOS_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security >/dev/null
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN_PATH" "$HOME/Library/Keychains/login.keychain-db"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
+          if [[ -n "${APPLE_SIGNING_IDENTITY:-}" ]]; then
+            IDENTITY="$APPLE_SIGNING_IDENTITY"
+            echo "Using the Developer ID identity supplied by the repository secret."
+          else
+            IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
+              | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' \
+              | head -n 1)"
+            if [[ -z "$IDENTITY" ]]; then
+              echo "error: no Developer ID Application identity was found in the temporary keychain" >&2
+              exit 1
+            fi
+            echo "Using signing identity: $IDENTITY"
+          fi
+
+          # The certificate and keychain are already created with restrictive
+          # permissions. Use normal permissions for the distributable app.
+          umask 022
+
+          if [[ "$(uname -m)" == "arm64" ]]; then
+            BUILD_ARCHS_VALUE="arm64 x86_64"
+          else
+            BUILD_ARCHS_VALUE="x86_64 arm64"
+          fi
+
+          CODESIGN_IDENTITY="$IDENTITY" \
+          BUILD_ARCHS="$BUILD_ARCHS_VALUE" \
+          MARKETING_VERSION="$VERSION" \
+          BUILD_NUMBER="$BUILD_NUMBER" \
+          MAKE_DMG=0 \
+          Scripts/bundle.sh
+
+          BINARY="$APP/Contents/MacOS/FlipStack"
+          ARCHS="$(lipo -archs "$BINARY")"
+          echo "Built architectures: $ARCHS"
+          if [[ "$ARCHS" != *arm64* || "$ARCHS" != *x86_64* ]]; then
+            echo "error: the release binary must contain both arm64 and x86_64" >&2
+            exit 1
+          fi
+
+          codesign \
+            --deep \
+            --force \
+            --options runtime \
+            --timestamp \
+            --entitlements "$ENTITLEMENTS" \
+            --keychain "$KEYCHAIN_PATH" \
+            --sign "$IDENTITY" \
+            "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist" \
+            | grep -Fx "$VERSION"
+
+          notarize() {
+            local file="$1"
+            local label="$2"
+            local log="$RUNNER_TEMP/notary-${label}.log"
+
+            echo "Submitting $label to the Apple notary service"
+            if ! xcrun notarytool submit "$file" \
+              --apple-id "$APPLE_ID" \
+              --team-id "$APPLE_TEAM_ID" \
+              --password "$APPLE_APP_PASSWORD" \
+              --wait 2>&1 | tee "$log"
+            then
+              echo "error: notarization submission failed for $label" >&2
+              exit 1
+            fi
+
+            if ! grep -Eiq '^[[:space:]]*status:[[:space:]]+accepted[[:space:]]*$' "$log"; then
+              echo "error: notarization did not return Accepted for $label" >&2
+              exit 1
+            fi
+
+            local submission_id
+            submission_id="$(awk '/^[[:space:]]*id: / { print $2; exit }' "$log")"
+            printf '%s\n' "$submission_id" > "$RUNNER_TEMP/notary-${label}.id"
+            echo "Notarization accepted for $label (${submission_id:-unknown submission id})"
+          }
+
+          echo "Notarizing the app"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$APP_ZIP"
+          notarize "$APP_ZIP" "app"
+
+          echo "Stapling and validating the app"
+          xcrun stapler staple "$APP"
+          xcrun stapler validate "$APP"
+          spctl --assess --type execute --verbose=4 "$APP"
+
+          rm -rf "$RELEASE_DIR"
+          mkdir -p "$RELEASE_DIR"
+          DMG="$RELEASE_DIR/FlipStack-${VERSION}.dmg"
+          DMG_STAGING="$(mktemp -d "$RUNNER_TEMP/flipstack-dmg.XXXXXX")"
+          chmod 755 "$DMG_STAGING"
+          echo "Creating $DMG"
+          ditto "$APP" "$DMG_STAGING/FlipStack.app"
+          ln -s /Applications "$DMG_STAGING/Applications"
+          if [[ -f "$PWD/LICENSE" ]]; then
+            cp "$PWD/LICENSE" "$DMG_STAGING/LICENSE"
+          fi
+          cat > "$DMG_STAGING/Read Me.txt" <<EOF
+          FlipStack $VERSION
+
+          Drag FlipStack to Applications, then open it from Applications.
+          FlipStack lives in the menu bar and does not show a Dock icon.
+
+          Requires macOS 13 or later.
+
+          License: MIT. See LICENSE.
+          EOF
+          chmod 644 "$DMG_STAGING/Read Me.txt"
+          if [[ -f "$DMG_STAGING/LICENSE" ]]; then
+            chmod 644 "$DMG_STAGING/LICENSE"
+          fi
+          hdiutil create -quiet \
+            -volname "FlipStack $VERSION" \
+            -srcfolder "$DMG_STAGING" \
+            -ov \
+            -format UDZO \
+            "$DMG" >/dev/null
+
+          echo "Signing the DMG"
+          codesign --force --timestamp --keychain "$KEYCHAIN_PATH" --sign "$IDENTITY" "$DMG"
+          codesign --verify --verbose=2 "$DMG"
+
+          echo "Notarizing the DMG"
+          notarize "$DMG" "dmg"
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG"
+
+          SHA256_PATH="$DMG.sha256"
+          (
+            cd "$RELEASE_DIR"
+            shasum -a 256 "$(basename "$DMG")" > "$(basename "$SHA256_PATH")"
+            shasum -a 256 -c "$(basename "$SHA256_PATH")"
+          )
+
+          APP_SUBMISSION_ID="$(cat "$RUNNER_TEMP/notary-app.id" 2>/dev/null || true)"
+          DMG_SUBMISSION_ID="$(cat "$RUNNER_TEMP/notary-dmg.id" 2>/dev/null || true)"
+          CHECKSUM="$(cut -d ' ' -f 1 "$SHA256_PATH")"
+
+          {
+            echo "DMG_PATH=$DMG"
+            echo "SHA256_PATH=$SHA256_PATH"
+          } >> "$GITHUB_ENV"
+
+          {
+            echo "## FlipStack $VERSION"
+            echo
+            echo "| Item | Result |"
+            echo "| --- | --- |"
+            echo "| Architectures | \`$ARCHS\` |"
+            echo "| App notarization | Accepted${APP_SUBMISSION_ID:+ (\`$APP_SUBMISSION_ID\`)} |"
+            echo "| DMG notarization | Accepted${DMG_SUBMISSION_ID:+ (\`$DMG_SUBMISSION_ID\`)} |"
+            echo "| DMG | \`$(basename "$DMG")\` |"
+            echo "| SHA-256 | \`$CHECKSUM\` |"
+            echo "| Signing and stapling | Verified with codesign, spctl, and stapler |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "Release package is ready."
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: FlipStack ${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true
+          files: |
+            dist/release/*.dmg
+            dist/release/*.sha256
