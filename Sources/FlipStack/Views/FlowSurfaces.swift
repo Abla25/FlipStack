@@ -97,16 +97,16 @@ private struct PreparingArt: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
+            RoundedRectangle(cornerRadius: FlipMetrics.microRadius, style: .continuous)
                 .fill(FlipColor.printPaperEdge)
                 .overlay {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    RoundedRectangle(cornerRadius: FlipMetrics.microRadius, style: .continuous)
                         .strokeBorder(FlipColor.ink.opacity(0.1), lineWidth: 0.5)
                 }
                 .frame(width: artWidth * 0.66, height: height * 0.84)
                 .offset(x: 7, y: 6)
 
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
+            RoundedRectangle(cornerRadius: FlipMetrics.microRadius, style: .continuous)
                 .fill(FlipColor.printPaper)
                 .overlay {
                     VStack(alignment: .leading, spacing: height * 0.06) {
@@ -126,7 +126,7 @@ private struct PreparingArt: View {
                     .padding(.vertical, 13)
                 }
                 .overlay {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    RoundedRectangle(cornerRadius: FlipMetrics.microRadius, style: .continuous)
                         .strokeBorder(FlipColor.ink.opacity(0.18), lineWidth: 0.6)
                 }
                 .frame(width: artWidth * 0.7, height: height * 0.9)
@@ -286,11 +286,11 @@ struct PrintingSurface: View {
         }
         .padding(11)
         .background(
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
+            RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
                 .fill(FlipColor.tone)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
+            RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
                 .strokeBorder(FlipColor.hairline, lineWidth: 0.5)
         }
         .accessibilityElement(children: .combine)
@@ -389,16 +389,16 @@ private struct CompletedArt: View {
                 .frame(width: artWidth * 0.92, height: artWidth * 0.92)
                 .rotationEffect(.degrees(-70))
 
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
+            RoundedRectangle(cornerRadius: FlipMetrics.paperRadius, style: .continuous)
                 .fill(FlipColor.printPaperEdge)
                 .overlay {
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    RoundedRectangle(cornerRadius: FlipMetrics.paperRadius, style: .continuous)
                         .strokeBorder(FlipColor.ink.opacity(0.1), lineWidth: 0.5)
                 }
                 .frame(width: artWidth * 0.46, height: height * 0.6)
                 .offset(x: 6, y: 5)
 
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
+            RoundedRectangle(cornerRadius: FlipMetrics.paperRadius, style: .continuous)
                 .fill(FlipColor.printPaper)
                 .overlay {
                     VStack(alignment: .leading, spacing: height * 0.055) {
@@ -414,7 +414,7 @@ private struct CompletedArt: View {
                     .padding(.vertical, 9)
                 }
                 .overlay {
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    RoundedRectangle(cornerRadius: FlipMetrics.paperRadius, style: .continuous)
                         .strokeBorder(FlipColor.ink.opacity(0.16), lineWidth: 0.6)
                 }
                 .frame(width: artWidth * 0.49, height: height * 0.65)
@@ -463,7 +463,7 @@ struct FailedSurface: View {
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: FlipMetrics.controlRadius, style: .continuous)
                         .fill(FlipColor.danger.opacity(0.07))
                 )
                 .accessibilityElement(children: .combine)

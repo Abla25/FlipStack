@@ -77,6 +77,8 @@ public struct PrintRequest: Hashable, Sendable {
     public var orientation: PrintOrientation
     public var driverOptions: [String: String]
     public var fitToPage: Bool
+    /// 50...150. Ignored by CUPS when `fitToPage` is true.
+    public var scalePercent: Int
 
     public init(
         fileURL: URL,
@@ -88,7 +90,8 @@ public struct PrintRequest: Hashable, Sendable {
         numberUp: Int = 1,
         orientation: PrintOrientation = .portrait,
         driverOptions: [String: String] = [:],
-        fitToPage: Bool = false
+        fitToPage: Bool = false,
+        scalePercent: Int = 100
     ) {
         self.fileURL = fileURL
         self.printerID = printerID
@@ -100,6 +103,7 @@ public struct PrintRequest: Hashable, Sendable {
         self.orientation = orientation
         self.driverOptions = driverOptions
         self.fitToPage = fitToPage
+        self.scalePercent = min(max(scalePercent, 50), 150)
     }
 }
 

@@ -302,6 +302,8 @@ public struct DuplexConfiguration: Hashable, Sendable {
     public var forceOneSidedPasses: Bool
     /// Ask CUPS to scale each page to the selected media size.
     public var fitToPage: Bool
+    /// Exact CUPS scaling percentage when `fitToPage` is false.
+    public var scalePercent: Int
 
     public init(
         printerID: String,
@@ -314,7 +316,8 @@ public struct DuplexConfiguration: Hashable, Sendable {
         jobStuckTimeout: TimeInterval = 600,
         printerErrorGracePeriod: TimeInterval = 8,
         forceOneSidedPasses: Bool = false,
-        fitToPage: Bool = false
+        fitToPage: Bool = false,
+        scalePercent: Int = 100
     ) {
         self.printerID = printerID
         self.printerName = printerName
@@ -327,6 +330,7 @@ public struct DuplexConfiguration: Hashable, Sendable {
         self.printerErrorGracePeriod = printerErrorGracePeriod
         self.forceOneSidedPasses = forceOneSidedPasses
         self.fitToPage = fitToPage
+        self.scalePercent = min(max(scalePercent, 50), 150)
     }
 
     public var flipMode: FlipMode {

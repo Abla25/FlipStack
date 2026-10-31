@@ -8,6 +8,8 @@ import SwiftUI
 struct PDFPagePreview: View {
     let url: URL
     var twoUp: Bool = false
+    var scale: CGFloat = 1
+    var isGrayscale: Bool = false
 
     @State private var pageCount = 0
     @State private var pageIndex = 0
@@ -26,7 +28,7 @@ struct PDFPagePreview: View {
     var body: some View {
         VStack(spacing: 7) {
             ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: FlipMetrics.smallRadius, style: .continuous)
                     .fill(Color(nsColor: .controlBackgroundColor))
 
                 if images.isEmpty {
@@ -52,6 +54,8 @@ struct PDFPagePreview: View {
                     )
                     .shadow(color: .black.opacity(0.18), radius: 4, x: 0, y: 2)
                     .padding(10)
+                    .scaleEffect(scale)
+                    .saturation(isGrayscale ? 0 : 1)
                 } else {
                     HStack(spacing: 0) {
                         ForEach(Array(images.enumerated()), id: \.offset) { _, image in
@@ -64,11 +68,14 @@ struct PDFPagePreview: View {
                         }
                     }
                     .padding(10)
+                    .scaleEffect(scale)
+                    .saturation(isGrayscale ? 0 : 1)
                 }
             }
-            .frame(height: 178)
+            .frame(height: 150)
+            .clipped()
             .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: FlipMetrics.smallRadius, style: .continuous)
                     .strokeBorder(FlipColor.hairline, lineWidth: 0.5)
             }
             .accessibilityElement(children: .ignore)
@@ -166,24 +173,62 @@ struct DocumentPreviewPanel: View {
         return PDFDocument(url: activeURL)?.pageCount ?? 0
     }
 
-    private var countLabel: String {
-        if model.mode == .booklet {
-            let sheets = Int(ceil(Double(pageCount) / 2.0))
-            return "\(sheets) \(sheets == 1 ? "sheet" : "sheets") · \(pageCount) pages"
-        }
-        return pageCount == 1 ? "1 page" : "\(pageCount) pages"
-    }
+    private var previewAdjustments: some View {
+        HStack(spacing: 7) {
+            if model.mode != .booklet {
+                Text("Scale")
+                    .font(FlipType.captionStrong)
+                    .foregroundStyle(FlipColor.secondaryInk)
+                    .frame(width: 36, alignment: .leading)
 
-    private var previewSubtitle: String {
-        if model.mode == .booklet {
-            return model.previewShowsBacks
-                ? "Backs · sheet sides after the flip"
-                : "Fronts · sheet sides before the flip"
+                Slider(
+                    value: Binding(
+                        get: { Double(model.fitToPage ? 100 : model.scalePercent) },
+                        set: { model.setScalePercent(Int($0.rounded())) }
+                    ),
+                    in: 50...150,
+                    step: 5
+                )
+                .controlSize(.mini)
+                .tint(FlipColor.coral)
+                .disabled(model.isPreparingPrint)
+                .accessibilityLabel("Preview print scale")
+                .accessibilityValue(model.fitToPage ? "Fit to page" : "\(model.scalePercent) percent")
+
+                Text(model.fitToPage ? "Fit" : "\(model.scalePercent)%")
+                    .font(.system(.caption2, design: .rounded, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(FlipColor.secondaryInk)
+                    .frame(width: 30, alignment: .trailing)
+            } else {
+                Text("2-up booklet")
+                    .font(FlipType.captionStrong)
+                    .foregroundStyle(FlipColor.secondaryInk)
+            }
+
+            Spacer(minLength: 0)
+
+            if model.supportsColorModeToggle {
+                Button {
+                    withAnimation(FlipMotion.quick(reduceMotion)) {
+                        model.setGrayscale(!model.isGrayscaleSelected)
+                    }
+                } label: {
+                    Text(model.isGrayscaleSelected ? "B&W" : "Color")
+                        .font(.system(.caption2, design: .default, weight: .semibold))
+                        .foregroundStyle(FlipColor.secondaryInk)
+                        .padding(.horizontal, 7)
+                        .frame(height: 22)
+                        .background(Capsule().fill(FlipColor.tone))
+                        .overlay(Capsule().strokeBorder(FlipColor.hairline, lineWidth: 0.5))
+                }
+                .buttonStyle(.plain)
+                .help(model.isGrayscaleSelected ? "Switch preview and print to color." : "Switch preview and print to black and white.")
+                .accessibilityLabel("Color mode")
+                .accessibilityValue(model.isGrayscaleSelected ? "Black and white" : "Color")
+            }
         }
-        if model.pageSelectionMode == .range {
-            return "\(model.pageSelectionInfo.summary) · in print order"
-        }
-        return "All \(model.selectedDocument?.pageCount ?? 0) pages · in print order"
+        .accessibilityElement(children: .contain)
     }
 
     var body: some View {
@@ -223,25 +268,21 @@ struct DocumentPreviewPanel: View {
                         .foregroundStyle(FlipColor.secondaryInk)
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: 210)
+                .frame(height: 190)
                 .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: FlipMetrics.controlRadius, style: .continuous)
                         .fill(FlipColor.tone)
                 )
                 .accessibilityElement(children: .combine)
             } else if let activeURL {
-                PDFPagePreview(url: activeURL, twoUp: model.mode == .booklet)
+                PDFPagePreview(
+                    url: activeURL,
+                    twoUp: model.mode == .booklet,
+                    scale: model.effectiveScale,
+                    isGrayscale: model.isGrayscaleSelected
+                )
 
-                HStack(alignment: .top, spacing: 5) {
-                    Text(previewSubtitle)
-                        .font(FlipType.caption)
-                        .foregroundStyle(FlipColor.secondaryInk)
-                        .lineLimit(2)
-                    Spacer(minLength: 4)
-                    Text(countLabel)
-                        .font(.system(.caption, design: .rounded, weight: .semibold))
-                        .monospacedDigit()
-                        .foregroundStyle(FlipColor.tertiaryInk)                }
+                previewAdjustments
             } else {
                 Text("No preview is available for this document.")
                     .font(FlipType.footnote)
@@ -251,11 +292,11 @@ struct DocumentPreviewPanel: View {
         }
         .padding(11)
         .background(
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
+            RoundedRectangle(cornerRadius: FlipMetrics.cardRadius, style: .continuous)
                 .fill(FlipColor.tone)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
+            RoundedRectangle(cornerRadius: FlipMetrics.cardRadius, style: .continuous)
                 .strokeBorder(FlipColor.hairline, lineWidth: 0.5)
         }
         .accessibilityElement(children: .contain)

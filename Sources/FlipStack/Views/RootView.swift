@@ -83,7 +83,7 @@ struct RootView: View {
                             startPoint: .top,
                             endPoint: .bottom
                         )
-                        .frame(height: model.isShowingQueue ? 28 : 9)
+                        .frame(height: model.isShowingQueue ? 28 : 20)
                     }
                 }
             }

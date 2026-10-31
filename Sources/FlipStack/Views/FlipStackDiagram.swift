@@ -10,12 +10,19 @@ struct FlipStackDiagram: View {
     let mode: FlipMode
     let isFlipped: Bool
     let reduceMotion: Bool
+    var isLandscape: Bool = false
+    var showsLabels: Bool = true
 
     @ScaledMetric(relativeTo: .body) private var scaledWidth: CGFloat = 128
     @ScaledMetric(relativeTo: .body) private var scaledHeight: CGFloat = 84
 
-    private var width: CGFloat { min(scaledWidth, 146) }
-    private var height: CGFloat { min(scaledHeight, 96) }
+    private var width: CGFloat {
+        isLandscape ? min(scaledWidth, 146) : min(scaledWidth * 0.72, 108)
+    }
+
+    private var height: CGFloat {
+        isLandscape ? min(scaledHeight, 96) : min(scaledHeight * 1.48, 136)
+    }
     private var edgeCount: Int { min(max(sheetCount, 1), 5) - 1 }
 
     private var stateText: String {
@@ -53,17 +60,19 @@ struct FlipStackDiagram: View {
             }
             .frame(width: width + 34, height: height + 24)
 
-            blockBracket
+            if showsLabels {
+                blockBracket
 
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(isFlipped ? FlipColor.coral : FlipColor.tertiaryInk.opacity(0.55))
-                    .frame(width: 4, height: 4)
-                Text(stateText)
-                    .font(FlipType.caption)
-                    .foregroundStyle(FlipColor.secondaryInk)
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(isFlipped ? FlipColor.coral : FlipColor.tertiaryInk.opacity(0.55))
+                        .frame(width: 4, height: 4)
+                    Text(stateText)
+                        .font(FlipType.caption)
+                        .foregroundStyle(FlipColor.secondaryInk)
+                }
+                .animation(FlipMotion.standard(reduceMotion), value: isFlipped)
             }
-            .animation(FlipMotion.standard(reduceMotion), value: isFlipped)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Paper stack, \(FlipFormat.sheets(sheetCount)), one physical block")
@@ -83,7 +92,7 @@ struct FlipStackDiagram: View {
                 block
                     .frame(width: width, height: height)
                     .overlay {
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        RoundedRectangle(cornerRadius: FlipMetrics.microRadius, style: .continuous)
                             .fill(FlipColor.coral.opacity(0.07))
                     }
                     .opacity(isFlipped ? 1 : 0)
@@ -116,10 +125,10 @@ struct FlipStackDiagram: View {
         ZStack {
             if edgeCount > 0 {
                 ForEach(Array(stride(from: edgeCount, through: 1, by: -1)), id: \.self) { edge in
-                    RoundedRectangle(cornerRadius: 6.5, style: .continuous)
+                    RoundedRectangle(cornerRadius: FlipMetrics.microRadius, style: .continuous)
                         .fill(edge.isMultiple(of: 2) ? FlipColor.printPaperEdge : FlipColor.printPaper)
                         .overlay {
-                            RoundedRectangle(cornerRadius: 6.5, style: .continuous)
+                            RoundedRectangle(cornerRadius: FlipMetrics.microRadius, style: .continuous)
                                 .strokeBorder(FlipColor.ink.opacity(0.16), lineWidth: 0.5)
                         }
                         .frame(width: width, height: height)
@@ -127,7 +136,7 @@ struct FlipStackDiagram: View {
                 }
             }
 
-            RoundedRectangle(cornerRadius: 6.5, style: .continuous)
+            RoundedRectangle(cornerRadius: FlipMetrics.microRadius, style: .continuous)
                 .fill(FlipColor.printPaper)
                 .overlay {
                     pageFace
@@ -138,7 +147,7 @@ struct FlipStackDiagram: View {
                         .opacity(isFlipped ? 1 : 0)
                 }
                 .overlay {
-                    RoundedRectangle(cornerRadius: 6.5, style: .continuous)
+                    RoundedRectangle(cornerRadius: FlipMetrics.microRadius, style: .continuous)
                         .strokeBorder(FlipColor.ink.opacity(0.22), lineWidth: 0.7)
                 }
                 .overlay(alignment: axis == .longEdge ? .leading : .top) {

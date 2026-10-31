@@ -131,10 +131,20 @@ enum FlipMetrics {
     static let panelHeight: CGFloat = 680
     static let gutter: CGFloat = 20
     static let sectionSpacing: CGFloat = 21
+    static let panelRadius: CGFloat = 20
     static let cardRadius: CGFloat = 14
+    static let compactRadius: CGFloat = 11
     static let controlRadius: CGFloat = 10
+    static let smallRadius: CGFloat = 8
+    static let microRadius: CGFloat = 6
+    static let paperRadius: CGFloat = 5
     static let primaryHeight: CGFloat = 50
     static let footerHeight: CGFloat = 46
+
+    /// Keep nested corners concentric instead of independently guessed.
+    static func nestedRadius(outer: CGFloat, inset: CGFloat) -> CGFloat {
+        max(0, outer - inset)
+    }
 }
 
 // MARK: - Motion

@@ -73,7 +73,7 @@ struct ModeSection: View {
                         .frame(height: 31)
                         .background {
                             if isSelected {
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                RoundedRectangle(cornerRadius: FlipMetrics.smallRadius, style: .continuous)
                                     .fill(FlipColor.coral)
                                     .matchedGeometryEffect(id: "mode.indicator", in: modeNamespace)
                             }
@@ -90,11 +90,11 @@ struct ModeSection: View {
         }
         .padding(3)
         .background(
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
+            RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
                 .fill(FlipColor.tone)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
+            RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
                 .strokeBorder(FlipColor.hairline, lineWidth: 0.5)
         }
     }
@@ -184,12 +184,12 @@ struct ModeSection: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: 29)
                 .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: FlipMetrics.smallRadius, style: .continuous)
                         .fill(isSelected ? FlipColor.coral : FlipColor.tone)
                 )
                 .overlay {
                     if !isSelected {
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        RoundedRectangle(cornerRadius: FlipMetrics.smallRadius, style: .continuous)
                             .strokeBorder(FlipColor.hairline, lineWidth: 0.5)
                     }
                 }
@@ -255,18 +255,12 @@ struct ModeSection: View {
                 .accessibilityHint("Opens the flip axis and tray setup inline.")
             }
 
-            if !model.isShowingQueue {
-                Text(
-                    model.preferences.hasConfiguredFlip
-                    ? (model.preferences.ejectsFaceDown
-                       ? "Your tray stacks pages face-down, so you’ll only reinsert the block between passes."
-                       : "Your tray stacks pages face-up, so you’ll turn the block over between passes.")
-                    : "Tell FlipStack how this printer stacks pages before the first job."
-                )
-                .font(FlipType.footnote)
-                .foregroundStyle(FlipColor.secondaryInk)
-                .fixedSize(horizontal: false, vertical: true)
-                .lineSpacing(1)
+            if !model.isShowingQueue, !model.preferences.hasConfiguredFlip {
+                Text("Tell FlipStack how this printer stacks pages before the first job.")
+                    .font(FlipType.footnote)
+                    .foregroundStyle(FlipColor.secondaryInk)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .lineSpacing(1)
             }
         }
     }
@@ -325,10 +319,15 @@ struct OutputSection: View {
 
             if model.mode != .booklet {
                 layoutControl
+                scaleControl
             }
 
             if !model.qualityPresets.isEmpty {
                 qualityPresetControl
+            }
+
+            if model.supportsColorModeToggle {
+                colorModeControl
             }
 
             if !model.colorProfileOptions.isEmpty {
@@ -425,11 +424,11 @@ struct OutputSection: View {
             .padding(.horizontal, 9)
             .frame(height: 28)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: FlipMetrics.smallRadius, style: .continuous)
                     .fill(FlipColor.tone)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: FlipMetrics.smallRadius, style: .continuous)
                     .strokeBorder(FlipColor.hairline, lineWidth: 0.5)
             }
             .contentShape(Rectangle())
@@ -555,11 +554,11 @@ struct OutputSection: View {
                 .padding(.horizontal, 9)
                 .frame(height: 29)
                 .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: FlipMetrics.smallRadius, style: .continuous)
                         .fill(FlipColor.tone)
                 )
                 .overlay {
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    RoundedRectangle(cornerRadius: FlipMetrics.smallRadius, style: .continuous)
                         .strokeBorder(
                             selection.isValid ? (isPageRangeFocused ? FlipColor.coral : FlipColor.hairline)
                                               : FlipColor.danger.opacity(0.7),
@@ -622,6 +621,53 @@ struct OutputSection: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Print quality")
         .accessibilityValue(model.activeQualityPreset?.title ?? "Custom driver settings")
+    }
+
+    private var colorModeControl: some View {
+        HStack(spacing: 8) {
+            Text("Color")
+                .font(FlipType.captionStrong)
+                .foregroundStyle(FlipColor.secondaryInk)
+
+            Spacer(minLength: 4)
+
+            HStack(spacing: 2) {
+                colorModeChip(title: "Color", grayscale: false)
+                colorModeChip(title: "B&W", grayscale: true)
+            }
+            .padding(2)
+            .background(Capsule().fill(FlipColor.tone))
+            .overlay(Capsule().strokeBorder(FlipColor.hairline, lineWidth: 0.5))
+        }
+        .disabled(isBusy)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Color mode")
+        .accessibilityValue(model.isGrayscaleSelected ? "Black and white" : "Color")
+    }
+
+    private func colorModeChip(title: String, grayscale: Bool) -> some View {
+        let isSelected = model.isGrayscaleSelected == grayscale
+        return Button {
+            guard !isBusy, !isSelected else { return }
+            withAnimation(FlipMotion.quick(reduceMotion)) {
+                model.setGrayscale(grayscale)
+            }
+        } label: {
+            Text(title)
+                .font(.system(.caption2, design: .default, weight: .semibold))
+                .foregroundStyle(isSelected ? FlipColor.onCoral : FlipColor.secondaryInk)
+                .padding(.horizontal, 10)
+                .frame(height: 22)
+                .background(Capsule().fill(isSelected ? FlipColor.coral : Color.clear))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(isBusy)
+        .help(grayscale ? "Print using the driver's grayscale or monochrome mode." : "Print using the driver's color mode.")
+        .accessibilityLabel(grayscale ? "Black and white" : "Color")
+        .accessibilityValue(isSelected ? "Selected" : "Not selected")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityHint("Sets the color mode exposed by this printer driver.")
     }
 
     private func colorProfileControl(_ option: PPDOption) -> some View {
@@ -725,7 +771,7 @@ struct OutputSection: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Layout")
         .accessibilityValue(
-            "\(model.forceLandscape ? "Landscape" : "Automatic orientation"), \(model.fitToPage ? "fit to page" : "actual size")"
+            "\(model.forceLandscape ? "Landscape" : "Automatic orientation"), \(model.fitToPage ? "fit to page" : "\(model.scalePercent) percent scale")"
         )
     }
 
@@ -764,6 +810,38 @@ struct OutputSection: View {
         .accessibilityValue(selected ? "Selected" : "Not selected")
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityHint(help)
+    }
+
+    private var scaleControl: some View {
+        HStack(spacing: 8) {
+            Text("Scale")
+                .font(FlipType.captionStrong)
+                .foregroundStyle(FlipColor.secondaryInk)
+                .frame(width: 44, alignment: .leading)
+
+            Slider(
+                value: Binding(
+                    get: { Double(model.fitToPage ? 100 : model.scalePercent) },
+                    set: { model.setScalePercent(Int($0.rounded())) }
+                ),
+                in: 50...150,
+                step: 5
+            )
+            .controlSize(.mini)
+            .tint(FlipColor.coral)
+            .disabled(isBusy)
+            .help("Drag to set an exact print scale. Changing the scale turns off Fit page.")
+            .accessibilityLabel("Print scale")
+            .accessibilityValue(model.fitToPage ? "Fit to page" : "\(model.scalePercent) percent")
+            .accessibilityHint("Adjust from 50 to 150 percent. Changing the scale turns off Fit page.")
+
+            Text(model.fitToPage ? "Fit" : "\(model.scalePercent)%")
+                .font(.system(.caption, design: .rounded, weight: .semibold))
+                .monospacedDigit()
+                .foregroundStyle(FlipColor.secondaryInk)
+                .frame(width: 38, alignment: .trailing)
+        }
+        .accessibilityElement(children: .contain)
     }
 
     private var copiesStepper: some View {
@@ -959,11 +1037,11 @@ private struct DriverChoiceList: View {
             .padding(.bottom, 5)
         }
         .background(
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
+            RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
                 .fill(FlipColor.paper.opacity(0.44))
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
+            RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
                 .strokeBorder(FlipColor.hairline, lineWidth: 0.5)
         }
         .accessibilityElement(children: .contain)

@@ -365,7 +365,8 @@ public final class DuplexOrchestrator: ObservableObject {
             driverOptions: document.isSingleSided
                 ? singleSidedOptions
                 : configuration.driverOptionsWithDuplex,
-            fitToPage: configuration.fitToPage
+            fitToPage: configuration.fitToPage,
+            scalePercent: configuration.scalePercent
         )
 
         let job: PrintJob

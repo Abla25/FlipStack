@@ -191,6 +191,29 @@ final class AppModel: ObservableObject {
             saveLayout()
         }
     }
+    @Published var scalePercent = 100 {
+        didSet {
+            let clamped = min(max(scalePercent, 50), 150)
+            if clamped != scalePercent {
+                scalePercent = clamped
+                return
+            }
+            guard oldValue != scalePercent else { return }
+            saveLayout()
+        }
+    }
+
+    var effectiveScale: CGFloat {
+        fitToPage ? 1 : CGFloat(scalePercent) / 100
+    }
+
+    func setScalePercent(_ value: Int) {
+        let clamped = min(max(value, 50), 150)
+        if fitToPage {
+            fitToPage = false
+        }
+        scalePercent = clamped
+    }
     @Published private(set) var optionSelection: [String: String] = [:]
     @Published private(set) var preferences: PrinterPreferences = .unconfigured
     @Published var bookletSignatureSheets: Int = 0 {
@@ -309,6 +332,15 @@ final class AppModel: ObservableObject {
 
     var isCalibrating: Bool { flipCalibration != nil }
 
+    /// The physical sheet shape shown during the flip prompt. Booklet 2-up
+    /// sheets are landscape; standard documents follow their first page and
+    /// the forced-landscape layout choice.
+    var isLandscapeStack: Bool {
+        activePrintMode == .booklet
+            || forceLandscape
+            || (selectedDocument?.isLandscape ?? false)
+    }
+
     var pageSelectionInfo: PageSelectionInfo {
         guard let document = selectedDocument else {
             return PageSelectionInfo(
@@ -401,6 +433,43 @@ final class AppModel: ObservableObject {
             guard let option = ppd.option(in: group), !option.choices.isEmpty else { return nil }
             return option
         }
+    }
+
+    var colorModeOption: PPDOption? {
+        ppd?.option(in: .color)
+    }
+
+    var grayscaleChoice: PPDChoice? {
+        colorModeOption?.choices.first { choice in
+            let token = "\(choice.keyword) \(choice.displayLabel)".lowercased()
+            return token.contains("gray") || token.contains("grey")
+                || token.contains("mono") || token.contains("black")
+        }
+    }
+
+    var colorChoice: PPDChoice? {
+        colorModeOption?.choices.first { choice in
+            let token = "\(choice.keyword) \(choice.displayLabel)".lowercased()
+            return token.contains("rgb") || token.contains("cmyk")
+                || token.contains("color") || token.contains("colour")
+        }
+    }
+
+    var supportsColorModeToggle: Bool {
+        colorChoice != nil && grayscaleChoice != nil
+    }
+
+    var isGrayscaleSelected: Bool {
+        guard let option = colorModeOption,
+              let grayscale = grayscaleChoice else { return false }
+        return selectedValue(for: option) == grayscale.keyword
+    }
+
+    func setGrayscale(_ grayscale: Bool) {
+        guard let option = colorModeOption else { return }
+        let choice = grayscale ? grayscaleChoice : colorChoice
+        guard let choice else { return }
+        setValue(choice.keyword, for: option)
     }
 
     var colorProfileOptions: [PPDOption] {        guard let ppd else { return [] }
@@ -726,6 +795,7 @@ final class AppModel: ObservableObject {
         let layout = preferencesStore.loadLayout(for: printer.id)
         forceLandscape = layout.forceLandscape
         fitToPage = layout.fitToPage
+        scalePercent = layout.scalePercent
         closePreview()
         optionSelection = [:]
         ppd = nil
@@ -1078,7 +1148,11 @@ final class AppModel: ObservableObject {
     private func saveLayout() {
         guard let id = selectedPrinter?.id else { return }
         preferencesStore.saveLayout(
-            PrintLayoutPreferences(forceLandscape: forceLandscape, fitToPage: fitToPage),
+            PrintLayoutPreferences(
+                forceLandscape: forceLandscape,
+                fitToPage: fitToPage,
+                scalePercent: scalePercent
+            ),
             for: id
         )
     }
@@ -1368,6 +1442,8 @@ final class AppModel: ObservableObject {
         let source = document
         let signature = bookletSignatureSheets > 0 ? bookletSignatureSheets : nil
         let imposer = bookletImposer
+        let requestedScale = scalePercent
+        let useFitToPage = fitToPage
 
         closePreview()
         activePrintMode = printMode
@@ -1412,6 +1488,28 @@ final class AppModel: ObservableObject {
                         return
                     }
                     preparedSelectionDirectory = directory
+                    sourceURL = destination
+                }
+
+                if printMode != .booklet,
+                   !useFitToPage,
+                   requestedScale != 100 {
+                    let directory = preparedSelectionDirectory
+                        ?? Self.workingDirectory(prefix: "Scale")
+                    preparedSelectionDirectory = directory
+                    let destination = directory.appendingPathComponent("scaled-pages.pdf")
+                    try await Task.detached(priority: .userInitiated) {
+                        _ = try PDFPageScaler.scale(
+                            from: sourceURL,
+                            to: destination,
+                            percent: requestedScale
+                        )
+                    }.value
+                    guard isCurrent() else {
+                        try? FileManager.default.removeItem(at: directory)
+                        finishPreparation()
+                        return
+                    }
                     sourceURL = destination
                 }
 
@@ -1559,7 +1657,10 @@ final class AppModel: ObservableObject {
             // the manual pass.
             forceOneSidedPasses: activePrintMode != .singleSided
                 && (ppd == nil || ppd?.supportsHardwareDuplex == true),
-            fitToPage: activePrintMode != .booklet && fitToPage
+            fitToPage: activePrintMode != .booklet && fitToPage,
+            // Non-booklet documents are scaled into a temporary PDF before
+            // submission, so CUPS must not scale them a second time.
+            scalePercent: 100
         )
     }
 

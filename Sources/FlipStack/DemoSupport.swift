@@ -25,6 +25,7 @@ final class DemoSession {
         case bookletPrinting
         case rangePrinting
         case preview
+        case previewAdjusted
         case bookletPreview
         case quality
         case firstPrintSetup
@@ -100,6 +101,14 @@ final class DemoSession {
             model.mode = .singleSided
         case .preview:
             await model.acceptDocument(url: documentURL)
+            model.togglePreview()
+            await waitForPreview(model: model, timeout: timeout)
+        case .previewAdjusted:
+            await model.acceptDocument(url: documentURL)
+            model.setScalePercent(80)
+            if model.supportsColorModeToggle {
+                model.setGrayscale(true)
+            }
             model.togglePreview()
             await waitForPreview(model: model, timeout: timeout)
         case .bookletPreview:

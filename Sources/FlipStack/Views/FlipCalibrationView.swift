@@ -64,11 +64,11 @@ struct FlipCalibrationView: View {
             }
             .padding(11)
             .background(
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                RoundedRectangle(cornerRadius: FlipMetrics.cardRadius, style: .continuous)
                     .fill(FlipColor.tone)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                RoundedRectangle(cornerRadius: FlipMetrics.cardRadius, style: .continuous)
                     .strokeBorder(FlipColor.hairline, lineWidth: 0.5)
             }
 
@@ -150,7 +150,7 @@ struct FlipCalibrationView: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
                 .background(
-                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    RoundedRectangle(cornerRadius: FlipMetrics.smallRadius, style: .continuous)
                         .fill(FlipColor.coral.opacity(0.065))
                 )
                 .accessibilityElement(children: .combine)
@@ -244,11 +244,11 @@ struct FlipCalibrationView: View {
             }
             .padding(10)
             .background(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
                     .fill(FlipColor.tone)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
                     .strokeBorder(FlipColor.hairline, lineWidth: 0.5)
             }
             .accessibilityElement(children: .combine)
@@ -271,11 +271,11 @@ struct FlipCalibrationView: View {
             }
             .padding(10)
             .background(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
                     .fill(FlipColor.coral.opacity(0.06))
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
                     .strokeBorder(FlipColor.coral.opacity(0.3), lineWidth: 0.75)
             }
             .accessibilityElement(children: .combine)
@@ -317,11 +317,11 @@ struct FlipCalibrationView: View {
             }
             .padding(11)
             .background(
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
                     .fill(FlipColor.warning.opacity(0.06))
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
                     .strokeBorder(FlipColor.warning.opacity(0.28), lineWidth: 0.75)
             }
         }
@@ -402,11 +402,11 @@ struct FlipCalibrationView: View {
             .padding(7)
             .frame(maxWidth: .infinity, minHeight: 58, alignment: .topLeading)
             .background(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                RoundedRectangle(cornerRadius: FlipMetrics.smallRadius, style: .continuous)
                     .fill(selected ? FlipColor.coral.opacity(0.09) : FlipColor.tone)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                RoundedRectangle(cornerRadius: FlipMetrics.smallRadius, style: .continuous)
                     .strokeBorder(
                         selected ? FlipColor.coral : FlipColor.hairline,
                         lineWidth: selected ? 1.1 : 0.5
@@ -531,10 +531,10 @@ struct FlipCalibrationActionBar: View {
 private struct CalibrationSheetArt: View {
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
+            RoundedRectangle(cornerRadius: FlipMetrics.paperRadius, style: .continuous)
                 .fill(FlipColor.printPaper)
                 .overlay {
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    RoundedRectangle(cornerRadius: FlipMetrics.paperRadius, style: .continuous)
                         .strokeBorder(FlipColor.printPaperEdge, lineWidth: 0.7)
                 }
                 .shadow(color: FlipColor.paperShadow, radius: 7, x: 0, y: 4)

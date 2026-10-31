@@ -120,7 +120,7 @@ final class MenuBarController: NSObject {
         effectView.blendingMode = .behindWindow
         effectView.state = .active
         effectView.wantsLayer = true
-        effectView.layer?.cornerRadius = 20
+        effectView.layer?.cornerRadius = FlipMetrics.panelRadius
         effectView.layer?.masksToBounds = true
         effectView.layer?.borderWidth = 0.5
         effectView.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.45).cgColor
@@ -129,6 +129,14 @@ final class MenuBarController: NSObject {
         let root = RootView(model: model, orchestrator: orchestrator)
         hostingView = NSHostingView(rootView: root)
         hostingView.setAccessibilityLabel("FlipStack print manager")
+        // The popover owns its own frame. Without this, a tall document/options
+        // tree can feed its ideal height back into the panel and make the
+        // window thousands of points tall after a real PDF is loaded.
+        hostingView.sizingOptions = []
+        hostingView.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        hostingView.setContentHuggingPriority(.defaultLow, for: .vertical)
+        hostingView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        hostingView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
         hostingView.translatesAutoresizingMaskIntoConstraints = false
         effectView.addSubview(hostingView)
         NSLayoutConstraint.activate([
@@ -143,30 +151,41 @@ final class MenuBarController: NSObject {
 
     // MARK: Presentation
 
+    /// The popover owns a deliberate 388 x 680 frame. Clamp it to the space
+    /// below the menu bar and above the Dock; short screens scroll internally.
+    private func panelTargetSize(buttonFrame: NSRect, visible: NSRect) -> NSSize {
+        let availableHeight = max(420, buttonFrame.minY - visible.minY - 16)
+        return NSSize(
+            width: min(FlipMetrics.panelWidth, visible.width - 16),
+            height: min(FlipMetrics.panelHeight, availableHeight)
+        )
+    }
+
+    private func enforcePanelSize(_ target: NSSize) {
+        if abs(panel.frame.width - target.width) > 0.5
+            || abs(panel.frame.height - target.height) > 0.5 {
+            panel.setContentSize(target)
+        }
+    }
+
     func toggle() {
         isVisible ? close() : present()
     }
 
     func present() {
-        if isVisible {
-            panel.makeKey()
-            return
-        }
         guard let button = statusItem.button, let buttonWindow = button.window else { return }
         let buttonFrame = buttonWindow.convertToScreen(button.convert(button.bounds, to: nil))
         let screen = buttonWindow.screen ?? NSScreen.main
         let visible = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let targetSize = panelTargetSize(buttonFrame: buttonFrame, visible: visible)
+        enforcePanelSize(targetSize)
 
-        // The popover is designed for 388 x 680, but it must remain fully
-        // usable on shorter displays: cap the height to the space between the
-        // menu bar and the Dock and let the SwiftUI ScrollView absorb the
-        // difference.
-        let availableHeight = max(420, buttonFrame.minY - visible.minY - 16)
-        let targetHeight = min(FlipMetrics.panelHeight, availableHeight)
-        let targetWidth = min(FlipMetrics.panelWidth, visible.width - 16)
-        if abs(panel.frame.height - targetHeight) > 0.5
-            || abs(panel.frame.width - targetWidth) > 0.5 {
-            panel.setContentSize(NSSize(width: targetWidth, height: targetHeight))
+        if isVisible {
+            panel.makeKey()
+            DispatchQueue.main.async { [weak self] in
+                self?.enforcePanelSize(targetSize)
+            }
+            return
         }
 
         let size = panel.frame.size
@@ -213,6 +232,11 @@ final class MenuBarController: NSObject {
 
         isVisible = true
         installMonitors()
+        // SwiftUI may publish a new ideal size during the next layout pass.
+        // Re-assert the popover frame once after that pass.
+        DispatchQueue.main.async { [weak self] in
+            self?.enforcePanelSize(targetSize)
+        }
         Task {
             await model.refreshStatus()
             await model.refreshQueue()

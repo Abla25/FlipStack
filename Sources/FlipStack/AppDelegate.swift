@@ -117,6 +117,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             }
         }
 
+        if arguments.contains("--show-preview") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { [weak model] in
+                model?.togglePreview()
+            }
+        }
+
         if arguments.contains("--open-panel") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak menuBar] in
                 menuBar?.present()

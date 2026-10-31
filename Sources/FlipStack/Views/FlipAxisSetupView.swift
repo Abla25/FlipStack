@@ -197,11 +197,11 @@ struct FlipAxisSetupView: View {
         }
         .padding(11)
         .background(
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
+            RoundedRectangle(cornerRadius: FlipMetrics.cardRadius, style: .continuous)
                 .fill(FlipColor.coral.opacity(0.055))
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
+            RoundedRectangle(cornerRadius: FlipMetrics.cardRadius, style: .continuous)
                 .strokeBorder(FlipColor.coral.opacity(0.35), lineWidth: 0.75)
         }
         .accessibilityElement(children: .contain)
@@ -259,11 +259,11 @@ struct FlipAxisSetupView: View {
             .padding(9)
             .frame(maxWidth: .infinity, minHeight: 150, alignment: .topLeading)
             .background(
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                RoundedRectangle(cornerRadius: FlipMetrics.cardRadius, style: .continuous)
                     .fill(isSelected ? FlipColor.coral.opacity(0.08) : FlipColor.tone)
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                RoundedRectangle(cornerRadius: FlipMetrics.cardRadius, style: .continuous)
                     .strokeBorder(
                         isSelected ? FlipColor.coral : FlipColor.hairline,
                         lineWidth: isSelected ? 1.2 : 0.5
@@ -296,11 +296,11 @@ struct FlipAxisSetupView: View {
         .accessibilityHint("Turn this on if the printed side already faces down when the pages land in the tray.")
         .padding(11)
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
                 .fill(FlipColor.tone)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
                 .strokeBorder(FlipColor.hairline, lineWidth: 0.5)
         }
     }

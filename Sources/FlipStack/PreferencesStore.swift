@@ -4,8 +4,35 @@ import FlipStackCore
 struct PrintLayoutPreferences: Codable, Equatable, Sendable {
     var forceLandscape: Bool
     var fitToPage: Bool
+    var scalePercent: Int
 
-    static let standard = PrintLayoutPreferences(forceLandscape: false, fitToPage: true)
+    static let standard = PrintLayoutPreferences(
+        forceLandscape: false,
+        fitToPage: true,
+        scalePercent: 100
+    )
+
+    init(forceLandscape: Bool, fitToPage: Bool, scalePercent: Int = 100) {
+        self.forceLandscape = forceLandscape
+        self.fitToPage = fitToPage
+        self.scalePercent = min(max(scalePercent, 50), 150)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case forceLandscape
+        case fitToPage
+        case scalePercent
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        forceLandscape = try values.decodeIfPresent(Bool.self, forKey: .forceLandscape) ?? false
+        fitToPage = try values.decodeIfPresent(Bool.self, forKey: .fitToPage) ?? true
+        scalePercent = min(
+            max(try values.decodeIfPresent(Int.self, forKey: .scalePercent) ?? 100, 50),
+            150
+        )
+    }
 }
 
 protocol PreferencesStoring: AnyObject {

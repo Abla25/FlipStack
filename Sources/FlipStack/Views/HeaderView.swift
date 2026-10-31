@@ -399,11 +399,11 @@ struct HeaderView: View {
             .frame(maxHeight: 172)
         }
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
                 .fill(FlipColor.paper.opacity(0.52))
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
                 .strokeBorder(FlipColor.hairline, lineWidth: 0.5)
         }
         .accessibilityElement(children: .contain)
@@ -452,7 +452,7 @@ struct HeaderView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: FlipMetrics.smallRadius, style: .continuous)
                     .fill(isHovered ? FlipColor.tone : Color.clear)
             )
             .contentShape(Rectangle())

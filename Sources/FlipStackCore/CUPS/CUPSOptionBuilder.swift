@@ -13,7 +13,8 @@ public enum CUPSOptionBuilder {
         "page-set", "pageset", "page-ranges", "pageranges",
         "number-up", "numberup", "orientation-requested", "orientationrequested",
         "output-order", "outputorder", "page-order", "pageorder",
-        "reverse-order", "reverseorder", "page-reversal", "pagereversal", "reverse"
+        "reverse-order", "reverseorder", "page-reversal", "pagereversal", "reverse",
+        "scaling", "natural-scaling", "fit-to-page"
     ]
 
     /// The ordered `-o` pairs sent to `lp`.
@@ -36,6 +37,10 @@ public enum CUPSOptionBuilder {
 
         if request.fitToPage {
             pairs.append(("fit-to-page", "true"))
+        } else {
+            // Explicit even at 100%, so a queue default scaling percentage
+            // cannot silently shrink or enlarge the document.
+            pairs.append(("scaling", String(min(max(request.scalePercent, 50), 150))))
         }
 
         let driverOptions = request.driverOptions

@@ -167,6 +167,45 @@ final class BookletImpositionRenderingTests: XCTestCase {
 
     // MARK: - Helpers
 
+    func testPDFPageScalerPreservesPagesAndContent() throws {
+        let sourceURL = try makeLabeledPDF(pageCount: 2)
+        let destination = testRoot.appendingPathComponent("scaled.pdf")
+
+        let count = try PDFPageScaler.scale(
+            from: sourceURL,
+            to: destination,
+            percent: 80
+        )
+        XCTAssertEqual(count, 2)
+
+        let source = try XCTUnwrap(PDFDocument(url: sourceURL))
+        let scaled = try XCTUnwrap(PDFDocument(url: destination))
+        XCTAssertEqual(scaled.pageCount, source.pageCount)
+        XCTAssertEqual(
+            scaled.page(at: 0)?.bounds(for: .mediaBox),
+            source.page(at: 0)?.bounds(for: .mediaBox)
+        )
+        let scaledText = try pageTexts(at: destination)
+        XCTAssertEqual(scaledText, ["Page 1", "Page 2"])
+        let attributes = try FileManager.default.attributesOfItem(atPath: destination.path)
+        XCTAssertEqual(
+            ((attributes[.posixPermissions] as? NSNumber)?.intValue ?? 0) & 0o777,
+            0o600
+        )
+    }
+
+    func testPDFPageScalerHandlesRotatedPage() throws {
+        let sourceURL = try makeLabeledPDF(pageCount: 1, firstPageRotation: 90)
+        let destination = testRoot.appendingPathComponent("scaled-rotated.pdf")
+        _ = try PDFPageScaler.scale(from: sourceURL, to: destination, percent: 90)
+        let scaled = try XCTUnwrap(PDFDocument(url: destination))
+        let texts = try pageTexts(at: destination)
+        XCTAssertEqual(scaled.pageCount, 1)
+        XCTAssertEqual(scaled.page(at: 0)?.bounds(for: .mediaBox).width, 600)
+        XCTAssertEqual(scaled.page(at: 0)?.bounds(for: .mediaBox).height, 400)
+        XCTAssertTrue(texts.first?.contains("Page 1") == true)
+    }
+
     private func makeLabeledPDF(
         pageCount: Int,
         pageSize: CGSize = CGSize(width: 400, height: 600),

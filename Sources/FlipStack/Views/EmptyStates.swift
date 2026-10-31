@@ -61,7 +61,7 @@ struct NoPrinterState: View {
                 .padding(.top, 8)
                 .padding(.bottom, 2)
                 .background(
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
                         .fill(FlipColor.tone)
                 )
                 .padding(.top, 10)
@@ -135,7 +135,7 @@ struct LoadingPrintersState: View {
     }
 }
 
-private struct FlipPrinterArt: View {
+struct FlipPrinterArt: View {
     let hasPaper: Bool
     let showsAccent: Bool
 

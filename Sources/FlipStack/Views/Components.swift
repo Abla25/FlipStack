@@ -451,9 +451,9 @@ struct FlipBanner: View {
             .accessibilityLabel("Dismiss message")
         }
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(tone.opacity(0.075)))
+        .background(RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous).fill(tone.opacity(0.075)))
         .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
                 .strokeBorder(tone.opacity(0.2), lineWidth: 0.5)
         }
     }
@@ -491,11 +491,11 @@ struct FlipInkLowStrip: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .background(
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
+            RoundedRectangle(cornerRadius: FlipMetrics.smallRadius, style: .continuous)
                 .fill(FlipColor.warning.opacity(0.055))
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
+            RoundedRectangle(cornerRadius: FlipMetrics.smallRadius, style: .continuous)
                 .strokeBorder(FlipColor.warning.opacity(0.14), lineWidth: 0.5)
         }
         .accessibilityElement(children: .ignore)
