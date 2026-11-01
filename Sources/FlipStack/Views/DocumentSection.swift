@@ -8,7 +8,7 @@ struct DocumentSection: View {
     @ObservedObject var model: AppModel
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ScaledMetric(relativeTo: .body) private var artSize: CGFloat = 62
+    @ScaledMetric(relativeTo: .body) private var artSize: CGFloat = 48
     @State private var isTargeted = false
 
     private var isBusy: Bool { model.isPreparingPrint }
@@ -45,7 +45,7 @@ struct DocumentSection: View {
     private var dropZone: some View {
         VStack(spacing: 0) {
             DropPageArt(isTargeted: isTargeted, size: artSize)
-                .padding(.bottom, 12)
+                .padding(.bottom, 8)
 
             Text(isTargeted ? L("Release to open") : L("Drop files to begin"))
                 .font(FlipType.displaySmall)
@@ -72,10 +72,10 @@ struct DocumentSection: View {
                 }
             }
             .buttonStyle(FlipSmallPrimaryButtonStyle())
-            .padding(.top, 14)
+            .padding(.top, 10)
             .accessibilityHint("Opens a file picker for PDFs, photos, and documents. Command-O works anywhere in the panel.")
         }
-        .padding(.vertical, 18)
+        .padding(.vertical, 12)
         .padding(.horizontal, 14)
         .frame(maxWidth: .infinity)
         .background {

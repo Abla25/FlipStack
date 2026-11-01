@@ -1,8 +1,9 @@
 import FlipStackCore
 import SwiftUI
 
-/// The minimal composer. One workflow, duplex at the center:
-/// drop a file → (optional) print settings → Print fronts → flip → done.
+/// The minimal composer. One short workflow, duplex at the center:
+/// drop a file → quick one-tap options (paper / color / quality) →
+/// Print fronts → flip the stack once → done.
 @MainActor
 struct ComposerView: View {
     @ObservedObject var model: AppModel
@@ -18,7 +19,9 @@ struct ComposerView: View {
 
                 sectionBreak
 
-                PrintSettingsDisclosure(model: model)
+                QuickOptionsRow(model: model)
+
+                MoreSettingsDisclosure(model: model)
             } else if !model.preferences.hasConfiguredFlip {
                 FirstRunSetupCard(model: model)
                     .padding(.top, 14)
@@ -31,60 +34,49 @@ struct ComposerView: View {
 
     private var sectionBreak: some View {
         FlipHairline()
-            .padding(.vertical, 12)
+            .padding(.vertical, 10)
     }
 }
 
 // MARK: - Duplex hero
 
-/// The centerpiece: what two-sided printing means here and the one physical
-/// action it needs, with the calibration entry point.
+/// The centerpiece, kept compact: what two-sided printing means here and the
+/// one physical action it needs, with the calibration entry point.
 @MainActor
 private struct DuplexHeroCard: View {
     @ObservedObject var model: AppModel
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                FlipIconMedallion(systemName: "arrow.triangle.2.circlepath", tint: FlipColor.coralDeep, size: 28)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(L("Two-sided printing"))
-                        .font(FlipType.bodyStrong)
-                        .foregroundStyle(FlipColor.ink)
-                    Text(L("Odd pages print first. Flip the whole stack once, then the backs print in order."))
-                        .font(FlipType.caption)
-                        .foregroundStyle(FlipColor.secondaryInk)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .lineSpacing(1)
+        HStack(alignment: .center, spacing: 9) {
+            FlipIconMedallion(systemName: "arrow.triangle.2.circlepath", tint: FlipColor.coralDeep, size: 26)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(L("Two-sided printing"))
+                    .font(FlipType.bodyStrong)
+                    .foregroundStyle(FlipColor.ink)
+                HStack(spacing: 5) {
+                    FlipMetaChip(
+                        systemName: model.preferences.flipAxis.symbolName,
+                        text: String(format: L("%@ flip"), model.preferences.flipAxis.label)
+                    )
+                    FlipMetaChip(
+                        systemName: model.preferences.ejectsFaceDown ? "arrow.down" : "arrow.up",
+                        text: model.preferences.ejectsFaceDown ? L("Face-down tray") : L("Face-up tray")
+                    )
                 }
-                Spacer(minLength: 0)
             }
-
-            HStack(spacing: 5) {
-                FlipMetaChip(
-                    systemName: model.preferences.flipAxis.symbolName,
-                    text: String(format: L("%@ flip"), model.preferences.flipAxis.label)
-                )
-                FlipMetaChip(
-                    systemName: model.preferences.ejectsFaceDown ? "arrow.down" : "arrow.up",
-                    text: model.preferences.ejectsFaceDown ? L("Face-down tray") : L("Face-up tray")
-                )
-                Spacer(minLength: 0)
-                Button {
-                    model.openFlipAxisSetup()
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "slider.horizontal.3")
-                            .font(.system(size: 8, weight: .semibold))
-                        Text(model.preferences.hasConfiguredFlip ? L("Edit") : L("Set up"))
-                    }
-                }
-                .buttonStyle(FlipTertiaryButtonStyle())
-                .accessibilityLabel(model.preferences.hasConfiguredFlip ? "Edit flip setup" : "Set up flip")
+            Spacer(minLength: 0)
+            Button {
+                model.openFlipAxisSetup()
+            } label: {
+                Image(systemName: "slider.horizontal.3")
+                    .font(.system(size: 10, weight: .semibold))
             }
+            .buttonStyle(FlipIconButtonStyle(size: 28))
+            .help(model.preferences.hasConfiguredFlip ? "Edit flip setup" : "Set up flip")
+            .accessibilityLabel(model.preferences.hasConfiguredFlip ? "Edit flip setup" : "Set up flip")
         }
-        .padding(12)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
         .background(FlipGlassCard())
         .accessibilityElement(children: .contain)
     }
@@ -166,10 +158,121 @@ private struct FirstFlipGuide: View {
     }
 }
 
-// MARK: - Print settings (secondary, collapsed by default)
+// MARK: - Quick options (always visible, one tap)
+
+/// The choices people actually change: paper, color, quality. Always visible,
+/// segmented or chip — no digging.
+@MainActor
+private struct QuickOptionsRow: View {
+    @ObservedObject var model: AppModel
+
+    private var isBusy: Bool { model.isPreparingPrint }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            // Paper + media as menu chips
+            HStack(spacing: 6) {
+                if let option = model.paperSizeOption {
+                    optionChip(label: L("Paper"), value: model.selectedPaperLabel.map(L) ?? L("System default"), option: option)
+                }
+                if let option = model.mediaTypeOption {
+                    optionChip(label: L("Media"), value: model.selectedMediaLabel.map(L) ?? L("Driver default"), option: option)
+                }
+                Spacer(minLength: 0)
+            }
+
+            // Color as a segmented control
+            if model.supportsColorModeToggle {
+                HStack(spacing: 6) {
+                    Image(systemName: "circle.lefthalf.filled")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(FlipColor.tertiaryInk)
+                    FlipSegmentedPicker(
+                        labels: [L("Color"), L("B&W")],
+                        selectedIndex: Binding(
+                            get: { model.isGrayscaleSelected ? 1 : 0 },
+                            set: { _ in }
+                        ),
+                        accessibilityLabels: [L("Color"), L("Black and white")],
+                        onChange: { index in model.setGrayscale(index == 1) }
+                    )
+                    .disabled(isBusy)
+                    Spacer(minLength: 0)
+                }
+            }
+
+            // Quality as a segmented control
+            if !model.qualityPresets.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: "speedometer")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(FlipColor.tertiaryInk)
+                    FlipSegmentedPicker(
+                        labels: model.qualityPresets.map(\.title),
+                        selectedIndex: Binding(
+                            get: {
+                                guard let active = model.activeQualityPreset else { return -1 }
+                                return model.qualityPresets.firstIndex { $0 == active } ?? -1
+                            },
+                            set: { _ in }
+                        ),
+                        onChange: { index in
+                            guard index >= 0, index < model.qualityPresets.count else { return }
+                            model.applyQualityPreset(model.qualityPresets[index])
+                        }
+                    )
+                    .disabled(isBusy)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+    }
+
+    private func optionChip(label: String, value: String, option: PPDOption) -> some View {
+        Menu {
+            ForEach(option.choices) { choice in
+                Button {
+                    model.setValue(choice.keyword, for: option)
+                } label: {
+                    if choice.keyword == model.selectedValue(for: option) {
+                        Label(L(choice.displayLabel), systemImage: "checkmark")
+                    } else {
+                        Text(L(choice.displayLabel))
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Text(label)
+                    .font(.system(size: 8, weight: .semibold))
+                    .tracking(0.6)
+                    .foregroundStyle(FlipColor.tertiaryInk)
+                Text(value)
+                    .font(.system(.caption2, design: .default, weight: .semibold))
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 6.5, weight: .bold))
+                    .foregroundStyle(FlipColor.tertiaryInk)
+            }
+            .foregroundStyle(FlipColor.secondaryInk)
+            .padding(.horizontal, 9)
+            .frame(height: 26)
+            .background(Capsule().fill(FlipColor.tone))
+            .overlay(Capsule().strokeBorder(FlipColor.hairline, lineWidth: 0.5))
+            .contentShape(Capsule())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .disabled(isBusy)
+        .accessibilityLabel(label)
+        .accessibilityValue(value)
+    }
+}
+
+// MARK: - More settings (secondary, collapsed)
 
 @MainActor
-private struct PrintSettingsDisclosure: View {
+private struct MoreSettingsDisclosure: View {
     @ObservedObject var model: AppModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isExpanded = false
@@ -178,16 +281,10 @@ private struct PrintSettingsDisclosure: View {
     private var isBusy: Bool { model.isPreparingPrint }
 
     private var summary: String {
-        var parts: [String] = []
         let selection = model.pageSelectionInfo
-        parts.append(selection.isValid ? selection.summary : L("Check the page range"))
-        if let paper = model.selectedPaperLabel { parts.append(L(paper)) }
+        var parts: [String] = [selection.isValid ? selection.summary : L("Check the page range")]
         parts.append(model.pageOrientation.label)
         parts.append(model.fitToPage ? L("Fit to page") : "\(model.scalePercent)%")
-        if model.supportsColorModeToggle {
-            parts.append(model.isGrayscaleSelected ? L("B&W") : L("Color"))
-        }
-        if let preset = model.activeQualityPreset { parts.append(preset.title) }
         return parts.joined(separator: " · ")
     }
 
@@ -199,60 +296,47 @@ private struct PrintSettingsDisclosure: View {
                     isExpanded.toggle()
                 }
             } label: {
-                HStack(spacing: 7) {
+                HStack(spacing: 6) {
                     Image(systemName: "slider.horizontal.3")
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.system(size: 8, weight: .semibold))
                         .foregroundStyle(FlipColor.tertiaryInk)
-                    Text(L("Print settings"))
-                        .font(FlipType.captionStrong)
+                    Text(L("More settings"))
+                        .font(.system(.caption2, design: .default, weight: .semibold))
                         .foregroundStyle(FlipColor.secondaryInk)
                     Text(summary)
-                        .font(FlipType.caption)
+                        .font(.system(size: 9, weight: .medium))
                         .foregroundStyle(FlipColor.tertiaryInk)
                         .lineLimit(1)
                         .truncationMode(.tail)
                     Spacer(minLength: 4)
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 7, weight: .bold))
+                        .font(.system(size: 6.5, weight: .bold))
                         .foregroundStyle(FlipColor.tertiaryInk)
                         .rotationEffect(.degrees(isExpanded ? 180 : 0))
                 }
-                .padding(.horizontal, 10)
-                .frame(height: 30)
-                .background(
-                    RoundedRectangle(cornerRadius: FlipMetrics.smallRadius, style: .continuous)
-                        .fill(FlipColor.tone)
-                )
-                .overlay {
-                    RoundedRectangle(cornerRadius: FlipMetrics.smallRadius, style: .continuous)
-                        .strokeBorder(FlipColor.hairline, lineWidth: 0.5)
-                }
+                .padding(.horizontal, 9)
+                .frame(height: 26)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .disabled(isBusy)
-            .accessibilityLabel("Print settings")
+            .accessibilityLabel("More settings")
             .accessibilityValue(summary)
-            .accessibilityHint(isExpanded ? "Collapses the print settings." : "Shows pages, paper, orientation, scale, color, and quality.")
 
             if isExpanded {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 9) {
                     pageSelectionRow
-                    paperRow
                     orientationScaleRow
-                    colorQualityRow
                     if !model.extraDriverOptions.isEmpty {
                         extraDriverOptions
                     }
                 }
-                .padding(.top, 10)
+                .padding(.top, 8)
                 .transition(.opacity)
             }
         }
         .animation(FlipMotion.quick(reduceMotion), value: isExpanded)
     }
-
-    // MARK: rows
 
     private var pageSelectionRow: some View {
         let selection = model.pageSelectionInfo
@@ -324,67 +408,8 @@ private struct PrintSettingsDisclosure: View {
         }
     }
 
-    private var paperRow: some View {
-        HStack(spacing: 8) {
-            if let option = model.paperSizeOption {
-                pickerRow(
-                    label: L("Paper"),
-                    value: model.selectedPaperLabel.map(L) ?? L("System default"),
-                    option: option
-                )
-            }
-            if let option = model.mediaTypeOption {
-                pickerRow(
-                    label: L("Media"),
-                    value: model.selectedMediaLabel.map(L) ?? L("Driver default"),
-                    option: option
-                )
-            }
-        }
-    }
-
-    private func pickerRow(label: String, value: String, option: PPDOption) -> some View {
-        HStack(spacing: 6) {
-            Text(label)
-                .font(FlipType.captionStrong)
-                .foregroundStyle(FlipColor.secondaryInk)
-            Menu {
-                ForEach(option.choices) { choice in
-                    Button {
-                        model.setValue(choice.keyword, for: option)
-                    } label: {
-                        if choice.keyword == model.selectedValue(for: option) {
-                            Label(L(choice.displayLabel), systemImage: "checkmark")
-                        } else {
-                            Text(L(choice.displayLabel))
-                        }
-                    }
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    Text(value)
-                        .font(.system(.caption2, design: .default, weight: .semibold))
-                        .lineLimit(1)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 6.5, weight: .bold))
-                }
-                .foregroundStyle(FlipColor.secondaryInk)
-                .padding(.horizontal, 8)
-                .frame(height: 24)
-                .background(Capsule().fill(FlipColor.tone))
-                .overlay(Capsule().strokeBorder(FlipColor.hairline, lineWidth: 0.5))
-                .contentShape(Capsule())
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .disabled(isBusy)
-            .accessibilityLabel(label)
-            .accessibilityValue(value)
-        }
-    }
-
     private var orientationScaleRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 8) {
                 Text(L("Orientation"))
                     .font(FlipType.captionStrong)
@@ -416,63 +441,45 @@ private struct PrintSettingsDisclosure: View {
         }
     }
 
-    private var colorQualityRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if model.supportsColorModeToggle {
-                HStack(spacing: 8) {
-                    Text(L("Color"))
-                        .font(FlipType.captionStrong)
-                        .foregroundStyle(FlipColor.secondaryInk)
-                    Spacer(minLength: 4)
-                    FlipSegmentedPicker(
-                        labels: [L("Color"), L("B&W")],
-                        selectedIndex: Binding(
-                            get: { model.isGrayscaleSelected ? 1 : 0 },
-                            set: { _ in }
-                        ),
-                        accessibilityLabels: [L("Color"), L("Black and white")],
-                        onChange: { index in
-                            model.setGrayscale(index == 1)
-                        }
-                    )
-                    .disabled(isBusy)
-                }
-            }
-
-            if !model.qualityPresets.isEmpty {
-                HStack(spacing: 8) {
-                    Text(L("Quality"))
-                        .font(FlipType.captionStrong)
-                        .foregroundStyle(FlipColor.secondaryInk)
-                    Spacer(minLength: 4)
-                    FlipSegmentedPicker(
-                        labels: model.qualityPresets.map(\.title),
-                        selectedIndex: Binding(
-                            get: {
-                                guard let active = model.activeQualityPreset else { return -1 }
-                                return model.qualityPresets.firstIndex { $0 == active } ?? -1
-                            },
-                            set: { _ in }
-                        ),
-                        onChange: { index in
-                            guard index >= 0, index < model.qualityPresets.count else { return }
-                            model.applyQualityPreset(model.qualityPresets[index])
-                        }
-                    )
-                    .disabled(isBusy)
-                }
-            }
-        }
-    }
-
     private var extraDriverOptions: some View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach(model.extraDriverOptions) { option in
-                pickerRow(
-                    label: option.displayLabel,
-                    value: option.choice(keyword: model.selectedValue(for: option))?.displayLabel ?? L("Driver default"),
-                    option: option
-                )
+                HStack(spacing: 6) {
+                    Text(option.displayLabel)
+                        .font(FlipType.captionStrong)
+                        .foregroundStyle(FlipColor.secondaryInk)
+                    Spacer(minLength: 4)
+                    Menu {
+                        ForEach(option.choices) { choice in
+                            Button {
+                                model.setValue(choice.keyword, for: option)
+                            } label: {
+                                if choice.keyword == model.selectedValue(for: option) {
+                                    Label(L(choice.displayLabel), systemImage: "checkmark")
+                                } else {
+                                    Text(L(choice.displayLabel))
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text(option.choice(keyword: model.selectedValue(for: option))?.displayLabel ?? L("Driver default"))
+                                .font(.system(.caption2, design: .default, weight: .semibold))
+                                .lineLimit(1)
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 6.5, weight: .bold))
+                        }
+                        .foregroundStyle(FlipColor.secondaryInk)
+                        .padding(.horizontal, 8)
+                        .frame(height: 24)
+                        .background(Capsule().fill(FlipColor.tone))
+                        .overlay(Capsule().strokeBorder(FlipColor.hairline, lineWidth: 0.5))
+                        .contentShape(Capsule())
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .disabled(isBusy)
+                }
             }
         }
     }

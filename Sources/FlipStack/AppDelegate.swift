@@ -86,6 +86,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             self.pendingDocumentURL = nil
             Task { await model.acceptDocument(url: pendingDocumentURL) }
         }
+
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        if let documentPath = Self.argumentValue("--open-document", in: arguments) {
+            Task { await model.acceptDocument(url: URL(fileURLWithPath: documentPath)) }
+        }
+        if let capturePath = Self.argumentValue("--capture-panel", in: arguments) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                let url = URL(fileURLWithPath: capturePath)
+                _ = menuBar.renderScreenshot(to: url, height: FlipMetrics.panelHeight)
+                NSApp.terminate(nil)
+            }
+        } else if arguments.contains("--open-panel") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                menuBar.present()
+            }
+        }
+        #endif
+    }
+
+    private static func argumentValue(_ name: String, in arguments: [String]) -> String? {
+        guard let index = arguments.firstIndex(of: name), index + 1 < arguments.count else {
+            return nil
+        }
+        return arguments[index + 1]
     }
 
     private func configureMainMenu(model: AppModel) {
