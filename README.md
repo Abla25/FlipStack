@@ -4,6 +4,10 @@ FlipStack is a menu-bar print manager that adds **guided two-sided (duplex) prin
 
 The main application is deliberately minimal: **one workflow, done well.** Drop a file, optionally adjust print settings, press print. FlipStack prints the fronts, asks you to flip the whole stack once, then prints the backs in the correct order. No shuffling, no page reversal, no guesswork.
 
+<p align="center">
+  <img src="docs/demo.gif" width="440" alt="FlipStack in action">
+</p>
+
 ## Repository structure
 
 | Path | What it is |
