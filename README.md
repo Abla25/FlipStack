@@ -53,49 +53,49 @@ The screenshots below use a demo queue so no real document or printer data is sh
 
 ### First-time setup
 
-![FlipStack menu-bar panel with a printer selected, a drop area accepting PDFs, photos, and documents, and a guided first-time setup card](docs/screenshots/empty.png)
+<p align="center"><img src="docs/screenshots/empty.png" width="340" alt="FlipStack menu-bar panel with a printer selected, a drop area accepting PDFs, photos, and documents, and a guided first-time setup card"></p>
 
 ### A document ready to print
 
-![FlipStack panel with a document loaded, mode selector, page range, quality presets, and driver options](docs/screenshots/ready.png)
+<p align="center"><img src="docs/screenshots/ready.png" width="340" alt="FlipStack panel with a document loaded, mode selector, page range, quality presets, and driver options"></p>
 
 ### Print preview and page picker
 
-![FlipStack in-panel print preview showing a source-page rail, checked page thumbnails, live scale, and color controls](docs/screenshots/preview.png)
+<p align="center"><img src="docs/screenshots/preview.png" width="340" alt="FlipStack in-panel print preview showing a source-page rail, checked page thumbnails, live scale, and color controls"></p>
 
 Uncheck pages in the rail to print only those pages; the selected-page PDF and the print job update together.
 
-![FlipStack page picker with two pages unchecked in the rail](docs/screenshots/page-picker.png)
+<p align="center"><img src="docs/screenshots/page-picker.png" width="340" alt="FlipStack page picker with two pages unchecked in the rail"></p>
 
 ### Settings
 
-![FlipStack settings with English, Italian, Spanish, and French language choices and per-printer quality preset editors](docs/screenshots/settings.png)
+<p align="center"><img src="docs/screenshots/settings.png" width="260" alt="FlipStack settings with English, Italian, Spanish, and French language choices and per-printer quality preset editors"></p>
 
 Choose the interface language and tune the real PPD values behind Eco, Standard, High, and Photo for the selected printer. Overrides are local and persist per queue. Quality choices are listed lowest-to-highest by their real dpi, and you can add your own named presets (for example a mid-step between Eco and High) with the Add row — each one maps only to choices the driver actually advertises. Settings opens as a sheet over the document, so your place is never lost.
 
 ### Calibrate the flip
 
-![FlipStack guided flip calibration asking which side of the orientation sheet landed up and confirming the turn direction](docs/screenshots/calibration.png)
+<p align="center"><img src="docs/screenshots/calibration.png" width="340" alt="FlipStack guided flip calibration asking which side of the orientation sheet landed up and confirming the turn direction"></p>
 
 ### Flip when the fronts are done
 
-![FlipStack flip prompt with a printer, paper stack, and a whole-block turn illustration](docs/screenshots/flip.png)
+<p align="center"><img src="docs/screenshots/flip.png" width="340" alt="FlipStack flip prompt with a printer, paper stack, and a whole-block turn illustration"></p>
 
 The whole two-sided flow — ready, fronts printing, flip, done — as a loop:
 
-![FlipStack two-sided flow: document ready, fronts printing, flip the stack, completed](docs/screenshots/flip-flow.gif)
+<p align="center"><img src="docs/screenshots/flip-flow.gif" width="300" alt="FlipStack two-sided flow: document ready, fronts printing, flip the stack, completed"></p>
 
 ### Printing and progress
 
-![FlipStack panel showing a live print job, page progress, and printer status](docs/screenshots/printing.png)
+<p align="center"><img src="docs/screenshots/printing.png" width="340" alt="FlipStack panel showing a live print job, page progress, and printer status"></p>
 
 ### Booklet planning
 
-![FlipStack booklet mode showing signature size, sheet count, and fold and staple instructions](docs/screenshots/booklet.png)
+<p align="center"><img src="docs/screenshots/booklet.png" width="340" alt="FlipStack booklet mode showing signature size, sheet count, and fold and staple instructions"></p>
 
 ### Queue and printer health
 
-![FlipStack queue view listing active print jobs and printer supply information](docs/screenshots/queue.png)
+<p align="center"><img src="docs/screenshots/queue.png" width="340" alt="FlipStack queue view listing active print jobs and printer supply information"></p>
 
 ## Install
 
