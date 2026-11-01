@@ -1593,7 +1593,8 @@ final class AppModel: ObservableObject {
             flipAxis: flipAxis,
             ejectsFaceDown: preferences.ejectsFaceDown,
             driverOptions: currentDriverOptions,
-            copies: activePrintMode == .singleSided ? max(1, copies) : 1,
+            // each duplex pass carries the full copy count; CUPS collates per pass
+            copies: max(1, copies),
             // If there is no PPD we cannot prove the queue is simplex. Force
             // each pass to one side rather than risk a driver auto-duplexing
             // the manual pass.

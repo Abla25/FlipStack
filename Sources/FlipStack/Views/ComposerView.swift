@@ -98,7 +98,7 @@ private struct FirstRunSetupCard: View {
                 FlipIconMedallion(systemName: "viewfinder", tint: FlipColor.coralDeep, size: 28)
                 VStack(alignment: .leading, spacing: 3) {
                     FlipEyebrow("First time with this printer", color: FlipColor.coralDeep)
-                    Text("One sheet. Two answers. Then it just works.")
+                    Text(L("One sheet. Two answers. Then it just works."))
                         .font(FlipType.bodyStrong)
                         .foregroundStyle(FlipColor.ink)
                         .fixedSize(horizontal: false, vertical: true)
@@ -117,7 +117,7 @@ private struct FirstRunSetupCard: View {
                 HStack(spacing: 7) {
                     Image(systemName: "printer")
                         .font(.system(size: 10, weight: .semibold))
-                    Text("Print setup sheet")
+                    Text(L("Print setup sheet"))
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
                     Spacer(minLength: 0)
@@ -126,7 +126,7 @@ private struct FirstRunSetupCard: View {
             .buttonStyle(FlipPrimaryButtonStyle())
             .disabled(model.isCalibrating || !model.orchestrator.phase.isIdle)
 
-            Button("Set up manually") {
+            Button(L("Set up manually")) {
                 model.openFlipAxisSetup()
             }
             .buttonStyle(FlipTertiaryButtonStyle())
@@ -320,7 +320,7 @@ private struct MoreSettingsDisclosure: View {
             }
             .buttonStyle(.plain)
             .disabled(isBusy)
-            .accessibilityLabel("More settings")
+            .accessibilityLabel(L("More settings"))
             .accessibilityValue(summary)
 
             if isExpanded {
@@ -382,7 +382,7 @@ private struct MoreSettingsDisclosure: View {
                         .focused($isPageRangeFocused)
                         .disabled(isBusy)
                         .onSubmit { isPageRangeFocused = false }
-                        .accessibilityLabel("Page range")
+                        .accessibilityLabel(L("Page range"))
                 }
                 .padding(.horizontal, 9)
                 .frame(height: 29)

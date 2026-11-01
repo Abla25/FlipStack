@@ -57,7 +57,7 @@ struct FlipCalibrationView: View {
                         ProgressView()
                             .controlSize(.small)
                             .padding(.top, 2)
-                            .accessibilityLabel("Printing the calibration sheet")
+                            .accessibilityLabel(L("Printing the calibration sheet"))
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -133,7 +133,7 @@ struct FlipCalibrationView: View {
                     Image(systemName: "printer")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(FlipColor.coralDeep)
-                    Text("Your PDF is still waiting. It prints after you save this setup.")
+                    Text(L("Your PDF is still waiting. It prints after you save this setup."))
                         .font(FlipType.caption)
                         .foregroundStyle(FlipColor.secondaryInk)
                         .fixedSize(horizontal: false, vertical: true)
@@ -179,7 +179,7 @@ struct FlipCalibrationView: View {
         VStack(alignment: .leading, spacing: 6) {
             calibrationQuestionLabel("2", "Turn direction")
             if model.mode == .booklet {
-                Text("Booklets always use the long-edge turn. No second answer is needed.")
+                Text(L("Booklets always use the long-edge turn. No second answer is needed."))
                     .font(FlipType.caption)
                     .foregroundStyle(FlipColor.secondaryInk)
                     .fixedSize(horizontal: false, vertical: true)
@@ -403,7 +403,7 @@ struct FlipCalibrationView: View {
         .accessibilityLabel("\(L(title)), \(L(subtitle))")
         .accessibilityValue(selected ? "Selected" : "Not selected")
         .accessibilityAddTraits(selected ? .isSelected : [])
-        .accessibilityHint("Choose this calibration result.")
+        .accessibilityHint(L("Choose this calibration result."))
     }
 }
 
@@ -422,17 +422,17 @@ struct FlipCalibrationActionBar: View {
                     case .questions:
                         questionsActions(calibration)
                     case .printing:
-                        Button("Cancel and set up manually") {
+                        Button(L("Cancel and set up manually")) {
                             model.cancelFlipCalibration()
                         }
                         .buttonStyle(FlipSecondaryButtonStyle())
-                        .accessibilityHint("Cancels the sheet and returns to manual flip setup.")
+                        .accessibilityHint(L("Cancels the sheet and returns to manual flip setup."))
                     case .failed:
                         Button {
                             model.retryFlipCalibration()
                         } label: {
                             HStack(spacing: 8) {
-                                Text("Try the calibration sheet again")
+                                Text(L("Try the calibration sheet again"))
                                 Spacer(minLength: 4)
                                 Image(systemName: "arrow.clockwise")
                                     .font(.system(size: 11, weight: .semibold))
@@ -506,7 +506,7 @@ struct FlipCalibrationActionBar: View {
             }
             .buttonStyle(FlipTertiaryButtonStyle())
             .frame(minWidth: 44, minHeight: 36)
-            .accessibilityHint("Leaves calibration and opens manual flip setup.")
+            .accessibilityHint(L("Leaves calibration and opens manual flip setup."))
 
             Spacer(minLength: 0)
 
@@ -515,7 +515,7 @@ struct FlipCalibrationActionBar: View {
             }
             .buttonStyle(FlipTertiaryButtonStyle())
             .frame(minWidth: 44, minHeight: 36)
-            .accessibilityHint("Cancels calibration and closes flip setup. The document is not printed.")
+            .accessibilityHint(L("Cancels calibration and closes flip setup. The document is not printed."))
         }
     }
 

@@ -14,7 +14,10 @@ public enum CUPSOptionBuilder {
         "number-up", "numberup", "orientation-requested", "orientationrequested",
         "output-order", "outputorder", "page-order", "pageorder",
         "reverse-order", "reverseorder", "page-reversal", "pagereversal", "reverse",
-        "scaling", "natural-scaling", "fit-to-page"
+        "scaling", "natural-scaling", "fit-to-page",
+        // copies are owned by the request (`-n`); sides/Duplex stay settable on
+        // purpose — the duplex orchestrator emits them per pass.
+        "copies"
     ]
 
     /// The ordered `-o` pairs sent to `lp`.

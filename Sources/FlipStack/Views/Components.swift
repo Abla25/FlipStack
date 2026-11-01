@@ -168,7 +168,7 @@ struct FlipScaleStepper: View {
                         model.fitToPage.toggle()
                     }
                 } label: {
-                    Text("Fit")
+                    Text(L("Fit"))
                         .font(.system(size: compact ? 9 : 10, weight: .semibold))
                         .foregroundStyle(model.fitToPage ? FlipColor.onCoral : FlipColor.secondaryInk)
                         .padding(.horizontal, compact ? 7 : 9)
@@ -181,7 +181,7 @@ struct FlipScaleStepper: View {
                 }
                 .buttonStyle(.plain)
                 .help("Scale each page to fit the selected paper.")
-                .accessibilityLabel("Fit to page")
+                .accessibilityLabel(L("Fit to page"))
                 .accessibilityValue(model.fitToPage ? "Selected" : "Not selected")
                 .accessibilityAddTraits(model.fitToPage ? .isSelected : [])
             }
@@ -190,7 +190,7 @@ struct FlipScaleStepper: View {
                 stepButton(systemName: "minus", enabled: displayedPercent > 50) {
                     model.setScalePercent(displayedPercent - 5)
                 }
-                .accessibilityLabel("Decrease print scale")
+                .accessibilityLabel(L("Decrease print scale"))
 
                 Rectangle()
                     .fill(FlipColor.hairline)
@@ -219,11 +219,11 @@ struct FlipScaleStepper: View {
                     .onChange(of: model.fitToPage) { _ in syncDraft() }
                     .onChange(of: model.scalePercent) { _ in syncDraft() }
                     .onAppear { syncDraft() }
-                    .accessibilityLabel("Print scale percentage")
+                    .accessibilityLabel(L("Print scale percentage"))
                     .accessibilityValue("\(displayedPercent) percent")
-                    .accessibilityHint("Type a percentage from 50 to 150.")
+                    .accessibilityHint(L("Type a percentage from 50 to 150."))
 
-                Text("%")
+                Text(L("%"))
                     .font(.system(size: compact ? 9 : 10, weight: .medium, design: .rounded))
                     .foregroundStyle(FlipColor.tertiaryInk)
 
@@ -234,7 +234,7 @@ struct FlipScaleStepper: View {
                 stepButton(systemName: "plus", enabled: displayedPercent < 150) {
                     model.setScalePercent(displayedPercent + 5)
                 }
-                .accessibilityLabel("Increase print scale")
+                .accessibilityLabel(L("Increase print scale"))
             }
             .padding(.horizontal, 3)
             .frame(height: compact ? 24 : 28)
@@ -318,13 +318,13 @@ struct FlipSegmentedPicker: View {
                 } label: {
                     Text(label)
                         .font(font)
-                        .foregroundStyle(isSelected ? FlipColor.onCoral : FlipColor.secondaryInk)
+                        .foregroundStyle(isSelected ? FlipColor.coralDeep : FlipColor.secondaryInk)
                         .frame(maxWidth: .infinity)
                         .frame(height: height)
                         .background {
                             if isSelected {
                                 Capsule(style: .continuous)
-                                    .fill(FlipColor.coral)
+                                    .fill(FlipColor.coralSoft)
                                     .matchedGeometryEffect(id: "picker.pill", in: pickerNamespace)
                             } else if hoveredIndex == index {
                                 Capsule(style: .continuous)
@@ -511,7 +511,7 @@ struct FlipFileGlyph: View {
             .padding(.leading, size * 0.14)
             .padding(.top, size * 0.2)
 
-            Text("PDF")
+            Text(L("PDF"))
                 .font(.system(size: size * 0.16, weight: .bold))
                 .tracking(0.7)
                 .foregroundStyle(FlipColor.coralDeep)
@@ -560,7 +560,7 @@ struct FlipPrimaryButtonStyle: ButtonStyle {
                     .fill(
                         isEnabled
                         ? LinearGradient(
-                            colors: [FlipColor.coral, FlipColor.coralDeep],
+                            colors: [FlipColor.coral, FlipColor.coralDeep.opacity(0.35)],
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -746,7 +746,7 @@ struct FlipBanner: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(FlipColor.tertiaryInk)
-            .accessibilityLabel("Dismiss message")
+            .accessibilityLabel(L("Dismiss message"))
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous).fill(tone.opacity(0.075)))
@@ -776,7 +776,7 @@ struct FlipInkLowStrip: View {
                 .frame(width: 5, height: 5)
                 .padding(.top, 5)
             FlipEyebrow("Supply low", color: FlipColor.warning)
-            Text("·")
+            Text(L("·"))
                 .font(FlipType.caption)
                 .foregroundStyle(FlipColor.tertiaryInk)
             Text(summary)
@@ -797,7 +797,7 @@ struct FlipInkLowStrip: View {
                 .strokeBorder(FlipColor.warning.opacity(0.14), lineWidth: 0.5)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Low supplies")
+        .accessibilityLabel(L("Low supplies"))
         .accessibilityValue(
             supplies.map { supply in
                 let level = supply.levelPercent.map { "\($0) percent" } ?? "level not reported"
@@ -923,7 +923,7 @@ struct DiscoveredPrinterRow: View {
 
                 Spacer(minLength: 4)
 
-                Text("Add")
+                Text(L("Add"))
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(FlipColor.coralDeep)
             }
@@ -934,6 +934,13 @@ struct DiscoveredPrinterRow: View {
         .buttonStyle(.plain)
         .help("Add this printer in Printers & Scanners.")
         .accessibilityLabel("\(device.name), \(device.transport.title), detected")
-        .accessibilityHint("Opens Printers & Scanners to add this printer queue.")
+        .accessibilityHint(L("Opens Printers & Scanners to add this printer queue."))
+    }
+}
+
+enum FlipHaptics {
+    static func tap() {
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .now)
     }
 }

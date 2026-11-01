@@ -16,10 +16,10 @@ struct FooterBar: View {
                 Spacer(minLength: 6)
 
                 if model.isMaintenanceBusy {
-                    Text("Preparing…")
+                    Text(L("Preparing…"))
                         .font(FlipType.caption)
                         .foregroundStyle(FlipColor.tertiaryInk)
-                        .accessibilityLabel("Maintenance task in progress")
+                        .accessibilityLabel(L("Maintenance task in progress"))
                 }
 
                 maintenanceMenu
@@ -119,7 +119,7 @@ struct FooterBar: View {
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .help("Maintenance and app menu")
-        .accessibilityLabel("Maintenance and app menu")
+        .accessibilityLabel(L("Maintenance and app menu"))
     }
 
     private func openPrinterSettings() {

@@ -491,7 +491,7 @@ public final class DuplexOrchestrator: ObservableObject {
                     finishFailure(
                         .monitorFailed(
                             pass: pass,
-                            message: "The print job is no longer in the print queue."
+                            message: L("The print job is no longer in the print queue.")
                         ),
                         configuration: configuration,
                         token: token

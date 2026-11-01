@@ -569,7 +569,7 @@ public enum DuplexFailure: Error, Equatable, Sendable {
         case .jobFailed(_, let state, let reasons):
             let detail = reasons.compactMap(PrinterReason.humanReadable).joined(separator: ", ")
             if !detail.isEmpty { return detail }
-            return state == .canceled ? L("The print job was canceled.") : "The print job ended in \(state.label.lowercased()) state."
+            return state == .canceled ? L("The print job was canceled.") : String(format: L("The print job ended in %@ state."), state.label.lowercased())
         case .jobStuck(_, let seconds):
             return String(format: L("No progress was reported for %lld seconds. Check the printer, then try again."), Int(seconds))
         case .monitorFailed(_, let message):

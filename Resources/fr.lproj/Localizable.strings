@@ -632,3 +632,21 @@
 "Print Fronts…" = "Imprimer les rectos…";
 "The print file could not be read." = "Le fichier d’impression n’a pas pu être lu.";
 "The document could not be copied for printing." = "Le document n’a pas pu être copié pour l’impression.";
+
+"More settings" = "Réglages avancés";
+
+"PDFs, photos (JPEG, HEIC, PNG and more — full resolution), and Word or text documents." = "PDF, photos (JPEG, HEIC, PNG et plus — pleine résolution) et documents Word ou texte.";
+
+"Guided two-sided printing for printers that can't turn a page themselves. Everything stays on this Mac." = "Impression recto verso guidée pour les imprimantes qui ne retournent pas la page seules. Tout reste sur ce Mac.";
+
+"The print job is no longer in the print queue." = "La tâche d'impression n'est plus dans la file d'attente.";
+
+"Flip setup" = "Configurer le retournement";
+
+"Choose a printer" = "Choisir une imprimante";
+
+"DUPLEX" = "RECTO-VERSO";
+
+"ONE STACK · %lld SHEET" = "UNE PILE · %lld FEUILLE";
+
+"ONE STACK · %lld SHEETS" = "UNE PILE · %lld FEUILLES";

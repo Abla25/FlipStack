@@ -56,7 +56,9 @@ struct FlowActionBar: View {
 
     private func flipBar(_ prompt: FlipPrompt) -> some View {
         VStack(spacing: 7) {
+            Color.clear.frame(height: 0).onAppear { FlipHaptics.tap() }
             Button {
+                FlipHaptics.tap()
                 model.confirmFlip()
             } label: {
                 HStack(spacing: 8) {

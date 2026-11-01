@@ -78,7 +78,7 @@ struct FlipWaitingView: View {
                 Image(systemName: "exclamationmark.octagon.fill")
                     .font(.system(size: 8.5, weight: .semibold))
                     .foregroundStyle(FlipColor.warning)
-                Text("Do not reorder or reverse the pages.")
+                Text(L("Do not reorder or reverse the pages."))
                     .font(FlipType.captionStrong)
                     .foregroundStyle(FlipColor.secondaryInk)
                     .lineLimit(1)
@@ -114,7 +114,7 @@ struct FlipWaitingView: View {
         }
         .frame(width: 78, alignment: .leading)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Pass progress")
+        .accessibilityLabel(L("Pass progress"))
         .accessibilityValue(
             "Fronts \(Int((fronts * 100).rounded())) percent. Backs \(Int((backs * 100).rounded())) percent."
         )

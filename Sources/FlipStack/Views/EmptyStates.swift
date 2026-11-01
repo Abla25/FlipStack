@@ -31,7 +31,7 @@ struct NoPrinterState: View {
                 HStack(spacing: 8) {
                     Image(systemName: "arrow.up.forward.app")
                         .font(.system(size: 12, weight: .semibold))
-                    Text("Open Printers & Scanners")
+                    Text(L("Open Printers & Scanners"))
                     Spacer(minLength: 0)
                 }
             }
@@ -94,19 +94,19 @@ struct LoadingPrintersState: View {
             FlipPrinterArt(hasPaper: true, showsAccent: false)
                 .padding(.bottom, 20)
 
-            Text("Looking for printers")
+            Text(L("Looking for printers"))
                 .font(FlipType.displayLarge)
                 .foregroundStyle(FlipColor.ink)
                 .accessibilityAddTraits(.isHeader)
 
-            Text("Checking the print queues on this Mac.")
+            Text(L("Checking the print queues on this Mac."))
                 .font(FlipType.footnote)
                 .foregroundStyle(FlipColor.secondaryInk)
                 .padding(.top, 7)
 
             HStack(spacing: 7) {
                 ProgressView().controlSize(.small).tint(FlipColor.coral)
-                Text("This only takes a moment")
+                Text(L("This only takes a moment"))
                     .font(FlipType.caption)
                     .foregroundStyle(FlipColor.tertiaryInk)
             }
@@ -116,6 +116,6 @@ struct LoadingPrintersState: View {
         }
         .frame(maxWidth: .infinity, minHeight: 438)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Looking for printers. Checking the print queues on this Mac.")
+        .accessibilityLabel(L("Looking for printers. Checking the print queues on this Mac."))
     }
 }

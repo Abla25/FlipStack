@@ -146,7 +146,13 @@ enum LPStatParser {
 
         // A disabled queue often prints "- reason unknown" or "- reason media-empty".
         if let range = firstLower.range(of: " - ") {
-            let tail = String(first[range.upperBound...])
+            var tail = String(first[range.upperBound...])
+            // "- enabled since <date>" / "- abilitata da <data>" is not a reason:
+            // strip the whole date phrase so its tokens never reach stateReasons.
+            let lowerTail = tail.lowercased()
+            for prefix in ["enabled since", "disabled since", "abilitata da", "disabilitata da"] {
+                if lowerTail.hasPrefix(prefix) { tail = ""; break }
+            }
             appendReasons(tail, to: &reasons)
         }
 
@@ -210,6 +216,13 @@ enum LPStatParser {
             if lower == "unknown" || lower == "sconosciuto" || lower == "sconosciuta" ||
                 lower == "sconosciuti" || lower == "none" || lower == "nessuno" ||
                 lower == "nessuna" || lower == "-" {
+                continue
+            }
+            // date/time fragments from a trailing "since <date>" phrase
+            if reason.allSatisfy({ $0.isNumber }) || reason.contains(":") ||
+                ["mon","tue","wed","thu","fri","sat","sun","lun","mar","mer","gio","ven","sab","dom",
+                 "jan","feb","mar","apr","may","jun","jul","aug","sep","oct","nov","dec",
+                 "gen","feb","mag","giu","lug","ago","set","ott","nov","dic"].contains(lower) {
                 continue
             }
             reasons.append(reason)

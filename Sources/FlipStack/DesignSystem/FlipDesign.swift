@@ -15,7 +15,7 @@ enum FlipColor {
 
     static let ink = Color(nsColor: .labelColor)
     static let secondaryInk = dynamic(light: 0x5B5651, dark: 0xC7C1BA)
-    static let tertiaryInk = dynamic(light: 0x6E6862, dark: 0xAFA9A2)
+    static let tertiaryInk = dynamic(light: 0x655F59, dark: 0xAFA9A2)
 
     static let hairline = Color(nsColor: .separatorColor).opacity(0.5)
     static let border = Color(nsColor: .separatorColor).opacity(0.72)
@@ -141,7 +141,6 @@ enum FlipMetrics {
     static let panelWidth: CGFloat = 388
     static let panelHeight: CGFloat = 680
     static let gutter: CGFloat = 20
-    static let sectionSpacing: CGFloat = 21
     static let panelRadius: CGFloat = 20
     static let cardRadius: CGFloat = 14
     static let compactRadius: CGFloat = 11

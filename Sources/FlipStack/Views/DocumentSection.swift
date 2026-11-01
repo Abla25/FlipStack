@@ -19,7 +19,7 @@ struct DocumentSection: View {
                 if model.isIngestingDocument {
                     ProgressView()
                         .controlSize(.mini)
-                        .accessibilityLabel("Converting file")
+                        .accessibilityLabel(L("Converting file"))
                 } else if let document = model.selectedDocument {
                     Text(document.formatTag)
                         .font(.system(size: 8, weight: .semibold))
@@ -53,7 +53,7 @@ struct DocumentSection: View {
                 .multilineTextAlignment(.center)
                 .accessibilityAddTraits(.isHeader)
 
-            Text("PDFs, photos (JPEG, HEIC, PNG and more — full resolution), and Word or text documents.")
+            Text(L("PDFs, photos (JPEG, HEIC, PNG and more — full resolution), and Word or text documents."))
                 .font(FlipType.footnote)
                 .foregroundStyle(FlipColor.secondaryInk)
                 .multilineTextAlignment(.center)
@@ -68,12 +68,12 @@ struct DocumentSection: View {
                 HStack(spacing: 6) {
                     Image(systemName: "folder")
                         .font(.system(size: 10, weight: .semibold))
-                    Text("Choose files")
+                    Text(L("Choose files"))
                 }
             }
-            .buttonStyle(FlipSmallPrimaryButtonStyle())
+            .buttonStyle(FlipTertiaryButtonStyle())
             .padding(.top, 10)
-            .accessibilityHint("Opens a file picker for PDFs, photos, and documents. Command-O works anywhere in the panel.")
+            .accessibilityHint(L("Opens a file picker for PDFs, photos, and documents. Command-O works anywhere in the panel."))
         }
         .padding(.vertical, 12)
         .padding(.horizontal, 14)
@@ -134,7 +134,7 @@ struct DocumentSection: View {
                 .buttonStyle(FlipIconButtonStyle())
                 .disabled(isBusy)
                 .help("Replace file")
-                .accessibilityLabel("Replace file")
+                .accessibilityLabel(L("Replace file"))
 
                 Button {
                     withAnimation(FlipMotion.quick(reduceMotion)) {
@@ -146,7 +146,7 @@ struct DocumentSection: View {
                 .buttonStyle(FlipIconButtonStyle())
                 .disabled(isBusy)
                 .help("Remove file")
-                .accessibilityLabel("Remove file")
+                .accessibilityLabel(L("Remove file"))
             }
         }
         .padding(.horizontal, 12)

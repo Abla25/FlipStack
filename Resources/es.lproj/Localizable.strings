@@ -632,3 +632,21 @@
 "Print Fronts…" = "Imprimir fronts…";
 "The print file could not be read." = "No se pudo leer el archivo de impresión.";
 "The document could not be copied for printing." = "No se pudo copiar el documento para imprimir.";
+
+"More settings" = "Más ajustes";
+
+"PDFs, photos (JPEG, HEIC, PNG and more — full resolution), and Word or text documents." = "PDF, fotos (JPEG, HEIC, PNG y más — a resolución completa) y documentos Word o de texto.";
+
+"Guided two-sided printing for printers that can't turn a page themselves. Everything stays on this Mac." = "Impresión a doble cara guiada para impresoras que no giran la página solas. Todo se queda en este Mac.";
+
+"The print job is no longer in the print queue." = "El trabajo de impresión ya no está en la cola.";
+
+"Flip setup" = "Configura el volteo";
+
+"Choose a printer" = "Elige una impresora";
+
+"DUPLEX" = "DÚPLEX";
+
+"ONE STACK · %lld SHEET" = "UNA PILA · %lld HOJA";
+
+"ONE STACK · %lld SHEETS" = "UNA PILA · %lld HOJAS";

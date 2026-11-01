@@ -222,7 +222,7 @@ struct FlipStackDiagram: View {
             Rectangle()
                 .fill(FlipColor.hairline)
                 .frame(width: 22, height: 0.5)
-            Text("ONE STACK · \(sheetCount) \(sheetCount == 1 ? "SHEET" : "SHEETS")")
+            Text(String(format: sheetCount == 1 ? L("ONE STACK · %lld SHEET") : L("ONE STACK · %lld SHEETS"), Int(sheetCount)))
                 .font(.system(size: 7.5, weight: .semibold))
                 .tracking(1.05)
                 .foregroundStyle(FlipColor.tertiaryInk)

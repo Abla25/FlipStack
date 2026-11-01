@@ -239,4 +239,12 @@ final class CUPSOptionBuilderTests: XCTestCase {
         XCTAssertEqual(arguments.last, fileURL.path)
         XCTAssertFalse(arguments.last!.hasPrefix("\""))
     }
+
+    func testCopiesDriverOptionIsReserved() {
+        let pairs = CUPSOptionBuilder.optionPairs(for: request(copies: 2, driverOptions: ["copies": "5"]))
+        XCTAssertEqual(pairs.filter { $0.0.lowercased() == "copies" }.count, 0)
+        let args = CUPSOptionBuilder.arguments(for: request(copies: 2, driverOptions: ["copies": "5"]))
+        XCTAssertFalse(args.contains("copies=5"))
+        XCTAssertTrue(args.contains("-n") && args.contains("2"))
+    }
 }

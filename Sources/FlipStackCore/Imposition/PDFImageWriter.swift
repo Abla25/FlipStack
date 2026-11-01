@@ -147,6 +147,11 @@ public enum PDFImageWriter {
             }
         }
         guard written > 0 else { return nil }
+        // Some OS versions already emit a full RFC 1950 zlib stream (leading
+        // 0x78); only add the manual header + Adler-32 when it is raw deflate.
+        if output.first == 0x78 {
+            return Data(output.prefix(written))
+        }
         var result = Data([0x78, 0x9C])
         result.append(output.prefix(written))
         let adler = Self.adler32(data).bigEndian

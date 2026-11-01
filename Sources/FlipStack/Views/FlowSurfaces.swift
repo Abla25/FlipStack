@@ -70,7 +70,7 @@ struct PreparingSurface: View {
                 ProgressView()
                     .controlSize(.small)
                     .tint(FlipColor.coral)
-                Text("Preparing the print job…")
+                Text(L("Preparing the print job…"))
                     .font(FlipType.caption)
                     .foregroundStyle(FlipColor.secondaryInk)
             }
@@ -492,7 +492,7 @@ private struct FailedArt: View {
                 .fill(FlipColor.danger)
                 .frame(width: artWidth * 0.3, height: artWidth * 0.3)
                 .overlay {
-                    Text("!")
+                    Text(L("!"))
                         .font(.system(size: artWidth * 0.17, weight: .bold, design: .rounded))
                         .foregroundStyle(Color(nsColor: .white))
                 }

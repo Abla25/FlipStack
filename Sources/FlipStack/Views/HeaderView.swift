@@ -82,14 +82,14 @@ struct HeaderView: View {
     private var brandRow: some View {
         HStack(spacing: 8) {
             FlipStackMark(size: 20)
-            Text("FLIPSTACK")
+            Text(L("FLIPSTACK"))
                 .font(.system(size: 9.5, weight: .bold))
                 .tracking(1.85)
                 .foregroundStyle(FlipColor.ink.opacity(0.72))
             Rectangle()
                 .fill(FlipColor.hairline)
                 .frame(width: 1, height: 9)
-            Text("DUPLEX")
+            Text(L("DUPLEX"))
                 .font(.system(size: 8.5, weight: .medium))
                 .tracking(1.2)
                 .foregroundStyle(FlipColor.tertiaryInk)
@@ -102,7 +102,7 @@ struct HeaderView: View {
             }
             .buttonStyle(FlipIconButtonStyle())
             .help("Open FlipStack in a normal window")
-            .accessibilityLabel("Open FlipStack window")
+            .accessibilityLabel(L("Open FlipStack window"))
 
             Button {
                 model.openSettings()
@@ -117,7 +117,7 @@ struct HeaderView: View {
                     || model.flipAxisSetup != nil
             )
             .help("Settings")
-            .accessibilityLabel("Settings")
+            .accessibilityLabel(L("Settings"))
 
             Button {
                 guard !isLocked, !model.isLoadingPrinters, !model.isRefreshing else { return }
@@ -132,7 +132,7 @@ struct HeaderView: View {
             .buttonStyle(FlipIconButtonStyle())
             .disabled(isLocked || model.isLoadingPrinters || model.isRefreshing)
             .help("Refresh printers and status")
-            .accessibilityLabel("Refresh printers and status")
+            .accessibilityLabel(L("Refresh printers and status"))
         }
         .frame(height: 26)
     }
@@ -192,21 +192,30 @@ struct HeaderView: View {
             Spacer(minLength: 4)
 
             if let printer {
-                HStack(spacing: 5) {
-                    FlipHealthDot(health: model.printerHealth, size: 6.5, animates: true)
-                    Text(model.printerHealth.label)
-                        .font(FlipType.captionStrong)
-                        .foregroundStyle(
-                            model.printerHealth == .offline
-                                ? FlipColor.warning
-                                : (model.printerHealth == .waiting || model.printerHealth == .preparing)
-                                    ? FlipColor.coralDeep
-                                    : FlipColor.secondaryInk
-                        )
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 5) {
+                        FlipHealthDot(health: model.printerHealth, size: 6.5, animates: true)
+                        Text(model.printerHealth.label)
+                            .font(FlipType.captionStrong)
+                            .foregroundStyle(
+                                model.printerHealth == .offline
+                                    ? FlipColor.warning
+                                    : (model.printerHealth == .waiting || model.printerHealth == .preparing)
+                                        ? FlipColor.coralDeep
+                                        : FlipColor.secondaryInk
+                            )
+                    }
+                    if let note = model.printerHealthNote,
+                       model.printerHealth == .offline || model.printerHealth == .attention {
+                        Text(note)
+                            .font(FlipType.caption)
+                            .foregroundStyle(FlipColor.tertiaryInk)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 .padding(.top, 5)
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("Printer state")
+                .accessibilityLabel(L("Printer state"))
                 .accessibilityValue(model.printerHealth.label)
             }
         }
@@ -300,7 +309,7 @@ struct HeaderView: View {
                             .foregroundStyle(FlipColor.ink)
                             .lineLimit(1)
                         if candidate.isDefault {
-                            Text("DEFAULT")
+                            Text(L("DEFAULT"))
                                 .font(.system(size: 7, weight: .semibold))
                                 .tracking(0.8)
                                 .foregroundStyle(FlipColor.tertiaryInk)

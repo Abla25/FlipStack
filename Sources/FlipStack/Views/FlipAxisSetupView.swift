@@ -24,15 +24,15 @@ struct FlipAxisSetupView: View {
                 Button {
                     model.dismissFlipAxisSetup()
                 } label: {
-                    Text("Cancel")
+                    Text(L("Cancel"))
                 }
                 .buttonStyle(FlipTertiaryButtonStyle())
                 .frame(minWidth: 44, minHeight: 44)
-                .accessibilityHint("Closes setup without saving changes.")
+                .accessibilityHint(L("Closes setup without saving changes."))
             }
 
             VStack(alignment: .leading, spacing: 5) {
-                Text("Set up two-sided printing")
+                Text(L("Set up two-sided printing"))
                     .font(FlipType.displayLarge)
                     .foregroundStyle(FlipColor.ink)
                     .fixedSize(horizontal: false, vertical: true)
@@ -52,7 +52,7 @@ struct FlipAxisSetupView: View {
                 setupStep("3", "Ready", active: false)
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("Setup steps: print one sheet, answer two questions, ready")
+            .accessibilityLabel(L("Setup steps: print one sheet, answer two questions, ready"))
 
             calibrationSection
                 .padding(.top, 2)
@@ -60,14 +60,14 @@ struct FlipAxisSetupView: View {
             if showsManualOptions {
                 manualForm
             } else {
-                Button("Set up manually instead") {
+                Button(L("Set up manually instead")) {
                     withAnimation(FlipMotion.standard(reduceMotion)) {
                         showsManualOptions = true
                     }
                 }
                 .buttonStyle(FlipTertiaryButtonStyle())
                 .frame(minWidth: 44, minHeight: 44)
-                .accessibilityHint("Shows the long-edge, short-edge, and tray choices.")
+                .accessibilityHint(L("Shows the long-edge, short-edge, and tray choices."))
             }
         }
         .onAppear {
@@ -106,7 +106,7 @@ struct FlipAxisSetupView: View {
             Rectangle()
                 .fill(FlipColor.hairline)
                 .frame(height: 0.5)
-            Text("OR SET IT MANUALLY")
+            Text(L("OR SET IT MANUALLY"))
                 .font(.system(size: 8, weight: .semibold))
                 .tracking(1.1)
                 .foregroundStyle(FlipColor.tertiaryInk)
@@ -124,7 +124,7 @@ struct FlipAxisSetupView: View {
 
         faceDownSetting
 
-        Text("Pages are never reordered. The physical turn restores their order.")
+        Text(L("Pages are never reordered. The physical turn restores their order."))
             .font(FlipType.caption)
             .foregroundStyle(FlipColor.secondaryInk)
             .fixedSize(horizontal: false, vertical: true)
@@ -166,10 +166,10 @@ struct FlipAxisSetupView: View {
             HStack(alignment: .top, spacing: 8) {
                 FlipIconMedallion(systemName: "viewfinder", tint: FlipColor.coralDeep, size: 28)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Guided setup")
+                    Text(L("Guided setup"))
                         .font(FlipType.bodyStrong)
                         .foregroundStyle(FlipColor.ink)
-                    Text("Print the sheet, look at which side landed up, then confirm the turn. Saved for this printer.")
+                    Text(L("Print the sheet, look at which side landed up, then confirm the turn. Saved for this printer."))
                         .font(FlipType.caption)
                         .foregroundStyle(FlipColor.secondaryInk)
                         .fixedSize(horizontal: false, vertical: true)
@@ -182,7 +182,7 @@ struct FlipAxisSetupView: View {
                     Image(systemName: "printer")
                         .font(.system(size: 9, weight: .semibold))
                         .foregroundStyle(FlipColor.coralDeep)
-                    Text("Your PDF is waiting. It starts after calibration is saved.")
+                    Text(L("Your PDF is waiting. It starts after calibration is saved."))
                         .font(.system(size: 9.5, weight: .medium))
                         .foregroundStyle(FlipColor.secondaryInk)
                         .fixedSize(horizontal: false, vertical: true)
@@ -196,7 +196,7 @@ struct FlipAxisSetupView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "printer")
                         .font(.system(size: 11, weight: .semibold))
-                    Text("Print setup sheet")
+                    Text(L("Print setup sheet"))
                     Spacer(minLength: 4)
                     Image(systemName: "arrow.right")
                         .font(.system(size: 11, weight: .semibold))
@@ -215,7 +215,7 @@ struct FlipAxisSetupView: View {
                 Image(systemName: "lock")
                     .font(.system(size: 8.5, weight: .semibold))
                     .foregroundStyle(FlipColor.tertiaryInk)
-                Text("One sheet · no document content · saved for this printer")
+                Text(L("One sheet · no document content · saved for this printer"))
                     .font(.system(size: 8.5, weight: .medium))
                     .foregroundStyle(FlipColor.tertiaryInk)
                     .lineLimit(1)
@@ -312,17 +312,17 @@ struct FlipAxisSetupView: View {
     private var faceDownSetting: some View {
         Toggle(isOn: $ejectsFaceDown) {
             VStack(alignment: .leading, spacing: 1) {
-                Text("My tray ejects pages face-down")
+                Text(L("My tray ejects pages face-down"))
                     .font(FlipType.bodyStrong)
                     .foregroundStyle(FlipColor.ink)
-                Text("Only reinsert the stack; pages are never reordered.")
+                Text(L("Only reinsert the stack; pages are never reordered."))
                     .font(FlipType.caption)
                     .foregroundStyle(FlipColor.tertiaryInk)
             }
         }
         .toggleStyle(.switch)
         .tint(FlipColor.coral)
-        .accessibilityHint("Turn this on if the printed side already faces down when the pages land in the tray.")
+        .accessibilityHint(L("Turn this on if the printed side already faces down when the pages land in the tray."))
         .padding(11)
         .background(
             RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)

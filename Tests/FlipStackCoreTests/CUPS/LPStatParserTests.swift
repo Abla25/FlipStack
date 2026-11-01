@@ -224,4 +224,14 @@ final class LPStatParserTests: XCTestCase {
         XCTAssertNil(LPStatParser.jobIdentifier("L1800-"))
         XCTAssertNil(LPStatParser.jobIdentifier("L1800-x"))
     }
+
+    func testDashTailEnabledSinceDateDoesNotPolluteStateReasons() {
+        let en = "printer L1800 now printing L1800-42 - enabled since Fri Oct 30 20:52:21 2026"
+        XCTAssertEqual(LPStatParser.parsePrinterDetail(en, queue: "L1800")?.stateReasons, [])
+        let it = "la stampante Studio_Printer sta stampando Studio_Printer-12 - abilitata da ven 30 ott 2026 20:47:42"
+        XCTAssertEqual(LPStatParser.parsePrinterDetail(it, queue: "Studio_Printer")?.stateReasons, [])
+        // real reasons after the dash are still kept
+        let reason = "printer Q is idle.  enabled since Fri Oct 30 20:52:21 2026\n\tReason: media-empty"
+        XCTAssertTrue(LPStatParser.parsePrinterDetail(reason, queue: "Q")?.stateReasons.contains("media-empty") ?? false)
+    }
 }
