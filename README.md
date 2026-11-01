@@ -47,9 +47,9 @@ Tests: `swift test` — 248 tests covering the engine (CUPS option building, dup
 ## Screenshots
 
 <p align="center">
-  <img src="docs/screenshots/composer-doc.png" width="300" alt="Composer with a document loaded">
-  <img src="docs/screenshots/receipt-flip.png" width="300" alt="Guided flip step">
-  <img src="docs/screenshots/receipt-composer.png" width="300" alt="Receipt-style panel">
+  <img src="docs/screenshots/panel-composer.png" width="280" alt="Receipt panel with a document loaded">
+  <img src="docs/screenshots/panel-flip.png" width="280" alt="Guided flip step">
+  <img src="docs/screenshots/panel-done.png" width="280" alt="Print completed">
 </p>
 
 Live site with download: **https://abla25.github.io** · Source: this repo.
