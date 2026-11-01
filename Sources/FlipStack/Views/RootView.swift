@@ -1,6 +1,9 @@
 import FlipStackCore
 import SwiftUI
 
+/// The minimal FlipStack panel: one workflow — drop a file, (optionally)
+/// adjust print settings, print fronts, flip the stack, done. Duplex is the
+/// centerpiece; everything else is secondary.
 @MainActor
 struct RootView: View {
     @ObservedObject private var model: AppModel
@@ -17,36 +20,60 @@ struct RootView: View {
     }
 
     private var surfaceKey: String {
-        if model.isPreparingPrint {
-            return "preparing"
-        }
-        if model.flipCalibration != nil, !isFlowActive {
-            return "calibration"
-        }
-        if model.flipAxisSetup != nil, !isFlowActive {
-            return "setup"
-        }
+        if model.isPreparingPrint { return "preparing" }
+        if model.flipCalibration != nil, !isFlowActive { return "calibration" }
+        if model.flipAxisSetup != nil, !isFlowActive { return "setup" }
         switch orchestrator.phase {
-        case .idle:
-            return "idle"
-        case .preparing:
-            return "preparing"
-        case .printing(let pass, _):
-            return "printing-\(pass.rawValue)"
-        case .awaitingFlip(let prompt):
-            return "flip-\(prompt.title)-\(prompt.mode.rawValue)"
-        case .completed:
-            return "completed"
-        case .failed(let failure):
-            return "failed-\(failure.title)"
-        case .cancelled:
-            return "cancelled"
+        case .idle: return "idle"
+        case .preparing: return "preparing"
+        case .printing(let pass, _): return "printing-\(pass.rawValue)"
+        case .awaitingFlip(let prompt): return "flip-\(prompt.title)-\(prompt.mode.rawValue)"
+        case .completed: return "completed"
+        case .failed(let failure): return "failed-\(failure.title)"
+        case .cancelled: return "cancelled"
         }
     }
 
     var body: some View {
         ZStack {
-            panel
+            VStack(spacing: 0) {
+                HeaderView(model: model, orchestrator: orchestrator)
+
+                ScrollView(.vertical, showsIndicators: true) {
+                    VStack(spacing: 0) {
+                        if let banner = model.banner {
+                            FlipBanner(banner: banner, reduceMotion: reduceMotion) {
+                                model.dismissBanner()
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.top, 12)
+                        }
+
+                        Group {
+                            content
+                        }
+                        .padding(.horizontal, FlipMetrics.gutter)
+                        .padding(.top, 13)
+                        .padding(.bottom, 20)
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+
+                if model.flipCalibration != nil {
+                    FlipCalibrationActionBar(model: model)
+                        .transition(.opacity)
+                } else if showsFlowActionBar {
+                    FlowActionBar(model: model, orchestrator: orchestrator)
+                        .transition(.opacity)
+                } else if showsComposerAction {
+                    ComposerActionBar(model: model)
+                        .transition(.opacity)
+                }
+
+                FooterBar(model: model)
+            }
+
             if model.isShowingSettings {
                 settingsOverlay
             }
@@ -58,12 +85,8 @@ struct RootView: View {
         .clipped()
         .animation(FlipMotion.standard(reduceMotion), value: model.banner?.id)
         .animation(FlipMotion.surface(reduceMotion), value: surfaceKey)
-        .animation(FlipMotion.standard(reduceMotion), value: showsComposerActionBar)
     }
 
-    /// Settings presents as a floating sheet over the composer, the way a
-    /// macOS panel presents preferences: the document stays visible (dimmed)
-    /// behind the card instead of being swapped out.
     private var settingsOverlay: some View {
         ZStack {
             Color.black.opacity(0.24)
@@ -91,84 +114,10 @@ struct RootView: View {
                     .strokeBorder(FlipColor.border, lineWidth: 0.75)
             }
             .padding(10)
-            .transition(reduceMotion
-                ? .opacity
-                : .opacity.combined(with: .move(edge: .bottom)))
+            .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
         }
         .transition(.opacity)
         .accessibilityAddTraits(.isModal)
-    }
-
-    private var panel: some View {
-        VStack(spacing: 0) {
-            HeaderView(model: model, orchestrator: orchestrator)
-
-            ScrollView(.vertical, showsIndicators: true) {
-                VStack(spacing: 0) {
-                    if let banner = model.banner {
-                        FlipBanner(banner: banner, reduceMotion: reduceMotion) {
-                            model.dismissBanner()
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.top, 12)
-                    }
-
-                    if showsInkLowStrip, !model.lowSupplies.isEmpty {
-                        FlipInkLowStrip(supplies: model.lowSupplies)
-                            .padding(.horizontal, 16)
-                            .padding(.top, model.banner == nil ? 12 : 8)
-                    }
-
-                    Group {
-                        content
-                    }
-                    .padding(.horizontal, FlipMetrics.gutter)
-                    .padding(.top, 13)
-                    .padding(.bottom, 20)
-                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
-                }
-                .frame(maxWidth: .infinity)
-            }
-            .mask {
-                VStack(spacing: 0) {
-                    Rectangle()
-                    if showsComposerActionBar || showsFlowActionBar || model.isShowingSettings {
-                        LinearGradient(
-                            colors: [.black, .clear],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: model.isShowingQueue ? 40 : 32)
-                    }
-                }
-            }
-
-            if model.flipCalibration != nil {
-                FlipCalibrationActionBar(model: model)
-                    .transition(.opacity)
-            } else if showsComposerActionBar {
-                PrimaryActionBar(model: model)
-                    .transition(.opacity)
-            } else if showsFlowActionBar {
-                FlowActionBar(model: model, orchestrator: orchestrator)
-                    .transition(.opacity)
-            }
-
-            FooterBar(model: model)
-        }
-    }
-
-    private var showsComposerActionBar: Bool {
-        guard !model.isShowingSettings,
-              orchestrator.phase.isIdle,
-              model.flipAxisSetup == nil,
-              model.flipCalibration == nil,
-              !model.isPreparingPrint,
-              model.selectedDocument != nil,
-              !model.printers.isEmpty else {
-            return false
-        }
-        return model.selectedPrinter != nil
     }
 
     private var showsFlowActionBar: Bool {
@@ -177,12 +126,18 @@ struct RootView: View {
         return model.isPreparingPrint || !orchestrator.phase.isIdle
     }
 
-    private var showsInkLowStrip: Bool {
-        !model.isShowingSettings
-            && orchestrator.phase.isIdle
-            && model.flipAxisSetup == nil
-            && model.flipCalibration == nil
-            && !model.isPreparingPrint
+    private var showsComposerAction: Bool {
+        guard !model.isShowingSettings,
+              !showsFlowActionBar,
+              orchestrator.phase.isIdle,
+              model.flipAxisSetup == nil,
+              model.flipCalibration == nil,
+              !model.isPreparingPrint,
+              model.selectedDocument != nil,
+              model.selectedPrinter != nil else {
+            return false
+        }
+        return true
     }
 
     @ViewBuilder
@@ -200,18 +155,9 @@ struct RootView: View {
             case .preparing:
                 PreparingSurface(model: model)
             case .printing(let pass, let job):
-                PrintingSurface(
-                    model: model,
-                    orchestrator: orchestrator,
-                    pass: pass,
-                    job: job
-                )
+                PrintingSurface(model: model, orchestrator: orchestrator, pass: pass, job: job)
             case .awaitingFlip(let prompt):
-                FlipWaitingView(
-                    model: model,
-                    orchestrator: orchestrator,
-                    prompt: prompt
-                )
+                FlipWaitingView(model: model, orchestrator: orchestrator, prompt: prompt)
             case .completed(let result):
                 CompletedSurface(model: model, result: result)
             case .failed(let failure):

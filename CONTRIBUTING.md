@@ -4,7 +4,7 @@ Thanks for helping make manual duplex less error-prone. This project is a small,
 
 ## Before you start
 
-- Read the [README](README.md) and, for changes to the print flow, [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+- Read the [README](README.md) and, for changes to the print flow, [Advanced/docs/ARCHITECTURE.md](Advanced/docs/ARCHITECTURE.md).
 - Search existing issues before opening a new one.
 - Keep changes focused. A pull request should solve one problem and include the tests or documentation that make it reviewable.
 - By contributing, you agree that your work is licensed under the project's [MIT License](LICENSE).
@@ -79,7 +79,7 @@ Scripts/make-icon.sh
 - Preserve accessibility. New controls need sensible labels and must respect Reduce Motion and both light and dark appearance.
 - Avoid force-unwrapping values that come from the printer, PPD, filesystem, or process output. Return a typed error or a safe fallback instead.
 - Never log document contents, full paths containing user names, or printer credentials.
-- Screenshots belong in `docs/screenshots` and keep the names `empty.png`, `ready.png`, `preview.png`, `flip.png`, `printing.png`, `booklet.png`, and `queue.png`. Render the real panel at its normal size, use a fictional document title, and remove printer names, serial numbers, and personal data.
+- Screenshots belong in `Advanced/docs/screenshots` and keep the names `empty.png`, `ready.png`, `preview.png`, `flip.png`, `printing.png`, `booklet.png`, and `queue.png`. Render the real panel at its normal size, use a fictional document title, and remove printer names, serial numbers, and personal data.
 
 ## Pull request checklist
 

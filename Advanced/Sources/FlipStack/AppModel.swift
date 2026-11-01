@@ -1,0 +1,2772 @@
+import AppKit
+import Combine
+import FlipStackCore
+import PDFKit
+import UniformTypeIdentifiers
+
+enum PrinterHealth: Equatable {
+    case unknown
+    case ready
+    case preparing
+    case printing
+    case waiting
+    case offline
+    case attention
+
+    var label: String {
+        switch self {
+        case .unknown: return L("Unknown")
+        case .ready: return L("Ready")
+        case .preparing: return L("Preparing")
+        case .printing: return L("Printing")
+        case .waiting: return L("Your turn")
+        case .offline: return L("Offline")
+        case .attention: return L("Needs attention")
+        }
+    }
+}
+
+struct SelectedDocument: Identifiable, Equatable {
+    let id = UUID()
+    let url: URL
+    let name: String
+    let pageCount: Int
+    let pageWidth: CGFloat
+    let pageHeight: CGFloat
+    /// Short format tag for the document card: PDF, IMG, or DOC.
+    let formatTag: String
+
+    var isLandscape: Bool { pageWidth > pageHeight }
+
+    var title: String {
+        let base = (name as NSString).deletingPathExtension
+        return base.isEmpty ? name : base
+    }
+
+    var formattedPageCount: String {
+        FlipFormat.pages(pageCount)
+    }
+
+    var pageSizeText: String {
+        FlipFormat.paperDescription(width: pageWidth, height: pageHeight)
+    }
+}
+
+enum PageSelectionMode: String, CaseIterable, Identifiable {
+    case all
+    case range
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .all: return L("All")
+        case .range: return L("Pages")
+        }
+    }
+}
+
+/// One entry in the quality picker: a built-in preset (Eco/Standard/High/
+/// Photo) or a user-defined custom preset, unified by a stable id.
+struct QualityPresetItem: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let isCustom: Bool
+
+    init(preset: PrintQualityPreset) {
+        self.id = preset.rawValue
+        self.title = preset.title
+        self.isCustom = false
+    }
+
+    init(custom: CustomQualityPreset) {
+        self.id = custom.id
+        self.title = custom.name
+        self.isCustom = true
+    }
+}
+
+struct PageSelectionInfo: Equatable {
+    var mode: PageSelectionMode
+    var ranges: [PageRange]
+    var pageCount: Int
+    var totalPages: Int
+    var isValid: Bool
+    var message: String?
+
+    var isAll: Bool {
+        guard isValid else { return false }
+        if mode == .all { return true }
+        return pageCount == totalPages
+            && ranges.first?.lowerBound == 1
+            && ranges.last?.upperBound == totalPages
+    }
+
+    var summary: String {
+        guard isValid else { return L("Check the page range") }
+        if isAll {
+            return totalPages == 1 ? L("All 1 page") : String(format: L("All %lld pages"), totalPages)
+        }
+        return pageCount == 1
+            ? String(format: L("1 of %lld pages"), totalPages)
+            : String(format: L("%lld of %lld pages"), pageCount, totalPages)
+    }
+}
+
+struct FlipAxisSetup: Equatable {
+    var autoStartsPrint: Bool
+}
+
+struct FlipCalibration: Equatable {
+    enum Stage: Equatable {
+        case printing
+        case questions
+        case failed(String)
+    }
+
+    var id = UUID()
+    var stage: Stage
+    var autoStartsPrint: Bool
+    var printerID: String
+    var axis: FlipAxis
+    var recommendedAxis: FlipAxis
+    var ejectsFaceDown: Bool
+    var jobID: Int?
+    var jobStartedAt: Date?
+    var hasConfirmedTray: Bool = false
+    var hasConfirmedAxis: Bool = false
+
+    var isAnswered: Bool {
+        hasConfirmedTray && hasConfirmedAxis
+    }
+}
+
+struct AppBanner: Identifiable, Equatable {
+    enum Kind: String, Equatable {
+        case info
+        case success
+        case warning
+        case error
+    }
+
+    let id = UUID()
+    var kind: Kind
+    var title: String
+    var message: String?
+}
+
+@MainActor
+final class AppModel: ObservableObject {
+    // MARK: Printers and status
+
+    @Published private(set) var printers: [Printer] = []
+    @Published private(set) var selectedPrinter: Printer?
+    @Published private(set) var status: PrinterStatus?
+    @Published private(set) var ppd: PPDDocument?
+    @Published private(set) var isLoadingPrinters = true
+    @Published private(set) var isLoadingPPD = false
+    @Published private(set) var isRefreshing = false
+    @Published private(set) var ppdNote: String?
+    @Published private(set) var discoveredDevices: [DiscoveredPrinter] = []
+    @Published private(set) var isDiscoveringPrinters = false
+    @Published private(set) var discoveryNote: String?
+
+    private var isRefreshingStatus = false
+    private var isRefreshingQueue = false
+    private var localJobIDs = Set<Int>()
+    private var localJobTitles: [Int: String] = [:]
+
+    // MARK: Document and options
+
+    @Published private(set) var selectedDocument: SelectedDocument?
+    @Published var language: AppLanguage = .english {
+        didSet {
+            guard oldValue != language else { return }
+            UserDefaults.standard.set(language.rawValue, forKey: AppLanguage.defaultsKey)
+            AppLanguage.current = language
+            NotificationCenter.default.post(name: .flipStackLanguageChanged, object: nil)
+        }
+    }
+    @Published var isShowingSettings = false
+    @Published var mode: PrintMode = .manualDuplex {
+        didSet {
+            guard oldValue != mode else { return }
+            if mode.isTwoPass {
+                copies = 1
+            }
+            preferencesStore.lastPrintMode = mode
+            closePreview()
+            recomputeBookletPlan()
+        }
+    }
+    @Published var pageSelectionMode: PageSelectionMode = .all {
+        didSet {
+            guard oldValue != pageSelectionMode else { return }
+            if pageSelectionMode == .range,
+               pageRangeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               let document = selectedDocument {
+                pageRangeText = "1-\(document.pageCount)"
+            }
+            if !isAdjustingSelectionFromPreview {
+                closePreview()
+            }
+            recomputeBookletPlan()
+        }
+    }
+    @Published var pageRangeText: String = "" {
+        didSet {
+            guard oldValue != pageRangeText else { return }
+            if !isAdjustingSelectionFromPreview {
+                closePreview()
+            }
+            recomputeBookletPlan()
+        }
+    }
+    private var isAdjustingSelectionFromPreview = false
+    @Published private(set) var activePrintMode: PrintMode = .manualDuplex
+    @Published private(set) var selectedQualityPreset: PrintQualityPreset?
+    @Published private(set) var selectedCustomPresetID: String?
+    /// Overrides keyed by preset id: a built-in preset's raw value, or a
+    /// custom preset's id.
+    @Published private(set) var qualityOverrides: [String: [String: String]] = [:]
+    @Published private(set) var customPresets: [CustomQualityPreset] = []
+    @Published var pageOrientation: PageOrientationChoice = .automatic {
+        didSet {
+            guard oldValue != pageOrientation else { return }
+            saveLayout()
+        }
+    }
+    @Published var fitToPage = true {
+        didSet {
+            guard oldValue != fitToPage else { return }
+            saveLayout()
+        }
+    }
+    @Published var scalePercent = 100 {
+        didSet {
+            let clamped = min(max(scalePercent, 50), 150)
+            if clamped != scalePercent {
+                scalePercent = clamped
+                return
+            }
+            guard oldValue != scalePercent else { return }
+            saveLayout()
+        }
+    }
+
+    // MARK: Preview geometry (macOS print-panel semantics)
+
+    /// The selected paper's physical size in PostScript points, from the
+    /// PPD's own `*PaperDimension` when it declares one, otherwise from the
+    /// standard page-size catalog. Nil when no paper option exists.
+    var selectedPaperSize: CGSize? {
+        guard let option = paperSizeOption else { return nil }
+        return ppd?.paperSize(for: selectedValue(for: option))
+    }
+
+    /// The printable rectangle of the selected paper, when the PPD declares it.
+    var selectedImageableArea: CGRect? {
+        guard let option = paperSizeOption else { return nil }
+        return ppd?.imageableArea(for: selectedValue(for: option))
+    }
+
+    /// The paper sheet shown in the preview and setup diagram, in points, in
+    /// the paper's own orientation. Falls back to the document's page size.
+    var previewSheetSize: CGSize {
+        if let paper = selectedPaperSize {
+            return paper
+        }
+        if let document = selectedDocument {
+            return CGSize(width: document.pageWidth, height: document.pageHeight)
+        }
+        return CGSize(width: 595.28, height: 841.89)
+    }
+
+    /// The page content box as it lands on the sheet, in points: the document
+    /// page with width and height swapped when the print orientation rotates
+    /// it 90 degrees.
+    var previewContentSize: CGSize {
+        guard let document = selectedDocument else { return previewSheetSize }
+        let rotates = printOrientation == .landscape || printOrientation == .reverseLandscape
+        if rotates != document.isLandscape {
+            return CGSize(width: document.pageHeight, height: document.pageWidth)
+        }
+        return CGSize(width: document.pageWidth, height: document.pageHeight)
+    }
+
+    /// The rotation applied to the content on the sheet, in degrees.
+    var previewContentRotation: Double {
+        switch printOrientation {
+        case .portrait: return 0
+        case .landscape: return 90
+        case .reverseLandscape: return -90
+        case .reversePortrait: return 180
+        }
+    }
+
+    /// The scale applied to the content inside the sheet. This mirrors what
+    /// CUPS does at print time: `fit-to-page` scales the page to fit the
+    /// paper; an exact percentage scales the page itself. The sheet never
+    /// changes size — exactly like the macOS print panel preview.
+    var previewContentScale: CGFloat {
+        guard !fitToPage else {
+            let sheet = previewSheetSize
+            let content = previewContentSize
+            guard content.width > 0, content.height > 0 else { return 1 }
+            return min(sheet.width / content.width, sheet.height / content.height)
+        }
+        return CGFloat(scalePercent) / 100
+    }
+
+    func setScalePercent(_ value: Int) {
+        let clamped = min(max(value, 50), 150)
+        if fitToPage {
+            fitToPage = false
+        }
+        scalePercent = clamped
+    }
+    @Published private(set) var optionSelection: [String: String] = [:]
+    @Published private(set) var preferences: PrinterPreferences = .unconfigured
+    @Published var bookletSignatureSheets: Int = 0 {
+        didSet {
+            guard oldValue != bookletSignatureSheets else { return }
+            closePreview()
+            recomputeBookletPlan()
+        }
+    }
+    @Published private(set) var bookletPlan: BookletPlan?
+    @Published var copies: Int = 1
+
+    // MARK: Print preview
+
+    @Published private(set) var previewURL: URL?
+    @Published private(set) var previewBacksURL: URL?
+    @Published private(set) var isShowingPreview = false
+    @Published private(set) var isPreparingPreview = false
+    @Published var previewShowsBacks = false
+    private var previewDirectory: URL?
+    private var previewGeneration = 0
+    private var previewRefreshTask: Task<Void, Never>?
+
+    // MARK: Flow and surfaces
+
+    @Published var flipAxisSetup: FlipAxisSetup?
+    @Published private(set) var flipCalibration: FlipCalibration?
+    @Published var isShowingQueue = false {
+        didSet {
+            guard oldValue != isShowingQueue else { return }
+            if isShowingQueue {
+                closePreview()
+            }
+            updateQueuePolling()
+        }
+    }
+    @Published var banner: AppBanner?
+    @Published private(set) var isPreparingPrint = false
+    @Published private(set) var queue: [PrintJob] = []
+    @Published private(set) var queueError: String?
+    @Published private(set) var isMaintenanceBusy = false
+
+    let orchestrator: DuplexOrchestrator
+
+    private let spooler: PrintSpooling
+    private let ppdProvider: PPDProviding
+    private let statusProvider: PrinterStatusProviding
+    private let bookletImposer: any BookletImposing
+    private let preferencesStore: PreferencesStore
+    private let printerDiscovery: any PrinterDiscovering
+
+    private var bookletDocuments: BookletDocuments?
+    private var selectionWorkingDirectory: URL?
+    private var ingestWorkingDirectory: URL?
+    @Published private(set) var isIngestingDocument = false
+    private var presetResolver: PrintPresetResolver?
+    private var monitorTask: Task<Void, Never>?
+    private var queueMonitorTask: Task<Void, Never>?
+    private var preparationTask: Task<Void, Never>?
+    private var calibrationTask: Task<Void, Never>?
+    private var preparationGeneration = 0
+    private var lastDiscoveryAt: Date?
+    private var hasStarted = false
+    private var cancellables = Set<AnyCancellable>()
+
+    init(
+        spooler: PrintSpooling,
+        ppdProvider: PPDProviding,
+        statusProvider: PrinterStatusProviding,
+        bookletImposer: any BookletImposing,
+        preferencesStore: PreferencesStore,
+        orchestrator: DuplexOrchestrator,
+        printerDiscovery: any PrinterDiscovering = CUPSDeviceDiscovery()
+    ) {
+        let savedLanguage = AppLanguage.stored
+        AppLanguage.current = savedLanguage
+        self.language = savedLanguage
+        self.spooler = spooler
+        self.ppdProvider = ppdProvider
+        self.statusProvider = statusProvider
+        self.bookletImposer = bookletImposer
+        self.preferencesStore = preferencesStore
+        self.orchestrator = orchestrator
+        self.printerDiscovery = printerDiscovery
+        self.copies = 1
+        self.mode = preferencesStore.lastPrintMode ?? .manualDuplex
+
+        NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self, self.printers.isEmpty, !self.isRefreshing else { return }
+                Task { await self.refreshAll() }
+            }
+            .store(in: &cancellables)
+
+        orchestrator.$phase
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] phase in
+                guard let self else { return }
+                if case .printing(let pass, let job) = phase {
+                    self.rememberLocalJob(job, pass: pass)
+                }
+                switch phase {
+                case .printing, .awaitingFlip, .completed, .failed, .cancelled:
+                    Task {
+                        await self.refreshQueue()
+                        await self.refreshStatus()
+                    }
+                case .idle, .preparing:
+                    break
+                }
+            }
+            .store(in: &cancellables)
+    }
+
+    // MARK: Derived values
+
+    var canPrint: Bool {
+        guard let printer = selectedPrinter,
+              let status,
+              selectedDocument != nil,
+              pageSelectionInfo.isValid,
+              pageSelectionInfo.pageCount > 0,
+              !isLoadingPPD,
+              !isPreparingPrint,
+              !isMaintenanceBusy,
+              !isShowingSettings,
+              flipAxisSetup == nil,
+              flipCalibration == nil,
+              orchestrator.phase.isIdle else { return false }
+        if (!printer.stateReasons.contains("offline-report") && printer.state == .stopped)
+            || !printer.acceptsJobs || printer.hasError {
+            return false
+        }
+        if status.acceptsJobs == false {
+            return false
+        }
+        if status.state == .stopped && !status.stateReasons.contains("offline-report") {
+            return false
+        }
+        if status.stateReasons.contains(where: { PrinterReason.isError($0) && $0 != "offline-report" }) {
+            return false
+        }
+        return true
+    }
+
+    var isCalibrating: Bool { flipCalibration != nil }
+
+    /// The physical sheet shape shown during the flip prompt. Booklet 2-up
+    /// sheets are landscape; standard documents follow their first page and
+    /// the forced-landscape layout choice.
+    var isLandscapeStack: Bool {
+        if activePrintMode == .booklet { return true }
+        switch pageOrientation {
+        case .landscape: return true
+        case .portrait: return false
+        case .automatic: return selectedDocument?.isLandscape ?? false
+        }
+    }
+
+    /// The orientation sent to CUPS. Match PDF uses the first page of the
+    /// document instead of silently forcing portrait, which used to rotate
+    /// landscape scans.
+    var printOrientation: PrintOrientation {
+        switch pageOrientation {
+        case .landscape: return .landscape
+        case .portrait: return .portrait
+        case .automatic: return (selectedDocument?.isLandscape ?? false) ? .landscape : .portrait
+        }
+    }
+
+    var pageSelectionInfo: PageSelectionInfo {
+        guard let document = selectedDocument else {
+            return PageSelectionInfo(
+                mode: pageSelectionMode,
+                ranges: [],
+                pageCount: 0,
+                totalPages: 0,
+                isValid: false,
+                message: L("Choose a PDF first.")
+            )
+        }
+        switch pageSelectionMode {
+        case .all:
+            return PageSelectionInfo(
+                mode: .all,
+                ranges: [],
+                pageCount: document.pageCount,
+                totalPages: document.pageCount,
+                isValid: document.pageCount > 0,
+                message: nil
+            )
+        case .range:
+            let fragments = pageRangeText
+                .split(separator: ",", omittingEmptySubsequences: false)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            let raw = PageRange.list(from: pageRangeText)
+            guard !raw.isEmpty, raw.count == fragments.count else {
+                // Fragments that are purely numeric but produced no valid
+                // range (0, reversed, beyond the document) deserve the range
+                // message; anything else is a syntax problem.
+                let looksLikeNumbers = !fragments.isEmpty && fragments.allSatisfy { fragment in
+                    fragment.allSatisfy { $0.isNumber || $0.isWhitespace || $0 == "-" || $0 == "–" || $0 == "—" || $0 == "−" }
+                }
+                return PageSelectionInfo(
+                    mode: .range,
+                    ranges: [],
+                    pageCount: 0,
+                    totalPages: document.pageCount,
+                    isValid: false,
+                    message: looksLikeNumbers
+                        ? String(format: L("Pages must be between 1 and %lld."), document.pageCount)
+                        : L("Use commas between pages, like 1-4, 7.")
+                )
+            }
+            do {
+                let pages = try PDFPageExtractor.pageNumbers(
+                    for: raw,
+                    pageCount: document.pageCount
+                )
+                return PageSelectionInfo(
+                    mode: .range,
+                    ranges: Self.mergedRanges(from: pages),
+                    pageCount: pages.count,
+                    totalPages: document.pageCount,
+                    isValid: true,
+                    message: nil
+                )
+            } catch {
+                return PageSelectionInfo(
+                    mode: .range,
+                    ranges: [],
+                    pageCount: 0,
+                    totalPages: document.pageCount,
+                    isValid: false,
+                    message: String(format: L("Pages must be between 1 and %lld."), document.pageCount)
+                )
+            }
+        }
+    }
+
+    /// The pages that will actually print. An invalid typed range yields an
+    /// empty set so the thumbnail sidebar cannot imply pages that are not
+    /// valid.
+    var selectedPageNumbers: Set<Int> {
+        guard let document = selectedDocument else { return [] }
+        if pageSelectionMode == .all {
+            return Set(1...max(1, document.pageCount))
+        }
+        guard pageSelectionInfo.isValid else { return [] }
+        return Set(pageSelectionInfo.ranges.flatMap { range in
+            Array(range.lowerBound...range.upperBound)
+        })
+    }
+
+    func isPageSelected(_ page: Int) -> Bool {
+        selectedPageNumbers.contains(page)
+    }
+
+    /// Like macOS Preview: all pages start selected, then individual pages can
+    /// be toggled. The print file is regenerated without closing the preview.
+    func togglePageSelection(_ page: Int) {
+        guard let document = selectedDocument,
+              page >= 1, page <= document.pageCount else { return }
+        var selected = selectedPageNumbers
+        if selected.isEmpty {
+            // An invalid/empty typed range should not expand to "everything
+            // except the clicked page" when the user toggles a thumbnail.
+            selected = []
+        }
+        if selected.contains(page) {
+            guard selected.count > 1 else { return }
+            selected.remove(page)
+        } else {
+            selected.insert(page)
+        }
+        applyPageSelection(selected)
+    }
+
+    func selectAllPages() {
+        guard let document = selectedDocument else { return }
+        applyPageSelection(Set(1...document.pageCount))
+    }
+
+    private func applyPageSelection(_ pages: Set<Int>) {
+        guard let document = selectedDocument else { return }
+        let ordered = pages.sorted()
+        isAdjustingSelectionFromPreview = true
+        if ordered.count == document.pageCount {
+            if pageSelectionMode != .all { pageSelectionMode = .all }
+            if !pageRangeText.isEmpty { pageRangeText = "" }
+        } else {
+            let text = Self.rangeText(for: ordered)
+            if pageSelectionMode != .range { pageSelectionMode = .range }
+            if pageRangeText != text { pageRangeText = text }
+        }
+        isAdjustingSelectionFromPreview = false
+        if isShowingPreview || isPreparingPreview {
+            schedulePreviewRefresh()
+        }
+    }
+
+    private static func rangeText(for pages: [Int]) -> String {
+        guard let first = pages.first else { return "" }
+        var ranges: [(Int, Int)] = []
+        var start = first
+        var previous = first
+        for page in pages.dropFirst() {
+            if page == previous + 1 {
+                previous = page
+                continue
+            }
+            ranges.append((start, previous))
+            start = page
+            previous = page
+        }
+        ranges.append((start, previous))
+        return ranges.map { lower, upper in
+            lower == upper ? "\(lower)" : "\(lower)-\(upper)"
+        }.joined(separator: ", ")
+    }
+
+    private func schedulePreviewRefresh() {
+        previewRefreshTask?.cancel()
+        previewRefreshTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 220_000_000)
+            guard !Task.isCancelled, let self,
+                  self.isShowingPreview || self.isPreparingPreview else { return }
+            await self.preparePreview()
+        }
+    }
+
+    private static func mergedRanges(from pages: [Int]) -> [PageRange] {
+        guard let first = pages.first else { return [] }
+        var ranges: [PageRange] = []
+        var start = first
+        var previous = first
+        for page in pages.dropFirst() {
+            if page == previous + 1 {
+                previous = page
+                continue
+            }
+            if let range = PageRange(start, previous) {
+                ranges.append(range)
+            }
+            start = page
+            previous = page
+        }
+        if let range = PageRange(start, previous) {
+            ranges.append(range)
+        }
+        return ranges
+    }
+
+    var driverOptions: [PPDOption] {
+        guard let ppd else { return [] }
+        let groupOrder: [PPDOptionGroup] = [.color, .paperSize, .mediaType, .quality]
+        return groupOrder.compactMap { group in
+            guard let option = ppd.option(in: group), !option.choices.isEmpty else { return nil }
+            return option
+        }
+    }
+
+    /// PPD options that have no curated control (everything outside color,
+    /// paper, media, quality, duplex, and color profiles). Shown under the
+    /// "Driver options" disclosure so nothing the driver exposes is hidden.
+    var extraDriverOptions: [PPDOption] {
+        guard let ppd else { return [] }
+        let curated: Set<PPDOptionGroup> = [.color, .paperSize, .mediaType, .quality, .duplex]
+        return ppd.options.filter { option in
+            guard !option.choices.isEmpty, !curated.contains(option.group) else { return false }
+            let text = (option.keyword + " " + option.label).lowercased()
+            return !(text.contains("profile") || text.contains("icc"))
+        }
+    }
+
+    var paperSizeOption: PPDOption? {
+        ppd?.option(in: .paperSize)
+    }
+
+    var mediaTypeOption: PPDOption? {
+        ppd?.option(in: .mediaType)
+    }
+
+    var selectedPaperLabel: String? {
+        guard let option = paperSizeOption else { return nil }
+        let keyword = selectedValue(for: option)
+        return option.choice(keyword: keyword)?.displayLabel ?? keyword
+    }
+
+    var selectedMediaLabel: String? {
+        guard let option = mediaTypeOption else { return nil }
+        let keyword = selectedValue(for: option)
+        return option.choice(keyword: keyword)?.displayLabel ?? keyword
+    }
+
+    var documentPageSizeText: String? {
+        selectedDocument?.pageSizeText
+    }
+
+    var colorModeOption: PPDOption? {
+        ppd?.option(in: .color)
+    }
+
+    var grayscaleChoice: PPDChoice? {
+        colorModeOption?.choices.first { choice in
+            let token = "\(choice.keyword) \(choice.displayLabel)".lowercased()
+            return token.contains("gray") || token.contains("grey")
+                || token.contains("mono") || token.contains("black")
+        }
+    }
+
+    var colorChoice: PPDChoice? {
+        colorModeOption?.choices.first { choice in
+            let token = "\(choice.keyword) \(choice.displayLabel)".lowercased()
+            return token.contains("rgb") || token.contains("cmyk")
+                || token.contains("color") || token.contains("colour")
+        }
+    }
+
+    var supportsColorModeToggle: Bool {
+        colorChoice != nil && grayscaleChoice != nil
+    }
+
+    var isGrayscaleSelected: Bool {
+        guard let option = colorModeOption,
+              let grayscale = grayscaleChoice else { return false }
+        return selectedValue(for: option) == grayscale.keyword
+    }
+
+    func setGrayscale(_ grayscale: Bool) {
+        guard let option = colorModeOption else { return }
+        let choice = grayscale ? grayscaleChoice : colorChoice
+        guard let choice else { return }
+        setValue(choice.keyword, for: option)
+    }
+
+    var colorProfileOptions: [PPDOption] {        guard let ppd else { return [] }
+        return ppd.options.filter { option in
+            guard !option.choices.isEmpty,
+                  option.group != .paperSize,
+                  option.group != .duplex,
+                  option.group != .color else { return false }
+            let text = (option.keyword + " " + option.label).lowercased()
+            return text.contains("profile") || text.contains("icc")
+        }
+    }
+
+    var qualityPresets: [PrintQualityPreset] {
+        presetResolver?.availablePresets ?? []
+    }
+
+    /// PPD options the quality editor can tune. Color stays an independent
+    /// switch, so only quality groups and media are listed here.
+    var qualityTunableOptions: [PPDOption] {
+        guard let ppd else { return [] }
+        var options = ppd.options.filter {
+            $0.group == .quality && !$0.choices.isEmpty
+        }
+        if let media = mediaTypeOption {
+            options.append(media)
+        }
+        return options
+    }
+
+    func effectiveQualityValue(for preset: PrintQualityPreset, option: PPDOption) -> String {
+        effectiveQualityValue(forPresetID: preset.rawValue, option: option)
+    }
+
+    /// The value a preset would use for an option: the saved override when
+    /// valid, otherwise the resolver's driver-based choice for built-ins, or
+    /// the driver default for custom presets.
+    func effectiveQualityValue(forPresetID presetID: String, option: PPDOption) -> String {
+        if let override = qualityOverrides[presetID]?[option.keyword],
+           option.choice(keyword: override) != nil {
+            return override
+        }
+        if let preset = PrintQualityPreset(rawValue: presetID) {
+            return presetResolver?.apply(preset, to: optionSelection)
+                .options[option.keyword]
+                ?? option.selectedDefault
+                ?? ""
+        }
+        return option.selectedDefault ?? ""
+    }
+
+    func setQualityOverride(
+        _ value: String,
+        for preset: PrintQualityPreset,
+        option: PPDOption
+    ) {
+        setQualityOverride(value, forPresetID: preset.rawValue, option: option)
+    }
+
+    func setQualityOverride(
+        _ value: String,
+        forPresetID presetID: String,
+        option: PPDOption
+    ) {
+        guard option.choice(keyword: value) != nil else { return }
+        var overrides = qualityOverrides[presetID] ?? [:]
+        overrides[option.keyword] = value
+        qualityOverrides[presetID] = overrides
+        persistQualityOverrides()
+        if selectedQualityPreset?.rawValue == presetID || selectedCustomPresetID == presetID {
+            optionSelection[option.keyword] = value
+            if let id = selectedPrinter?.id {
+                preferencesStore.saveOptionChoices(optionSelection, for: id)
+            }
+        }
+    }
+
+    func resetQualityOverride(_ preset: PrintQualityPreset) {
+        resetQualityOverride(presetID: preset.rawValue)
+    }
+
+    func resetQualityOverride(presetID: String) {
+        qualityOverrides[presetID] = nil
+        persistQualityOverrides()
+        if selectedQualityPreset?.rawValue == presetID {
+            if let preset = PrintQualityPreset(rawValue: presetID) {
+                applyQualityPreset(preset)
+            }
+        } else if selectedCustomPresetID == presetID {
+            applyCustomPreset(presetID)
+        }
+    }
+
+    func hasQualityOverride(_ preset: PrintQualityPreset) -> Bool {
+        hasQualityOverride(presetID: preset.rawValue)
+    }
+
+    func hasQualityOverride(presetID: String) -> Bool {
+        !(qualityOverrides[presetID]?.isEmpty ?? true)
+    }
+
+    private func persistQualityOverrides() {
+        guard let id = selectedPrinter?.id else { return }
+        preferencesStore.saveQualityOverrides(qualityOverrides, for: id)
+    }
+
+    // MARK: Custom quality presets
+
+    /// Built-in presets plus the user's custom ones for the selected queue.
+    var qualityPresetItems: [QualityPresetItem] {
+        let builtIns = qualityPresets.map(QualityPresetItem.init(preset:))
+        let customs = customPresets.map(QualityPresetItem.init(custom:))
+        return builtIns + customs
+    }
+
+    /// The preset currently reflected in the driver options, built-in or
+    /// custom, or nil when the selection is custom/free-form.
+    var activePresetItem: QualityPresetItem? {
+        if let id = selectedCustomPresetID, customPresets.contains(where: { $0.id == id }) {
+            return customPresets.first { $0.id == id }.map(QualityPresetItem.init(custom:))
+        }
+        if let preset = activeQualityPreset {
+            return QualityPresetItem(preset: preset)
+        }
+        return nil
+    }
+
+    func applyQualityPresetItem(_ item: QualityPresetItem) {
+        if let preset = PrintQualityPreset(rawValue: item.id) {
+            applyQualityPreset(preset)
+        } else {
+            applyCustomPreset(item.id)
+        }
+    }
+
+    /// Applies a custom preset: every saved override is pushed into the
+    /// driver options. Keywords the preset does not control keep their
+    /// current value.
+    func applyCustomPreset(_ presetID: String) {
+        guard customPresets.contains(where: { $0.id == presetID }) else { return }
+        let preserveGrayscale = isGrayscaleSelected
+        for (keyword, value) in qualityOverrides[presetID] ?? [:] {
+            guard let option = ppd?.option(keyword: keyword),
+                  option.choice(keyword: value) != nil else { continue }
+            optionSelection[keyword] = value
+        }
+        if preserveGrayscale,
+           let colorOption = colorModeOption,
+           let grayscale = grayscaleChoice {
+            optionSelection[colorOption.keyword] = grayscale.keyword
+        }
+        selectedQualityPreset = nil
+        selectedCustomPresetID = presetID
+        if let id = selectedPrinter?.id {
+            preferencesStore.saveOptionChoices(optionSelection, for: id)
+        }
+    }
+
+    /// Creates a custom preset seeded with the currently selected quality
+    /// values, so the new step starts as a copy of the current setup.
+    func addCustomPreset(name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let id = selectedPrinter?.id else { return }
+        let preset = CustomQualityPreset(name: trimmed)
+        customPresets.append(preset)
+        var overrides: [String: String] = [:]
+        for option in qualityTunableOptions {
+            let current = selectedValue(for: option)
+            if option.choice(keyword: current) != nil {
+                overrides[option.keyword] = current
+            }
+        }
+        if !overrides.isEmpty {
+            qualityOverrides[preset.id] = overrides
+        }
+        persistQualityOverrides()
+        preferencesStore.saveCustomQualityPresets(customPresets, for: id)
+        applyCustomPreset(preset.id)
+    }
+
+    func removeCustomPreset(_ presetID: String) {
+        guard let id = selectedPrinter?.id else { return }
+        customPresets.removeAll { $0.id == presetID }
+        // Keep the overrides: re-adding a preset with the same id restores
+        // the tuned values instead of starting from scratch.
+        preferencesStore.saveCustomQualityPresets(customPresets, for: id)
+        if selectedCustomPresetID == presetID {
+            selectedCustomPresetID = nil
+        }
+    }
+
+    var discoveredPrinters: [DiscoveredPrinter] {
+        let queuedURIs = Set(
+            printers
+                .compactMap(\.deviceURI)
+                .map(Self.normalizedDeviceURI)
+        )
+        return discoveredDevices.filter {
+            !queuedURIs.contains(Self.normalizedDeviceURI($0.uri))
+        }
+    }
+
+    var activeQualityPreset: PrintQualityPreset? {
+        selectedQualityPreset ?? presetResolver?.matchingPreset(for: optionSelection)
+    }
+
+    var displayStatus: PrinterStatus? {
+        status
+    }
+
+    var printerState: PrinterState {
+        let base = status?.state ?? selectedPrinter?.state ?? .unknown
+        if case .failed(let failure) = orchestrator.phase,
+           failure.pass != nil {
+            return .stopped
+        }
+        // CUPS can report an idle queue for the first moments after `lp`
+        // returns. While our own job is active, show that work is happening.
+        if base == .idle,
+           case .printing(_, let job) = orchestrator.phase,
+           job.isActive {
+            return .processing
+        }
+        return base
+    }
+
+    /// A more honest headline than "Ready" for queues whose backend reports
+    /// the device offline. FlipStack still lets a job try to wake the printer,
+    /// but the header must not pretend the device is reachable.
+    var printerHealth: PrinterHealth {
+        guard selectedPrinter != nil else { return .unknown }
+        if isPreparingPrint {
+            return .preparing
+        }
+        if case .preparing = orchestrator.phase {
+            return .preparing
+        }
+        if case .awaitingFlip = orchestrator.phase {
+            return .waiting
+        }
+        if case .printing(_, let job) = orchestrator.phase, job.isActive {
+            if let status,
+               status.stateReasons.contains("offline-report"),
+               job.state != .processing {
+                return .offline
+            }
+            return .printing
+        }
+        if case .failed(let failure) = orchestrator.phase, failure.pass != nil {
+            return .attention
+        }
+        guard let status else { return .unknown }
+        let state = status.state
+        let accepting = status.acceptsJobs ?? selectedPrinter?.acceptsJobs ?? true
+        let reasons = status.stateReasons
+        if Date().timeIntervalSince(status.fetchedAt) > 120 {
+            return .unknown
+        }
+        if state == .stopped || !accepting {
+            return .attention
+        }
+        if reasons.contains("offline-report") {
+            return .offline
+        }
+        if reasons.contains(where: PrinterReason.isError) {
+            return .attention
+        }
+        if let calibration = flipCalibration {
+            switch calibration.stage {
+            case .printing:
+                return calibration.jobID == nil ? .preparing : .printing
+            case .questions:
+                return .waiting
+            case .failed:
+                return .attention
+            }
+        }
+        if state == .processing {
+            return .printing
+        }
+        if status.origin == .unavailable, state == .idle {
+            return .unknown
+        }
+        if state == .unknown {
+            return .unknown
+        }
+        return .ready
+    }
+
+    var isWaitingForPrinter: Bool {
+        guard case .printing(_, let job) = orchestrator.phase, job.isActive else { return false }
+        guard let status else { return false }
+        return status.stateReasons.contains("offline-report") && job.state != .processing
+    }
+
+    var printerHealthNote: String? {
+        guard selectedPrinter != nil else { return nil }
+        switch printerHealth {
+        case .offline:
+            return L("CUPS reports this printer offline. A print job may still wake it.")
+        case .attention:
+            return activeStateReasons.first ?? "The printer queue needs attention."
+        case .unknown:
+            if status == nil {
+                return L("Checking live printer status…")
+            }
+            return L("Live printer status is unavailable; queue state is shown from CUPS.")
+        case .ready, .printing, .preparing, .waiting:
+            return nil
+        }
+    }
+
+    /// Shown when the queue is healthy but the printer does not expose marker
+    /// supplies (common on USB-only photo printers such as the L1800).
+    var supplyFallbackNote: String? {
+        guard selectedPrinter != nil, let status else { return nil }
+        if !status.supplies.isEmpty { return nil }
+        // The health note already explains an entirely unavailable status;
+        // avoid saying the same thing twice in the header.
+        if status.origin == .unavailable { return nil }
+        return L("Supply levels are not reported by this printer.")
+    }
+
+    var activeStateReasons: [String] {
+        let reasons = status?.stateReasons ?? selectedPrinter?.stateReasons ?? []
+        let filtered = reasons.filter { reason in
+            // The Epson USB backend reports `offline-report` even while the
+            // queue is idle and accepting jobs. It is not useful as an alert
+            // when the queue is otherwise healthy.
+            if reason == "offline-report" && printerState != .stopped {
+                return false
+            }
+            return true
+        }
+        return filtered.compactMap(PrinterReason.humanReadable)
+    }
+
+    var lowSupplies: [SupplyLevel] {
+        (status?.supplies ?? []).filter(\.isLow)
+    }
+
+    var bookletSignatureLabel: String {
+        guard let plan = bookletPlan else { return L("Auto") }
+        if plan.signatureCount > 1 {
+            return String(format: L("%lld sheets × %lld"), plan.signatureSheetCount, plan.signatureCount)
+        }
+        return FlipFormat.sheets(plan.signatureSheetCount)
+    }
+
+    var selectedDocumentLabel: String {
+        selectedDocument?.name ?? "No document"
+    }
+
+    // MARK: Lifecycle
+
+    func start() {
+        guard !hasStarted else { return }
+        hasStarted = true
+        Task {
+            await loadPrinters()
+            await refreshStatus()
+            await refreshQueue()
+        }
+        Task {
+            await refreshDiscovery()
+        }
+        startMonitoring()
+        cleanUpTemporaryFiles()
+    }
+
+    /// Remove all local working files owned by FlipStack. Called on launch and
+    /// normal termination so a document-derived temporary PDF cannot outlive
+    /// the session.
+    func cleanUpTemporaryFiles() {
+        let base = FileManager.default.temporaryDirectory
+            .appendingPathComponent("FlipStack", isDirectory: true)
+        try? FileManager.default.removeItem(at: base)
+    }
+
+    func refreshAll() async {
+        isRefreshing = true
+        defer { isRefreshing = false }
+        Task { await refreshDiscovery(force: true) }
+        if orchestrator.phase.isActive || flipCalibration != nil {
+            await refreshQueue()
+            await refreshStatus()
+            return
+        }
+        await loadPrinters()
+        await refreshStatus()
+        await refreshQueue()
+    }
+
+    func refreshDiscovery(force: Bool = false) async {
+        if !force,
+           let lastDiscoveryAt,
+           Date().timeIntervalSince(lastDiscoveryAt) < 60 {
+            return
+        }
+        guard !isDiscoveringPrinters else { return }
+        isDiscoveringPrinters = true
+        defer { isDiscoveringPrinters = false }
+        do {
+            let devices = try await printerDiscovery.discoverDevices()
+            guard !Task.isCancelled else { return }
+            discoveredDevices = devices
+            lastDiscoveryAt = Date()
+            discoveryNote = nil
+        } catch is CancellationError {
+            return
+        } catch {
+            discoveredDevices = []
+            lastDiscoveryAt = Date()
+            discoveryNote = error.localizedDescription
+        }
+    }
+
+    private static func normalizedDeviceURI(_ uri: String) -> String {
+        var value = uri.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if let query = value.firstIndex(of: "?") {
+            value = String(value[..<query])
+        }
+        while value.hasSuffix("/") {
+            value.removeLast()
+        }
+        return value
+    }
+
+    func loadPrinters() async {
+        isLoadingPrinters = true
+        defer { isLoadingPrinters = false }
+        do {
+            let list = try await spooler.listPrinters()
+            printers = list
+            if flipCalibration != nil,
+               let selectedPrinter,
+               !list.contains(where: { $0.id == selectedPrinter.id }) {
+                cancelFlipCalibrationWork()
+                flipCalibration = nil
+                flipAxisSetup = nil
+                banner = AppBanner(
+                    kind: .warning,
+                    title: L("The printer is no longer available"),
+                    message: L("Flip setup was canceled. Reconnect the printer and try again.")
+                )
+                self.selectedPrinter = nil
+                ppd = nil
+                status = nil
+                queue = []
+                return
+            }
+            if let selectedPrinter,
+               let refreshed = list.first(where: { $0.id == selectedPrinter.id }) {
+                self.selectedPrinter = refreshed
+                await reloadDetails(for: refreshed)
+            } else if let target = preferredPrinter(in: list) {
+                await selectPrinter(target)
+            } else {
+                self.selectedPrinter = nil
+                ppd = nil
+                status = nil
+                queue = []
+            }
+        } catch {
+            printers = []
+            selectedPrinter = nil
+            ppd = nil
+            status = nil
+            if let calibration = flipCalibration {
+                failFlipCalibration(
+                    "The printer became unavailable during setup. Reconnect it and try again.",
+                    calibrationID: calibration.id
+                )
+            }
+            banner = AppBanner(
+                kind: .error,
+                title: L("The print system is unavailable"),
+                message: error.localizedDescription
+            )
+        }
+    }
+
+    private func preferredPrinter(in list: [Printer]) -> Printer? {
+        if let lastID = preferencesStore.lastPrinterID,
+           let last = list.first(where: { $0.id == lastID }) {
+            return last
+        }
+        if let isDefault = list.first(where: \.isDefault) {
+            return isDefault
+        }
+        return list.first
+    }
+
+    func selectPrinter(_ printer: Printer) async {
+        guard orchestrator.phase.isIdle,
+              !isPreparingPrint,
+              !isMaintenanceBusy,
+              flipCalibration == nil,
+              flipAxisSetup == nil else { return }
+        selectedPrinter = printer
+        localJobIDs.removeAll()
+        localJobTitles.removeAll()
+        preferencesStore.lastPrinterID = printer.id
+        preferences = preferencesStore.load(for: printer.id)
+        qualityOverrides = preferencesStore.loadQualityOverrides(for: printer.id)
+        customPresets = preferencesStore.loadCustomQualityPresets(for: printer.id)
+        selectedCustomPresetID = nil
+        let layout = preferencesStore.loadLayout(for: printer.id)
+        pageOrientation = layout.pageOrientation
+        fitToPage = layout.fitToPage
+        scalePercent = layout.scalePercent
+        closePreview()
+        optionSelection = [:]
+        ppd = nil
+        presetResolver = nil
+        selectedQualityPreset = nil
+        ppdNote = nil
+        status = nil
+        queue = []
+        recomputeBookletPlan()
+        await reloadDetails(for: printer)
+    }
+
+    private func reloadDetails(for printer: Printer) async {
+        let id = printer.id
+        await loadPPD(for: printer)
+        guard selectedPrinter?.id == id else { return }
+        await refreshStatus()
+        await refreshQueue()
+    }
+
+    // MARK: PPD
+
+    private func loadPPD(for printer: Printer) async {
+        isLoadingPPD = true
+        ppdNote = nil
+        let provider = ppdProvider
+        do {
+            let parsed = try await Task.detached(priority: .userInitiated) { () throws -> PPDDocument? in
+                guard let url = provider.locatePPD(for: printer) else { return nil }
+                return try provider.parsePPD(at: url)
+            }.value
+            guard selectedPrinter?.id == printer.id else { return }
+            isLoadingPPD = false
+            guard let parsed, !parsed.isEmpty else {
+                ppd = nil
+                presetResolver = nil
+                selectedQualityPreset = nil
+                ppdNote = L("No driver PPD was found for this queue. Only the system defaults will be used.")
+                return
+            }
+            ppd = parsed
+            let resolver = PrintPresetResolver(ppd: parsed)
+            presetResolver = resolver
+            var selection = defaultSelection(for: parsed)
+            let savedChoices = preferencesStore.loadOptionChoices(for: printer.id)
+            for (keyword, choice) in savedChoices {
+                guard let option = parsed.option(keyword: keyword),
+                      option.choice(keyword: choice) != nil else { continue }
+                selection[keyword] = choice
+            }
+            if savedChoices.isEmpty {
+                let baseColorOption = parsed.option(in: .color)
+                let baseColorKeyword = baseColorOption.flatMap { option in
+                    selection[option.keyword]
+                }
+                let baseWasGrayscale = baseColorOption.flatMap { option -> Bool? in
+                    guard let keyword = baseColorKeyword,
+                          let choice = option.choice(keyword: keyword) else { return nil }
+                    let token = "\(choice.keyword) \(choice.displayLabel)".lowercased()
+                    return token.contains("gray") || token.contains("grey")
+                        || token.contains("mono") || token.contains("black")
+                } ?? false
+
+                let standard = resolver.apply(.standard, to: selection)
+                selection = standard.options
+                if baseWasGrayscale,
+                   let colorOption = baseColorOption,
+                   let grayscaleKeyword = baseColorKeyword {
+                    selection[colorOption.keyword] = grayscaleKeyword
+                }
+                selectedQualityPreset = standard.isComplete
+                    ? .standard
+                    : resolver.matchingPreset(for: selection)
+            } else {
+                selectedQualityPreset = resolver.matchingPreset(for: selection)
+            }
+            optionSelection = selection
+        } catch {
+            guard selectedPrinter?.id == printer.id else { return }
+            isLoadingPPD = false
+            ppd = nil
+            presetResolver = nil
+            selectedQualityPreset = nil
+            ppdNote = L("The driver description could not be read. Only the system defaults will be used.")
+            banner = AppBanner(
+                kind: .warning,
+                title: L("Driver options unavailable"),
+                message: error.localizedDescription
+            )
+        }
+    }
+
+    private func defaultSelection(for document: PPDDocument) -> [String: String] {
+        var selection: [String: String] = [:]
+        for group in [PPDOptionGroup.color, .paperSize, .mediaType, .quality] {
+            for option in document.options where option.group == group {
+                if let value = option.selectedDefault {
+                    selection[option.keyword] = value
+                }
+            }
+        }
+        for option in profileOptions(in: document) {
+            if let value = option.selectedDefault {
+                selection[option.keyword] = value
+            }
+        }
+        return selection
+    }
+
+    private func profileOptions(in document: PPDDocument) -> [PPDOption] {
+        document.options.filter { option in
+            guard !option.choices.isEmpty,
+                  option.group != .paperSize,
+                  option.group != .duplex,
+                  option.group != .color else { return false }
+            let text = (option.keyword + " " + option.label).lowercased()
+            return text.contains("profile") || text.contains("icc")
+        }
+    }
+
+    func selectedValue(for option: PPDOption) -> String {
+        if let value = optionSelection[option.keyword],
+           option.choice(keyword: value) != nil {
+            return value
+        }
+        return option.selectedDefault ?? ""
+    }
+
+    func setValue(_ value: String, for option: PPDOption) {
+        guard option.choice(keyword: value) != nil else { return }
+        optionSelection[option.keyword] = value
+        // Color is a separate choice. Toggling Color / B&W must not erase the
+        // quality preset the user already picked.
+        if option.group != .color {
+            selectedQualityPreset = presetResolver?.matchingPreset(for: optionSelection)
+        }
+        if let id = selectedPrinter?.id {
+            preferencesStore.saveOptionChoices(optionSelection, for: id)
+        }
+    }
+
+    func applyQualityPreset(_ preset: PrintQualityPreset) {
+        guard let resolver = presetResolver else { return }
+        let preserveGrayscale = isGrayscaleSelected
+        let result = resolver.apply(preset, to: optionSelection)
+        optionSelection = result.options
+        selectedCustomPresetID = nil
+        for (keyword, value) in qualityOverrides[preset.rawValue] ?? [:] {
+            guard let option = ppd?.option(keyword: keyword),
+                  option.choice(keyword: value) != nil else { continue }
+            optionSelection[keyword] = value
+        }
+        // Quality and color mode are independent. Applying a quality preset
+        // must not silently put a B&W print back into color.
+        if preserveGrayscale,
+           let colorOption = colorModeOption,
+           let grayscale = grayscaleChoice {
+            optionSelection[colorOption.keyword] = grayscale.keyword
+        }
+        selectedQualityPreset = preset
+        if let id = selectedPrinter?.id {
+            preferencesStore.saveOptionChoices(optionSelection, for: id)
+        }
+    }
+
+    private var currentDriverOptions: [String: String] {
+        guard let ppd else { return [:] }
+        var options: [String: String] = [:]
+        for group in [PPDOptionGroup.color, .paperSize, .mediaType, .quality] {
+            for option in ppd.options where option.group == group && !option.choices.isEmpty {
+                let value = selectedValue(for: option)
+                guard !value.isEmpty, option.choice(keyword: value) != nil else { continue }
+                options[option.keyword] = value
+            }
+        }
+        for option in profileOptions(in: ppd) {
+            let value = selectedValue(for: option)
+            guard !value.isEmpty, option.choice(keyword: value) != nil else { continue }
+            options[option.keyword] = value
+        }
+        return options
+    }
+
+    // MARK: Preferences
+
+    func requestPrint() {
+        guard canPrint, !isShowingSettings, flipAxisSetup == nil, flipCalibration == nil else { return }
+        let needsFlipSetup = mode.usesFlipSetup
+            && (mode == .booklet || pageSelectionInfo.pageCount > 1)
+        if needsFlipSetup, !preferences.hasConfiguredFlip {
+            // Explain the physical setup before sending anything. The guided
+            // screen prints one sheet only when the user explicitly confirms.
+            flipAxisSetup = FlipAxisSetup(autoStartsPrint: true)
+            return
+        }
+        beginPrint()
+    }
+
+    func openFlipAxisSetup() {
+        guard flipCalibration == nil else { return }
+        if let existing = flipAxisSetup {
+            // Do not silently drop a waiting PDF when the maintenance menu is
+            // opened while first-run setup is already on screen.
+            flipAxisSetup = FlipAxisSetup(autoStartsPrint: existing.autoStartsPrint)
+        } else {
+            flipAxisSetup = FlipAxisSetup(autoStartsPrint: false)
+        }
+    }
+
+    func openSettings() {
+        guard orchestrator.phase.isIdle,
+              !isPreparingPrint,
+              !isMaintenanceBusy,
+              flipCalibration == nil,
+              flipAxisSetup == nil else { return }
+        closePreview()
+        isShowingQueue = false
+        isShowingSettings = true
+    }
+
+    func closeSettings() {
+        isShowingSettings = false
+    }
+
+    /// Explicit first-run path: the user pressed "Print setup sheet", so start
+    /// the guided calibration immediately instead of making them confirm the
+    /// same action again on the next screen.
+    func beginGuidedSetup() {
+        guard flipCalibration == nil,
+              flipAxisSetup == nil,
+              orchestrator.phase.isIdle,
+              !isPreparingPrint,
+              !isMaintenanceBusy,
+              selectedPrinter != nil else { return }
+        flipAxisSetup = FlipAxisSetup(autoStartsPrint: false)
+        startFlipCalibration()
+    }
+
+    func completeFlipAxisSetup(flipAxis: FlipAxis, ejectsFaceDown: Bool) {
+        guard flipCalibration == nil else { return }
+        let autoStart = flipAxisSetup?.autoStartsPrint ?? false
+        preferences.flipAxis = flipAxis
+        preferences.ejectsFaceDown = ejectsFaceDown
+        preferences.hasConfiguredFlip = true
+        savePreferences()
+        flipAxisSetup = nil
+        if autoStart {
+            beginPrint()
+        }
+    }
+
+    func dismissFlipAxisSetup() {
+        let hadWaitingDocument = flipAxisSetup?.autoStartsPrint == true
+        cancelFlipCalibrationWork()
+        flipCalibration = nil
+        flipAxisSetup = nil
+        if hadWaitingDocument {
+            banner = AppBanner(
+                kind: .info,
+                title: L("Flip setup canceled"),
+                message: L("Your PDF was not printed.")
+            )
+        }
+    }
+
+    // MARK: Automatic flip calibration
+
+    /// Prints one generic orientation sheet, monitors the real CUPS job, and
+    /// only then reveals the confirmation questions. The real document is never
+    /// sent until calibration is applied.
+    func startFlipCalibration() {
+        guard flipCalibration == nil,
+              let printer = selectedPrinter,
+              orchestrator.phase.isIdle,
+              !isPreparingPrint,
+              !isMaintenanceBusy else {
+            return
+        }
+        closePreview()
+        isShowingQueue = false
+        banner = nil
+        let autoStart = flipAxisSetup?.autoStartsPrint ?? false
+        if flipAxisSetup == nil {
+            flipAxisSetup = FlipAxisSetup(autoStartsPrint: false)
+        }
+        let landscape = pageOrientation == .landscape
+            || (pageOrientation == .automatic && (selectedDocument?.isLandscape ?? false))
+        let suggestedAxis: FlipAxis
+        if mode == .booklet {
+            suggestedAxis = .longEdge
+        } else if preferences.hasConfiguredFlip {
+            suggestedAxis = preferences.flipAxis
+        } else {
+            suggestedAxis = landscape ? .shortEdge : .longEdge
+        }
+        let calibration = FlipCalibration(
+            stage: .printing,
+            autoStartsPrint: autoStart,
+            printerID: printer.id,
+            axis: suggestedAxis,
+            recommendedAxis: suggestedAxis,
+            ejectsFaceDown: preferences.ejectsFaceDown,
+            jobID: nil,
+            hasConfirmedAxis: mode == .booklet
+        )
+        flipCalibration = calibration
+        calibrationTask?.cancel()
+        calibrationTask = Task { [weak self] in
+            await self?.runFlipCalibration(
+                printer: printer,
+                calibrationID: calibration.id
+            )
+        }
+    }
+
+    func retryFlipCalibration() {
+        let autoStart = flipCalibration?.autoStartsPrint
+            ?? flipAxisSetup?.autoStartsPrint
+            ?? false
+        cancelFlipCalibrationWork()
+        flipCalibration = nil
+        if flipAxisSetup == nil {
+            flipAxisSetup = FlipAxisSetup(autoStartsPrint: autoStart)
+        }
+        startFlipCalibration()
+    }
+
+    func setFlipCalibrationAxis(_ axis: FlipAxis) {
+        guard mode != .booklet,
+              var calibration = flipCalibration,
+              calibration.stage == .questions else { return }
+        calibration.axis = axis
+        calibration.hasConfirmedAxis = true
+        flipCalibration = calibration
+    }
+
+    func setFlipCalibrationEjectsFaceDown(_ value: Bool) {
+        guard var calibration = flipCalibration, calibration.stage == .questions else { return }
+        calibration.ejectsFaceDown = value
+        calibration.hasConfirmedTray = true
+        flipCalibration = calibration
+    }
+
+    func applyFlipCalibration() {
+        guard let calibration = flipCalibration,
+              calibration.stage == .questions,
+              calibration.isAnswered,
+              calibration.printerID == selectedPrinter?.id else { return }
+        preferences.flipAxis = mode == .booklet ? .longEdge : calibration.axis
+        preferences.ejectsFaceDown = calibration.ejectsFaceDown
+        preferences.hasConfiguredFlip = true
+        savePreferences()
+        let autoStart = calibration.autoStartsPrint
+        flipCalibration = nil
+        flipAxisSetup = nil
+        banner = AppBanner(
+            kind: .success,
+            title: L("Flip setup calibrated"),
+            message: calibrationSummary(for: calibration)
+        )
+        if autoStart {
+            beginPrint()
+        }
+    }
+
+    /// Leaves the calibration sheet flow but keeps the manual setup surface
+    /// available. The calibration job is cancelled if it is still active.
+    func returnToFlipSetup() {
+        let autoStart = flipCalibration?.autoStartsPrint
+            ?? flipAxisSetup?.autoStartsPrint
+            ?? false
+        cancelFlipCalibrationWork()
+        flipCalibration = nil
+        flipAxisSetup = FlipAxisSetup(autoStartsPrint: autoStart)
+    }
+
+    func cancelFlipCalibration() {
+        cancelFlipCalibrationWork()
+        flipCalibration = nil
+    }
+
+    private func cancelFlipCalibrationWork() {
+        calibrationTask?.cancel()
+        calibrationTask = nil
+        guard let calibration = flipCalibration,
+              let jobID = calibration.jobID else {
+            return
+        }
+        Task { [weak self, spooler] in
+            do {
+                try await spooler.cancel(jobID: jobID, printerID: calibration.printerID)
+            } catch {
+                self?.banner = AppBanner(
+                    kind: .warning,
+                    title: L("Could not cancel the calibration sheet"),
+                    message: L("It may still print. Check the queue before trying again.")
+                )
+            }
+        }
+    }
+
+    private func calibrationSummary(for calibration: FlipCalibration) -> String {
+        String(
+            format: L("%@ · print lands %@."),
+            calibration.axis.label,
+            calibration.ejectsFaceDown ? L("down") : L("up")
+        )
+    }
+
+    func setEjectsFaceDown(_ value: Bool) {
+        preferences.ejectsFaceDown = value
+        if !preferences.hasConfiguredFlip {
+            preferences.hasConfiguredFlip = true
+        }
+        savePreferences()
+    }
+
+    func setFlipAxis(_ axis: FlipAxis) {
+        preferences.flipAxis = axis
+        savePreferences()
+    }
+
+    private func savePreferences() {
+        guard let id = selectedPrinter?.id else { return }
+        preferencesStore.save(preferences, for: id)
+    }
+
+    private func saveLayout() {
+        guard let id = selectedPrinter?.id else { return }
+        preferencesStore.saveLayout(
+            PrintLayoutPreferences(
+                pageOrientation: pageOrientation,
+                fitToPage: fitToPage,
+                scalePercent: scalePercent
+            ),
+            for: id
+        )
+    }
+
+    // MARK: Documents
+
+    func chooseDocument() {
+        guard !isPreparingPrint,
+              !orchestrator.phase.isActive,
+              !isShowingSettings,
+              flipAxisSetup == nil,
+              flipCalibration == nil else { return }
+        let panel = NSOpenPanel()
+        panel.title = L("Choose files")
+        panel.message = L("Pick PDFs, photos, or documents to print. Photos keep their full resolution.")
+        panel.prompt = L("Choose")
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowedContentTypes = DocumentIngest.acceptedContentTypes
+        NSApp.activate(ignoringOtherApps: true)
+        let response = panel.runModal()
+        // AppKit's open panel otherwise persists the last folder as a bookmark
+        // in UserDefaults, which can reveal a user's document location.
+        clearOpenPanelState()
+        guard response == .OK, !panel.urls.isEmpty else { return }
+        Task { await acceptDocuments(urls: panel.urls) }
+    }
+
+    func clearOpenPanelState() {
+        let defaults = UserDefaults.standard
+        for key in [
+            "NSOSPLastRootDirectory",
+            "NSNavPanelExpandedSizeForOpenMode",
+            "NSNavLastRootDirectory",
+            "NSNavLastCurrentDirectory"
+        ] {
+            defaults.removeObject(forKey: key)
+        }
+    }
+
+    func acceptDocument(url: URL) async {
+        await acceptDocuments(urls: [url])
+    }
+
+    /// Accepts any supported file(s): PDFs, photos (JPEG, HEIC, PNG, …), and
+    /// Word/text documents. Non-PDFs are converted to a PDF locally first —
+    /// photos keep their native resolution bit-exact — and the result is
+    /// what the print pipeline sees.
+    func acceptDocuments(urls: [URL]) async {
+        guard !isPreparingPrint,
+              !orchestrator.phase.isActive,
+              !isShowingSettings,
+              flipAxisSetup == nil,
+              flipCalibration == nil else { return }
+        let accepted = urls.filter { DocumentIngest.isAccepted($0) }
+        guard accepted.count == urls.count, !accepted.isEmpty else {
+            banner = AppBanner(
+                kind: .error,
+                title: L("That file can’t be printed"),
+                message: L("FlipStack accepts PDFs, photos (JPEG, HEIC, PNG, TIFF and more), and Word or text documents (.docx, .doc, .rtf, .txt, .html).")
+            )
+            return
+        }
+        if !orchestrator.phase.isIdle {
+            orchestrator.reset()
+            discardWorkingFiles()
+        }
+
+        let sourceKind = DocumentIngest.kind(of: accepted[0])
+        isIngestingDocument = true
+        let pdfURL: URL
+        do {
+            pdfURL = try await Task.detached(priority: .userInitiated) {
+                try DocumentIngest.makePDF(from: accepted)
+            }.value
+        } catch {
+            isIngestingDocument = false
+            banner = AppBanner(
+                kind: .error,
+                title: L("The file could not be prepared"),
+                message: error.localizedDescription
+            )
+            return
+        }
+        isIngestingDocument = false
+        ingestWorkingDirectory = pdfURL.deletingLastPathComponent()
+
+        guard let pdf = PDFDocument(url: pdfURL) else {
+            banner = AppBanner(
+                kind: .error,
+                title: L("The file could not be prepared"),
+                message: L("The converted document could not be read.")
+            )
+            return
+        }
+        guard !pdf.isLocked else {
+            banner = AppBanner(
+                kind: .error,
+                title: L("This PDF is locked"),
+                message: L("Remove the password, then choose the file again.")
+            )
+            return
+        }
+        guard pdf.pageCount > 0 else {
+            banner = AppBanner(
+                kind: .error,
+                title: L("This PDF has no pages"),
+                message: L("Choose a document with at least one page.")
+            )
+            return
+        }
+        let name = accepted[0].lastPathComponent
+        var pageWidth: CGFloat = 595.28
+        var pageHeight: CGFloat = 841.89
+        if let firstPage = pdf.page(at: 0) {
+            let bounds = firstPage.bounds(for: .mediaBox)
+            let rotated90 = firstPage.rotation % 180 != 0
+            pageWidth = abs(rotated90 ? bounds.height : bounds.width)
+            pageHeight = abs(rotated90 ? bounds.width : bounds.height)
+            if pageWidth <= 0 || pageHeight <= 0 {
+                pageWidth = 595.28
+                pageHeight = 841.89
+            }
+        }
+        closePreview()
+        selectedDocument = SelectedDocument(
+            url: pdfURL,
+            name: name,
+            pageCount: pdf.pageCount,
+            pageWidth: pageWidth,
+            pageHeight: pageHeight,
+            formatTag: DocumentIngest.formatTag(for: sourceKind)
+        )
+        pageSelectionMode = .all
+        pageRangeText = ""
+        banner = nil
+        recomputeBookletPlan()
+    }
+
+    func clearDocument() {
+        guard !orchestrator.phase.isActive,
+              flipAxisSetup == nil,
+              flipCalibration == nil else { return }
+        closePreview()
+        discardWorkingFiles()
+        selectedDocument = nil
+        pageSelectionMode = .all
+        pageRangeText = ""
+        bookletPlan = nil
+        localJobIDs.removeAll()
+        localJobTitles.removeAll()
+    }
+
+    // MARK: Preview
+
+    func togglePreview() {
+        if isShowingPreview || isPreparingPreview {
+            closePreview()
+            return
+        }
+        isShowingQueue = false
+        Task { await preparePreview() }
+    }
+
+    func showPreviewBacks(_ showBacks: Bool) {
+        guard previewBacksURL != nil else { return }
+        previewShowsBacks = showBacks
+    }
+
+    private func preparePreview() async {
+        guard let document = selectedDocument else { return }
+        let selection = pageSelectionInfo
+        guard selection.isValid, selection.pageCount > 0 else {
+            banner = AppBanner(
+                kind: .warning,
+                title: L("Check the page range"),
+                message: selection.message ?? "Choose at least one page to preview."
+            )
+            return
+        }
+        let mode = self.mode
+        let printMode = mode
+        let pages = selection.ranges
+        let selectionIsAll = selection.isAll
+        let signature = bookletSignatureSheets > 0 ? bookletSignatureSheets : nil
+        let imposer = bookletImposer
+
+        closePreviewFiles()
+        previewGeneration += 1
+        let generation = previewGeneration
+        isPreparingPreview = true
+        isShowingPreview = false
+        previewShowsBacks = false
+        previewURL = nil
+        previewBacksURL = nil
+
+        var temporaryDirectory: URL?
+        do {
+            var sourceURL = document.url
+            var extractedDirectory: URL?
+            if !selectionIsAll {
+                let pageNumbers = try PDFPageExtractor.pageNumbers(
+                    for: pages,
+                    pageCount: document.pageCount
+                )
+                let directory = Self.workingDirectory(prefix: "PreviewSource")
+                let destination = directory.appendingPathComponent("selected-pages.pdf")
+                try await Task.detached(priority: .userInitiated) {
+                    _ = try PDFPageExtractor.extract(
+                        from: document.url,
+                        pageNumbers: pageNumbers,
+                        to: destination
+                    )
+                }.value
+                extractedDirectory = directory
+                temporaryDirectory = directory
+                sourceURL = destination
+            }
+
+            guard generation == previewGeneration,
+                  !Task.isCancelled,
+                  selectedDocument?.id == document.id,
+                  self.mode == printMode else {
+                if let temporaryDirectory {
+                    try? FileManager.default.removeItem(at: temporaryDirectory)
+                }
+                isPreparingPreview = false
+                return
+            }
+
+            if printMode == .booklet {
+                let output = try await Task.detached(priority: .userInitiated) {
+                    let plan = try imposer.plan(
+                        pageCount: selection.pageCount,
+                        signatureSheets: signature
+                    )
+                    return try imposer.makeDocuments(from: sourceURL, plan: plan)
+                }.value
+                if let extractedDirectory {
+                    try? FileManager.default.removeItem(at: extractedDirectory)
+                }
+                guard generation == previewGeneration,
+                      !Task.isCancelled,
+                      selectedDocument?.id == document.id,
+                      self.mode == printMode else {
+                    imposer.cleanUp(output)
+                    isPreparingPreview = false
+                    return
+                }
+                previewDirectory = output.workingDirectory
+                previewURL = output.frontsURL
+                previewBacksURL = output.backsURL
+            } else {
+                previewDirectory = temporaryDirectory
+                previewURL = sourceURL
+                previewBacksURL = nil
+            }
+            guard generation == previewGeneration, !Task.isCancelled else {
+                closePreviewFiles()
+                isPreparingPreview = false
+                return
+            }
+            isPreparingPreview = false
+            isShowingPreview = true
+        } catch {
+            if let temporaryDirectory {
+                try? FileManager.default.removeItem(at: temporaryDirectory)
+            }
+            guard generation == previewGeneration else { return }
+            isPreparingPreview = false
+            isShowingPreview = false
+            banner = AppBanner(
+                kind: .error,
+                title: L("The preview could not be prepared"),
+                message: error.localizedDescription
+            )
+        }
+    }
+
+    private func closePreview() {
+        previewRefreshTask?.cancel()
+        previewRefreshTask = nil
+        previewGeneration += 1
+        isPreparingPreview = false
+        isShowingPreview = false
+        previewShowsBacks = false
+        previewURL = nil
+        previewBacksURL = nil
+        closePreviewFiles()
+    }
+
+    private func closePreviewFiles() {
+        if let previewDirectory {
+            try? FileManager.default.removeItem(at: previewDirectory)
+            self.previewDirectory = nil
+        }
+    }
+
+    private func recomputeBookletPlan() {
+        guard mode == .booklet, selectedDocument != nil else {
+            bookletPlan = nil
+            return
+        }
+        let selection = pageSelectionInfo
+        guard selection.isValid, selection.pageCount > 0 else {
+            bookletPlan = nil
+            return
+        }
+        let signature = bookletSignatureSheets > 0 ? bookletSignatureSheets : nil
+        bookletPlan = try? bookletImposer.plan(
+            pageCount: selection.pageCount,
+            signatureSheets: signature
+        )
+    }
+
+    // MARK: Print flow
+
+    private func beginPrint() {
+        guard flipAxisSetup == nil, flipCalibration == nil else { return }
+        guard let printer = selectedPrinter, let document = selectedDocument else { return }
+        guard !isPreparingPrint, !orchestrator.phase.isActive else { return }
+        let selection = pageSelectionInfo
+        guard selection.isValid, selection.pageCount > 0 else {
+            banner = AppBanner(
+                kind: .warning,
+                title: L("Check the page range"),
+                message: selection.message ?? "Choose at least one page to print."
+            )
+            return
+        }
+
+        let printMode = mode
+        let selectedPageCount = selection.pageCount
+        let selectedRanges = selection.ranges
+        let source = document
+        let signature = bookletSignatureSheets > 0 ? bookletSignatureSheets : nil
+        let imposer = bookletImposer
+        let requestedScale = scalePercent
+        let useFitToPage = fitToPage
+
+        closePreview()
+        activePrintMode = printMode
+        isPreparingPrint = true
+        banner = nil
+        preparationGeneration += 1
+        let generation = preparationGeneration
+
+        preparationTask = Task { [weak self] in
+            guard let self else { return }
+            var preparedSelectionDirectory: URL?
+
+            @MainActor func isCurrent() -> Bool {
+                !Task.isCancelled && self.preparationGeneration == generation
+            }
+
+            @MainActor func finishPreparation() {
+                guard self.preparationGeneration == generation else { return }
+                self.isPreparingPrint = false
+                self.preparationTask = nil
+            }
+
+            do {
+                var sourceURL = source.url
+                if !selection.isAll {
+                    let pages = try PDFPageExtractor.pageNumbers(
+                        for: selectedRanges,
+                        pageCount: source.pageCount
+                    )
+                    let directory = Self.workingDirectory(prefix: "Pages")
+                    let destination = directory.appendingPathComponent("selected-pages.pdf")
+                    try await Task.detached(priority: .userInitiated) {
+                        _ = try PDFPageExtractor.extract(
+                            from: source.url,
+                            pageNumbers: pages,
+                            to: destination
+                        )
+                    }.value
+                    guard isCurrent() else {
+                        try? FileManager.default.removeItem(at: directory)
+                        finishPreparation()
+                        return
+                    }
+                    preparedSelectionDirectory = directory
+                    sourceURL = destination
+                }
+
+                if printMode != .booklet,
+                   !useFitToPage,
+                   requestedScale != 100 {
+                    let directory = preparedSelectionDirectory
+                        ?? Self.workingDirectory(prefix: "Scale")
+                    preparedSelectionDirectory = directory
+                    let destination = directory.appendingPathComponent("scaled-pages.pdf")
+                    try await Task.detached(priority: .userInitiated) {
+                        _ = try PDFPageScaler.scale(
+                            from: sourceURL,
+                            to: destination,
+                            percent: requestedScale
+                        )
+                    }.value
+                    guard isCurrent() else {
+                        try? FileManager.default.removeItem(at: directory)
+                        finishPreparation()
+                        return
+                    }
+                    sourceURL = destination
+                }
+
+                guard isCurrent(),
+                      self.selectedDocument?.id == source.id,
+                      self.selectedPrinter?.id == printer.id,
+                      self.mode == printMode else {
+                    if let preparedSelectionDirectory {
+                        try? FileManager.default.removeItem(at: preparedSelectionDirectory)
+                    }
+                    finishPreparation()
+                    return
+                }
+
+                // Only discard selection/scale working copies here. The ingested
+                // document itself lives in ingestWorkingDirectory and is the file
+                // being submitted — it is cleaned up when the flow ends.
+                self.discardSelectionWorkingDirectory()
+                if let preparedSelectionDirectory {
+                    self.selectionWorkingDirectory = preparedSelectionDirectory
+                }
+
+                let configuration = self.makeConfiguration(
+                    for: printer,
+                    flipAxis: printMode == .booklet ? .longEdge : self.preferences.flipAxis
+                )
+                let orientation = self.printOrientation
+
+                switch printMode {
+                case .singleSided:
+                    let job = try DuplexDocument.singleSided(
+                        fileURL: sourceURL,
+                        pageCount: selectedPageCount,
+                        title: source.title,
+                        orientation: orientation
+                    )
+                    guard isCurrent() else {
+                        finishPreparation()
+                        return
+                    }
+                    finishPreparation()
+                    self.launch(job, configuration: configuration)
+
+                case .manualDuplex:
+                    var job = try DuplexDocument.manualDuplex(
+                        fileURL: sourceURL,
+                        pageCount: selectedPageCount,
+                        title: source.title
+                    )
+                    job.firstPass.orientation = orientation
+                    job.secondPass.orientation = preferences.flipAxis == .shortEdge
+                        ? orientation.rotated180
+                        : orientation
+                    guard isCurrent() else {
+                        finishPreparation()
+                        return
+                    }
+                    finishPreparation()
+                    self.launch(job, configuration: configuration)
+
+                case .booklet:
+                    let output = try await Task.detached(priority: .userInitiated) {
+                        let plan = try imposer.plan(
+                            pageCount: selectedPageCount,
+                            signatureSheets: signature
+                        )
+                        return try imposer.makeDocuments(from: sourceURL, plan: plan)
+                    }.value
+
+                    guard isCurrent(),
+                          self.selectedDocument?.id == source.id,
+                          self.selectedPrinter?.id == printer.id,
+                          self.mode == printMode else {
+                        imposer.cleanUp(output)
+                        finishPreparation()
+                        return
+                    }
+                    self.bookletDocuments = output
+                    self.discardSelectionWorkingDirectory()
+                    let imposed = self.makeBookletDocument(output, title: source.title)
+                    finishPreparation()
+                    self.launch(imposed, configuration: configuration)
+                }
+            } catch {
+                if let preparedSelectionDirectory {
+                    if self.selectionWorkingDirectory == preparedSelectionDirectory {
+                        self.selectionWorkingDirectory = nil
+                    }
+                    try? FileManager.default.removeItem(at: preparedSelectionDirectory)
+                }
+                guard isCurrent() else {
+                    finishPreparation()
+                    return
+                }
+                finishPreparation()
+                self.banner = AppBanner(
+                    kind: .error,
+                    title: L("The document could not be prepared"),
+                    message: error.localizedDescription
+                )
+            }
+        }
+    }
+
+    private static func workingDirectory(prefix: String) -> URL {
+        // SecureTemp creates the directory with 0700 at creation time.
+        if let directory = try? SecureTemp.makeDirectory(prefix: prefix) {
+            return directory
+        }
+        return FileManager.default.temporaryDirectory
+            .appendingPathComponent("FlipStack-\(UUID().uuidString)", isDirectory: true)
+    }
+
+    private func makeBookletDocument(_ output: BookletDocuments, title: String) -> DuplexDocument {
+        let plan = output.plan
+        return DuplexDocument(
+            title: "\(title) booklet",
+            sourcePageCount: plan.sourcePageCount,
+            sheetCount: plan.sheetCount,
+            firstPass: PrintSource(
+                fileURL: output.frontsURL,
+                pageSet: .all,
+                pageCount: plan.sheetCount,
+                numberUp: 2
+            ),
+            secondPass: PrintSource(
+                fileURL: output.backsURL,
+                pageSet: .all,
+                pageCount: plan.sheetCount,
+                numberUp: 2
+            ),
+            isBooklet: true,
+            hasOddPageCount: false
+        )
+    }
+
+    private func makeConfiguration(for printer: Printer, flipAxis: FlipAxis) -> DuplexConfiguration {
+        DuplexConfiguration(
+            printerID: printer.id,
+            printerName: printer.displayName,
+            flipAxis: flipAxis,
+            ejectsFaceDown: preferences.ejectsFaceDown,
+            driverOptions: currentDriverOptions,
+            copies: activePrintMode == .singleSided ? max(1, copies) : 1,
+            // If there is no PPD we cannot prove the queue is simplex. Force
+            // each pass to one side rather than risk a driver auto-duplexing
+            // the manual pass.
+            forceOneSidedPasses: activePrintMode != .singleSided
+                && (ppd == nil || ppd?.supportsHardwareDuplex == true),
+            fitToPage: activePrintMode != .booklet && fitToPage,
+            // Non-booklet documents are scaled into a temporary PDF before
+            // submission, so CUPS must not scale them a second time.
+            scalePercent: 100
+        )
+    }
+
+    private func launch(_ document: DuplexDocument, configuration: DuplexConfiguration) {
+        let task = orchestrator.start(document: document, configuration: configuration)
+        track(task)
+    }
+
+    private func track(_ task: Task<Void, Never>) {
+        Task { [weak self] in
+            await task.value
+            guard let self else { return }
+            switch self.orchestrator.phase {
+            case .completed, .cancelled, .failed:
+                self.localJobIDs.removeAll()
+                self.localJobTitles.removeAll()
+                if case .completed = self.orchestrator.phase { self.discardWorkingFiles() }
+                if case .cancelled = self.orchestrator.phase { self.discardWorkingFiles() }
+            default:
+                break
+            }
+            await self.refreshQueue()
+            await self.refreshStatus()
+        }
+    }
+
+    func confirmFlip() {
+        orchestrator.confirmFlip()
+        // The flip notification is a transient handoff. Once the user has
+        // confirmed in-app it must not linger with a stale Cancel action.
+        NotificationCenter.default.post(name: .flipStackConfirmHandled, object: nil)
+    }
+
+    func cancelFlow() {
+        if isPreparingPrint {
+            preparationGeneration += 1
+            preparationTask?.cancel()
+            preparationTask = nil
+            isPreparingPrint = false
+            discardWorkingFiles()
+            banner = AppBanner(
+                kind: .info,
+                title: L("Preparation canceled"),
+                message: L("No pages were sent to the printer.")
+            )
+            return
+        }
+        orchestrator.cancel()
+    }
+
+    func startOver() {
+        guard !orchestrator.phase.isActive else { return }
+        orchestrator.reset()
+        discardWorkingFiles()
+        beginPrint()
+    }
+
+    func retryBacks() {
+        if let task = orchestrator.retryBacks() {
+            track(task)
+        }
+    }
+
+    func resetFlow() {
+        guard !orchestrator.phase.isActive else { return }
+        orchestrator.reset()
+        localJobIDs.removeAll()
+        localJobTitles.removeAll()
+        discardWorkingFiles()
+    }
+
+    private func discardWorkingFiles() {
+        if let directory = ingestWorkingDirectory {
+            try? FileManager.default.removeItem(at: directory)
+            ingestWorkingDirectory = nil
+        }
+        if let documents = bookletDocuments {
+            bookletImposer.cleanUp(documents)
+            bookletDocuments = nil
+        }
+        discardSelectionWorkingDirectory()
+    }
+
+    private func discardSelectionWorkingDirectory() {
+        if let directory = selectionWorkingDirectory {
+            try? FileManager.default.removeItem(at: directory)
+            selectionWorkingDirectory = nil
+        }
+    }
+
+    // MARK: Status and queue
+
+    func refreshStatus() async {
+        guard let printer = selectedPrinter, !isRefreshingStatus else { return }
+        isRefreshingStatus = true
+        defer { isRefreshingStatus = false }
+        let newStatus = await statusProvider.status(for: printer)
+        guard selectedPrinter?.id == printer.id else { return }
+        status = newStatus
+        if var current = selectedPrinter {
+            current.state = newStatus.state
+            current.stateReasons = newStatus.stateReasons
+            if let acceptsJobs = newStatus.acceptsJobs {
+                current.acceptsJobs = acceptsJobs
+            }
+            selectedPrinter = current
+            if let index = printers.firstIndex(where: { $0.id == current.id }) {
+                printers[index] = current
+            }
+        }
+    }
+
+    /// The CUPS title is intentionally generic. Keep the friendly local name
+    /// in memory for the queue panel, never in the submitted job metadata.
+    func jobDisplayTitle(_ job: PrintJob) -> String {
+        if let title = localJobTitles[job.id], !title.isEmpty {
+            return title
+        }
+        return job.title.isEmpty ? "Job \(job.id)" : job.title
+    }
+
+    private func rememberLocalJob(_ job: PrintJob, pass: DuplexPass) {
+        localJobIDs.insert(job.id)
+        guard let document = selectedDocument else { return }
+        let suffix: String
+        switch activePrintMode {
+        case .singleSided:
+            suffix = ""
+        case .manualDuplex:
+            suffix = " — \(L(pass.rawValue))"
+        case .booklet:
+            suffix = String(format: L(" — booklet %@"), L(pass.rawValue))
+        }
+        localJobTitles[job.id] = "\(document.title)\(suffix)"
+    }
+
+    private func rememberLocalJob(_ job: PrintJob, title: String) {
+        localJobIDs.insert(job.id)
+        localJobTitles[job.id] = title
+    }
+
+    func refreshQueue() async {
+        guard let printer = selectedPrinter, !isRefreshingQueue else { return }
+        isRefreshingQueue = true
+        defer { isRefreshingQueue = false }
+        do {
+            async let active = spooler.activeJobs(printerID: printer.id)
+            async let recent = spooler.recentJobs(printerID: printer.id, limit: 8)
+            let (activeJobs, recentJobs) = try await (active, recent)
+            guard selectedPrinter?.id == printer.id else { return }
+            var byID: [Int: PrintJob] = [:]
+            for job in recentJobs { byID[job.id] = job }
+            for job in activeJobs { byID[job.id] = job }
+            let currentUser = NSUserName()
+            queue = byID.values
+                .filter { $0.isVisible(to: currentUser, localJobIDs: localJobIDs) }
+                .sorted { lhs, rhs in
+                    if lhs.isActive != rhs.isActive { return lhs.isActive }
+                    if lhs.id != rhs.id { return lhs.id > rhs.id }
+                    return lhs.title < rhs.title
+                }
+            queueError = nil
+        } catch {
+            queueError = error.localizedDescription
+        }
+    }
+
+    func cancelQueuedJob(_ job: PrintJob) async {
+        guard job.isVisible(to: NSUserName(), localJobIDs: localJobIDs) else { return }
+        do {
+            try await spooler.cancel(jobID: job.id, printerID: job.printerID)
+            await refreshQueue()
+        } catch {
+            banner = AppBanner(
+                kind: .error,
+                title: L("Could not cancel the job"),
+                message: error.localizedDescription
+            )
+        }
+    }
+
+    private func startMonitoring() {
+        monitorTask?.cancel()
+        monitorTask = Task { [weak self] in
+            while !Task.isCancelled {
+                let active = self?.orchestrator.phase.isActive ?? false
+                let interval: UInt64 = active ? 3_000_000_000 : 20_000_000_000
+                try? await Task.sleep(nanoseconds: interval)
+                guard !Task.isCancelled, let self else { return }
+                if self.selectedPrinter != nil {
+                    await self.refreshStatus()
+                    await self.refreshQueue()
+                }
+            }
+        }
+    }
+
+    private func updateQueuePolling() {
+        queueMonitorTask?.cancel()
+        queueMonitorTask = nil
+        guard isShowingQueue else { return }
+        queueMonitorTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                guard !Task.isCancelled, let self, self.isShowingQueue else { return }
+                await self.refreshQueue()
+            }
+        }
+    }
+
+    // MARK: Automatic flip calibration
+
+    private func runFlipCalibration(printer: Printer, calibrationID: UUID) async {
+        guard !Task.isCancelled,
+              flipCalibration?.id == calibrationID else { return }
+        var sheetURL: URL?
+        do {
+            let url = try PrintUtilities.makeFlipCalibrationPage()
+            sheetURL = url
+            var options = currentDriverOptions
+            options["sides"] = "one-sided"
+            // A calibration sheet must never inherit a stale Duplex value.
+            options = options.filter { $0.key.lowercased() != "duplex" }
+            let request = PrintRequest(
+                fileURL: url,
+                printerID: printer.id,
+                title: L("FlipStack calibration sheet"),
+                pageSet: .all,
+                copies: 1,
+                // The orientation sheet is designed in portrait and its edge
+                // labels are only meaningful in that orientation.
+                orientation: .portrait,
+                driverOptions: options,
+                fitToPage: true
+            )
+            guard !Task.isCancelled else {
+                try? FileManager.default.removeItem(at: url)
+                return
+            }
+            let job = try await spooler.submit(request)
+            rememberLocalJob(job, title: L("FlipStack calibration sheet"))
+            // CUPS has consumed the document by the time submit returns.
+            try? FileManager.default.removeItem(at: url)
+            sheetURL = nil
+            guard !Task.isCancelled,
+                  var calibration = flipCalibration,
+                  calibration.id == calibrationID,
+                  selectedPrinter?.id == printer.id else {
+                try? await spooler.cancel(jobID: job.id, printerID: printer.id)
+                if !Task.isCancelled {
+                    failFlipCalibration(
+                        "The selected printer changed during setup. Choose it again and print a new sheet.",
+                        calibrationID: calibrationID
+                    )
+                }
+                return
+            }
+            calibration.jobID = job.id
+            calibration.jobStartedAt = Date()
+            calibration.stage = .printing
+            flipCalibration = calibration
+            await refreshQueue()
+            await monitorFlipCalibration(
+                jobID: job.id,
+                printer: printer,
+                calibrationID: calibrationID
+            )
+        } catch {
+            if let sheetURL {
+                try? FileManager.default.removeItem(at: sheetURL)
+            }
+            guard !Task.isCancelled else { return }
+            failFlipCalibration(
+                "The calibration sheet could not be sent to \(printer.displayName).",
+                calibrationID: calibrationID
+            )
+        }
+    }
+
+    private func monitorFlipCalibration(
+        jobID: Int,
+        printer: Printer,
+        calibrationID: UUID
+    ) async {
+        let deadline = Date().addingTimeInterval(10 * 60)
+        var lookupErrors = 0
+        var missingSince: Date?
+
+        while !Task.isCancelled {
+            guard let calibration = flipCalibration,
+                  calibration.id == calibrationID,
+                  calibration.jobID == jobID else {
+                return
+            }
+            guard selectedPrinter?.id == printer.id else {
+                failFlipCalibration(
+                    "The selected printer changed during setup. Choose it again and print a new sheet.",
+                    calibrationID: calibrationID
+                )
+                return
+            }
+
+            do {
+                guard let job = try await spooler.job(id: jobID, printerID: printer.id) else {
+                    guard flipCalibration?.id == calibrationID else { return }
+                    if missingSince == nil { missingSince = Date() }
+                    if let recent = try? await spooler.recentJobs(
+                        printerID: printer.id,
+                        limit: 20
+                    ), let finished = recent.first(where: { $0.id == jobID }) {
+                        switch finished.state {
+                        case .completed:
+                            guard var current = flipCalibration,
+                                  current.id == calibrationID else { return }
+                            if let started = current.jobStartedAt,
+                               let finishedAt = finished.createdAt,
+                               finishedAt.addingTimeInterval(1) < started {
+                                break
+                            }
+                            current.stage = .questions
+                            current.jobID = nil
+                            current.jobStartedAt = nil
+                            current.hasConfirmedTray = false
+                            current.hasConfirmedAxis = mode == .booklet
+                            flipCalibration = current
+                            await refreshQueue()
+                            await refreshStatus()
+                            return
+                        case .canceled, .aborted, .stopped:
+                            failFlipCalibration(
+                                "The calibration sheet was \(finished.state.label.lowercased()).",
+                                calibrationID: calibrationID
+                            )
+                            return
+                        default:
+                            break
+                        }
+                    }
+                    if let missingSince,
+                       Date().timeIntervalSince(missingSince) >= 10 {
+                        failFlipCalibration(
+                            "The printer no longer reports the calibration job. Check the sheet in the tray, then try again if needed.",
+                            calibrationID: calibrationID
+                        )
+                        return
+                    }
+                    try? await Task.sleep(nanoseconds: 400_000_000)
+                    continue
+                }
+                guard flipCalibration?.id == calibrationID else { return }
+                lookupErrors = 0
+                missingSince = nil
+                switch job.state {
+                case .completed:
+                    guard var current = flipCalibration,
+                          current.id == calibrationID else { return }
+                    if let started = current.jobStartedAt,
+                       let finishedAt = job.createdAt,
+                       finishedAt.addingTimeInterval(1) < started {
+                        break
+                    }
+                    current.stage = .questions
+                    current.jobID = nil
+                    current.jobStartedAt = nil
+                    current.hasConfirmedTray = false
+                    current.hasConfirmedAxis = mode == .booklet
+                    flipCalibration = current
+                    await refreshQueue()
+                    await refreshStatus()
+                    return
+                case .canceled, .aborted, .stopped:
+                    failFlipCalibration(
+                        "The calibration sheet was \(job.state.label.lowercased()).",
+                        calibrationID: calibrationID
+                    )
+                    return
+                default:
+                    break
+                }
+            } catch {
+                lookupErrors += 1
+                if lookupErrors >= 15 {
+                    failFlipCalibration(
+                        "FlipStack could not read the calibration job.",
+                        calibrationID: calibrationID
+                    )
+                    return
+                }
+            }
+
+            if Date() >= deadline {
+                try? await spooler.cancel(jobID: jobID, printerID: printer.id)
+                failFlipCalibration(
+                    "The calibration sheet waited too long. Check the printer, then try again.",
+                    calibrationID: calibrationID
+                )
+                return
+            }
+
+            do {
+                try await Task.sleep(nanoseconds: 400_000_000)
+            } catch {
+                return
+            }
+        }
+    }
+
+    private func failFlipCalibration(_ message: String, calibrationID: UUID? = nil) {
+        guard var calibration = flipCalibration,
+              calibrationID == nil || calibration.id == calibrationID else { return }
+        let jobID = calibration.jobID
+        let printerID = calibration.printerID
+        calibration.stage = .failed(message)
+        calibration.jobID = nil
+        flipCalibration = calibration
+        if let jobID {
+            Task { [spooler] in
+                try? await spooler.cancel(jobID: jobID, printerID: printerID)
+            }
+        }
+        Task { await refreshQueue() }
+    }
+
+    // MARK: Maintenance
+
+    func printTestPage() async {
+        await printUtility(title: L("FlipStack test page")) { printerName in
+            try PrintUtilities.makeTestPage(printerName: printerName)
+        }
+    }
+
+    func printAlignmentPage() async {
+        await printUtility(title: L("FlipStack head alignment")) { printerName in
+            try PrintUtilities.makeAlignmentPage(printerName: printerName)
+        }
+    }
+
+    /// A standalone copy of the generic orientation sheet. Useful after a tray
+    /// or output setting changed, without starting the calibration questions.
+    func printOrientationSheet() async {
+        await printUtility(title: L("FlipStack orientation sheet"), fitToPage: true) { _ in
+            try PrintUtilities.makeFlipCalibrationPage()
+        }
+    }
+
+    private func printUtility(
+        title: String,
+        fitToPage: Bool = false,
+        makePDF: (String) throws -> URL
+    ) async {
+        guard let printer = selectedPrinter, !isMaintenanceBusy,
+              !isCalibrating,
+              orchestrator.phase.isIdle, !isPreparingPrint else { return }
+        isMaintenanceBusy = true
+        defer { isMaintenanceBusy = false }
+        do {
+            let url = try makePDF(printer.displayName)
+            defer { try? FileManager.default.removeItem(at: url) }
+            var options = currentDriverOptions
+            options = options.filter { $0.key.lowercased() != "duplex" }
+            options["sides"] = "one-sided"
+            let request = PrintRequest(
+                fileURL: url,
+                printerID: printer.id,
+                title: title,
+                copies: 1,
+                driverOptions: options,
+                fitToPage: fitToPage
+            )
+            let job = try await spooler.submit(request)
+            rememberLocalJob(job, title: title)
+            await refreshQueue()
+            banner = AppBanner(
+                kind: .success,
+                title: String(format: L("%@ sent"), title),
+                message: String(format: L("Job %lld is in the queue for %@."), job.id, printer.displayName)
+            )
+        } catch {
+            banner = AppBanner(
+                kind: .error,
+                title: String(format: L("Could not print %@"), title.lowercased()),
+                message: error.localizedDescription
+            )
+        }
+    }
+
+    // MARK: Banner
+
+    func dismissBanner() {
+        banner = nil
+    }
+
+}
+
+
+extension Notification.Name {
+    static let flipStackLanguageChanged = Notification.Name("FlipStack.languageChanged")
+}
+
+
+extension Notification.Name {
+    static let flipStackConfirmHandled = Notification.Name("FlipStack.flipConfirmHandled")
+}

@@ -2,6 +2,7 @@ import FlipStackCore
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// Step 1 of the workflow: drop any supported file (or pick one).
 @MainActor
 struct DocumentSection: View {
     @ObservedObject var model: AppModel
@@ -52,7 +53,7 @@ struct DocumentSection: View {
                 .multilineTextAlignment(.center)
                 .accessibilityAddTraits(.isHeader)
 
-            Text("PDFs, photos (JPEG, HEIC, PNG and more — full resolution), and Word or text documents. FlipStack prints the fronts, pauses while you flip the stack, then prints the backs.")
+            Text("PDFs, photos (JPEG, HEIC, PNG and more — full resolution), and Word or text documents.")
                 .font(FlipType.footnote)
                 .foregroundStyle(FlipColor.secondaryInk)
                 .multilineTextAlignment(.center)
@@ -88,16 +89,10 @@ struct DocumentSection: View {
         .overlay {
             if isTargeted {
                 RoundedRectangle(cornerRadius: FlipMetrics.cardRadius, style: .continuous)
-                    .strokeBorder(
-                        FlipColor.coral,
-                        style: StrokeStyle(lineWidth: 1.2, dash: [5, 4])
-                    )
+                    .strokeBorder(FlipColor.coral, style: StrokeStyle(lineWidth: 1.2, dash: [5, 4]))
             } else {
                 RoundedRectangle(cornerRadius: FlipMetrics.cardRadius, style: .continuous)
-                    .strokeBorder(
-                        FlipColor.hairline,
-                        style: StrokeStyle(lineWidth: 0.8, dash: [4, 4])
-                    )
+                    .strokeBorder(FlipColor.hairline, style: StrokeStyle(lineWidth: 0.8, dash: [4, 4]))
             }
         }
         .contentShape(Rectangle())
@@ -105,16 +100,6 @@ struct DocumentSection: View {
     }
 
     // MARK: Selected document
-
-    private func documentSubtitle(_ document: SelectedDocument) -> String {
-        let selection = model.pageSelectionInfo
-        if selection.isValid,
-           !selection.isAll,
-           selection.pageCount > 0 {
-            return selection.summary
-        }
-        return document.formattedPageCount
-    }
 
     private func selectedRow(_ document: SelectedDocument) -> some View {
         HStack(spacing: 11) {
@@ -126,38 +111,21 @@ struct DocumentSection: View {
                     .foregroundStyle(FlipColor.ink)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(documentSubtitle(document))
-                        .font(FlipType.caption)
-                        .foregroundStyle(FlipColor.secondaryInk)
-                        .lineLimit(1)
-                    Text(document.pageSizeText)
-                        .font(FlipType.caption)
-                        .foregroundStyle(FlipColor.tertiaryInk)
-                        .lineLimit(1)
-                }
+                Text(model.pageSelectionInfo.isValid ? model.pageSelectionInfo.summary : document.formattedPageCount)
+                    .font(FlipType.caption)
+                    .foregroundStyle(FlipColor.secondaryInk)
+                    .lineLimit(1)
+                Text(document.pageSizeText)
+                    .font(FlipType.caption)
+                    .foregroundStyle(FlipColor.tertiaryInk)
+                    .lineLimit(1)
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Document, \(document.name), \(documentSubtitle(document)), \(document.pageSizeText)")
+            .accessibilityLabel("Document, \(document.name), \(document.pageSizeText)")
 
             Spacer(minLength: 2)
 
             HStack(spacing: 5) {
-                Button {
-                    model.togglePreview()
-                } label: {
-                    if model.isPreparingPreview {
-                        ProgressView().controlSize(.mini)
-                    } else {
-                        Image(systemName: model.isShowingPreview ? "eye.slash" : "eye")
-                    }
-                }
-                .buttonStyle(FlipIconButtonStyle())
-                .disabled(isBusy)
-                .help(model.isShowingPreview ? "Close preview" : "Preview print file")
-                .accessibilityLabel(model.isShowingPreview ? "Close print preview" : "Preview print file")
-                .accessibilityHint("Shows the pages that will be sent to the printer inside this panel.")
-
                 Button {
                     model.chooseDocument()
                 } label: {
@@ -165,8 +133,8 @@ struct DocumentSection: View {
                 }
                 .buttonStyle(FlipIconButtonStyle())
                 .disabled(isBusy)
-                .help("Replace PDF")
-                .accessibilityLabel("Replace PDF")
+                .help("Replace file")
+                .accessibilityLabel("Replace file")
 
                 Button {
                     withAnimation(FlipMotion.quick(reduceMotion)) {
@@ -177,9 +145,8 @@ struct DocumentSection: View {
                 }
                 .buttonStyle(FlipIconButtonStyle())
                 .disabled(isBusy)
-                .help("Remove PDF")
-                .accessibilityLabel("Remove PDF")
-                .accessibilityHint("Clears the selected document.")
+                .help("Remove file")
+                .accessibilityLabel("Remove file")
             }
         }
         .padding(.horizontal, 12)
@@ -199,17 +166,6 @@ struct DocumentSection: View {
             } else {
                 RoundedRectangle(cornerRadius: FlipMetrics.cardRadius, style: .continuous)
                     .strokeBorder(FlipColor.hairline, lineWidth: 0.5)
-            }
-        }
-        .overlay {
-            if isTargeted {
-                Text("Drop to replace")
-                    .font(FlipType.footnoteStrong)
-                    .foregroundStyle(FlipColor.onCoral)
-                    .padding(.horizontal, 11)
-                    .padding(.vertical, 5)
-                    .background(Capsule().fill(FlipColor.coral))
-                    .transition(.opacity)
             }
         }
     }

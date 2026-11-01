@@ -66,26 +66,6 @@ enum PageSelectionMode: String, CaseIterable, Identifiable {
     }
 }
 
-/// One entry in the quality picker: a built-in preset (Eco/Standard/High/
-/// Photo) or a user-defined custom preset, unified by a stable id.
-struct QualityPresetItem: Identifiable, Equatable {
-    let id: String
-    let title: String
-    let isCustom: Bool
-
-    init(preset: PrintQualityPreset) {
-        self.id = preset.rawValue
-        self.title = preset.title
-        self.isCustom = false
-    }
-
-    init(custom: CustomQualityPreset) {
-        self.id = custom.id
-        self.title = custom.name
-        self.isCustom = true
-    }
-}
-
 struct PageSelectionInfo: Equatable {
     var mode: PageSelectionMode
     var ranges: [PageRange]
@@ -168,6 +148,18 @@ final class AppModel: ObservableObject {
     @Published private(set) var isRefreshing = false
     @Published private(set) var ppdNote: String?
     @Published private(set) var discoveredDevices: [DiscoveredPrinter] = []
+
+    var discoveredPrinters: [DiscoveredPrinter] {
+        let queuedURIs = Set(
+            printers
+                .compactMap(\.deviceURI)
+                .map(Self.normalizedDeviceURI)
+        )
+        return discoveredDevices.filter {
+            !queuedURIs.contains(Self.normalizedDeviceURI($0.uri))
+        }
+    }
+
     @Published private(set) var isDiscoveringPrinters = false
     @Published private(set) var discoveryNote: String?
 
@@ -195,8 +187,6 @@ final class AppModel: ObservableObject {
                 copies = 1
             }
             preferencesStore.lastPrintMode = mode
-            closePreview()
-            recomputeBookletPlan()
         }
     }
     @Published var pageSelectionMode: PageSelectionMode = .all {
@@ -207,29 +197,15 @@ final class AppModel: ObservableObject {
                let document = selectedDocument {
                 pageRangeText = "1-\(document.pageCount)"
             }
-            if !isAdjustingSelectionFromPreview {
-                closePreview()
-            }
-            recomputeBookletPlan()
         }
     }
     @Published var pageRangeText: String = "" {
         didSet {
             guard oldValue != pageRangeText else { return }
-            if !isAdjustingSelectionFromPreview {
-                closePreview()
-            }
-            recomputeBookletPlan()
         }
     }
-    private var isAdjustingSelectionFromPreview = false
     @Published private(set) var activePrintMode: PrintMode = .manualDuplex
     @Published private(set) var selectedQualityPreset: PrintQualityPreset?
-    @Published private(set) var selectedCustomPresetID: String?
-    /// Overrides keyed by preset id: a built-in preset's raw value, or a
-    /// custom preset's id.
-    @Published private(set) var qualityOverrides: [String: [String: String]] = [:]
-    @Published private(set) var customPresets: [CustomQualityPreset] = []
     @Published var pageOrientation: PageOrientationChoice = .automatic {
         didSet {
             guard oldValue != pageOrientation else { return }
@@ -254,70 +230,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    // MARK: Preview geometry (macOS print-panel semantics)
-
-    /// The selected paper's physical size in PostScript points, from the
-    /// PPD's own `*PaperDimension` when it declares one, otherwise from the
-    /// standard page-size catalog. Nil when no paper option exists.
-    var selectedPaperSize: CGSize? {
-        guard let option = paperSizeOption else { return nil }
-        return ppd?.paperSize(for: selectedValue(for: option))
-    }
-
-    /// The printable rectangle of the selected paper, when the PPD declares it.
-    var selectedImageableArea: CGRect? {
-        guard let option = paperSizeOption else { return nil }
-        return ppd?.imageableArea(for: selectedValue(for: option))
-    }
-
-    /// The paper sheet shown in the preview and setup diagram, in points, in
-    /// the paper's own orientation. Falls back to the document's page size.
-    var previewSheetSize: CGSize {
-        if let paper = selectedPaperSize {
-            return paper
-        }
-        if let document = selectedDocument {
-            return CGSize(width: document.pageWidth, height: document.pageHeight)
-        }
-        return CGSize(width: 595.28, height: 841.89)
-    }
-
-    /// The page content box as it lands on the sheet, in points: the document
-    /// page with width and height swapped when the print orientation rotates
-    /// it 90 degrees.
-    var previewContentSize: CGSize {
-        guard let document = selectedDocument else { return previewSheetSize }
-        let rotates = printOrientation == .landscape || printOrientation == .reverseLandscape
-        if rotates != document.isLandscape {
-            return CGSize(width: document.pageHeight, height: document.pageWidth)
-        }
-        return CGSize(width: document.pageWidth, height: document.pageHeight)
-    }
-
-    /// The rotation applied to the content on the sheet, in degrees.
-    var previewContentRotation: Double {
-        switch printOrientation {
-        case .portrait: return 0
-        case .landscape: return 90
-        case .reverseLandscape: return -90
-        case .reversePortrait: return 180
-        }
-    }
-
-    /// The scale applied to the content inside the sheet. This mirrors what
-    /// CUPS does at print time: `fit-to-page` scales the page to fit the
-    /// paper; an exact percentage scales the page itself. The sheet never
-    /// changes size — exactly like the macOS print panel preview.
-    var previewContentScale: CGFloat {
-        guard !fitToPage else {
-            let sheet = previewSheetSize
-            let content = previewContentSize
-            guard content.width > 0, content.height > 0 else { return 1 }
-            return min(sheet.width / content.width, sheet.height / content.height)
-        }
-        return CGFloat(scalePercent) / 100
-    }
-
     func setScalePercent(_ value: Int) {
         let clamped = min(max(value, 50), 150)
         if fitToPage {
@@ -327,26 +239,7 @@ final class AppModel: ObservableObject {
     }
     @Published private(set) var optionSelection: [String: String] = [:]
     @Published private(set) var preferences: PrinterPreferences = .unconfigured
-    @Published var bookletSignatureSheets: Int = 0 {
-        didSet {
-            guard oldValue != bookletSignatureSheets else { return }
-            closePreview()
-            recomputeBookletPlan()
-        }
-    }
-    @Published private(set) var bookletPlan: BookletPlan?
     @Published var copies: Int = 1
-
-    // MARK: Print preview
-
-    @Published private(set) var previewURL: URL?
-    @Published private(set) var previewBacksURL: URL?
-    @Published private(set) var isShowingPreview = false
-    @Published private(set) var isPreparingPreview = false
-    @Published var previewShowsBacks = false
-    private var previewDirectory: URL?
-    private var previewGeneration = 0
-    private var previewRefreshTask: Task<Void, Never>?
 
     // MARK: Flow and surfaces
 
@@ -356,7 +249,6 @@ final class AppModel: ObservableObject {
         didSet {
             guard oldValue != isShowingQueue else { return }
             if isShowingQueue {
-                closePreview()
             }
             updateQueuePolling()
         }
@@ -372,11 +264,9 @@ final class AppModel: ObservableObject {
     private let spooler: PrintSpooling
     private let ppdProvider: PPDProviding
     private let statusProvider: PrinterStatusProviding
-    private let bookletImposer: any BookletImposing
     private let preferencesStore: PreferencesStore
     private let printerDiscovery: any PrinterDiscovering
 
-    private var bookletDocuments: BookletDocuments?
     private var selectionWorkingDirectory: URL?
     private var ingestWorkingDirectory: URL?
     @Published private(set) var isIngestingDocument = false
@@ -394,7 +284,6 @@ final class AppModel: ObservableObject {
         spooler: PrintSpooling,
         ppdProvider: PPDProviding,
         statusProvider: PrinterStatusProviding,
-        bookletImposer: any BookletImposing,
         preferencesStore: PreferencesStore,
         orchestrator: DuplexOrchestrator,
         printerDiscovery: any PrinterDiscovering = CUPSDeviceDiscovery()
@@ -405,12 +294,12 @@ final class AppModel: ObservableObject {
         self.spooler = spooler
         self.ppdProvider = ppdProvider
         self.statusProvider = statusProvider
-        self.bookletImposer = bookletImposer
         self.preferencesStore = preferencesStore
         self.orchestrator = orchestrator
         self.printerDiscovery = printerDiscovery
         self.copies = 1
-        self.mode = preferencesStore.lastPrintMode ?? .manualDuplex
+        // The minimal app is duplex-only: never restore a mode stored by the advanced version.
+        self.mode = .manualDuplex
 
         NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
             .receive(on: RunLoop.main)
@@ -478,7 +367,6 @@ final class AppModel: ObservableObject {
     /// sheets are landscape; standard documents follow their first page and
     /// the forced-landscape layout choice.
     var isLandscapeStack: Bool {
-        if activePrintMode == .booklet { return true }
         switch pageOrientation {
         case .landscape: return true
         case .portrait: return false
@@ -568,97 +456,6 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// The pages that will actually print. An invalid typed range yields an
-    /// empty set so the thumbnail sidebar cannot imply pages that are not
-    /// valid.
-    var selectedPageNumbers: Set<Int> {
-        guard let document = selectedDocument else { return [] }
-        if pageSelectionMode == .all {
-            return Set(1...max(1, document.pageCount))
-        }
-        guard pageSelectionInfo.isValid else { return [] }
-        return Set(pageSelectionInfo.ranges.flatMap { range in
-            Array(range.lowerBound...range.upperBound)
-        })
-    }
-
-    func isPageSelected(_ page: Int) -> Bool {
-        selectedPageNumbers.contains(page)
-    }
-
-    /// Like macOS Preview: all pages start selected, then individual pages can
-    /// be toggled. The print file is regenerated without closing the preview.
-    func togglePageSelection(_ page: Int) {
-        guard let document = selectedDocument,
-              page >= 1, page <= document.pageCount else { return }
-        var selected = selectedPageNumbers
-        if selected.isEmpty {
-            // An invalid/empty typed range should not expand to "everything
-            // except the clicked page" when the user toggles a thumbnail.
-            selected = []
-        }
-        if selected.contains(page) {
-            guard selected.count > 1 else { return }
-            selected.remove(page)
-        } else {
-            selected.insert(page)
-        }
-        applyPageSelection(selected)
-    }
-
-    func selectAllPages() {
-        guard let document = selectedDocument else { return }
-        applyPageSelection(Set(1...document.pageCount))
-    }
-
-    private func applyPageSelection(_ pages: Set<Int>) {
-        guard let document = selectedDocument else { return }
-        let ordered = pages.sorted()
-        isAdjustingSelectionFromPreview = true
-        if ordered.count == document.pageCount {
-            if pageSelectionMode != .all { pageSelectionMode = .all }
-            if !pageRangeText.isEmpty { pageRangeText = "" }
-        } else {
-            let text = Self.rangeText(for: ordered)
-            if pageSelectionMode != .range { pageSelectionMode = .range }
-            if pageRangeText != text { pageRangeText = text }
-        }
-        isAdjustingSelectionFromPreview = false
-        if isShowingPreview || isPreparingPreview {
-            schedulePreviewRefresh()
-        }
-    }
-
-    private static func rangeText(for pages: [Int]) -> String {
-        guard let first = pages.first else { return "" }
-        var ranges: [(Int, Int)] = []
-        var start = first
-        var previous = first
-        for page in pages.dropFirst() {
-            if page == previous + 1 {
-                previous = page
-                continue
-            }
-            ranges.append((start, previous))
-            start = page
-            previous = page
-        }
-        ranges.append((start, previous))
-        return ranges.map { lower, upper in
-            lower == upper ? "\(lower)" : "\(lower)-\(upper)"
-        }.joined(separator: ", ")
-    }
-
-    private func schedulePreviewRefresh() {
-        previewRefreshTask?.cancel()
-        previewRefreshTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 220_000_000)
-            guard !Task.isCancelled, let self,
-                  self.isShowingPreview || self.isPreparingPreview else { return }
-            await self.preparePreview()
-        }
-    }
-
     private static func mergedRanges(from pages: [Int]) -> [PageRange] {
         guard let first = pages.first else { return [] }
         var ranges: [PageRange] = []
@@ -679,15 +476,6 @@ final class AppModel: ObservableObject {
             ranges.append(range)
         }
         return ranges
-    }
-
-    var driverOptions: [PPDOption] {
-        guard let ppd else { return [] }
-        let groupOrder: [PPDOptionGroup] = [.color, .paperSize, .mediaType, .quality]
-        return groupOrder.compactMap { group in
-            guard let option = ppd.option(in: group), !option.choices.isEmpty else { return nil }
-            return option
-        }
     }
 
     /// PPD options that have no curated control (everything outside color,
@@ -721,10 +509,6 @@ final class AppModel: ObservableObject {
         guard let option = mediaTypeOption else { return nil }
         let keyword = selectedValue(for: option)
         return option.choice(keyword: keyword)?.displayLabel ?? keyword
-    }
-
-    var documentPageSizeText: String? {
-        selectedDocument?.pageSizeText
     }
 
     var colorModeOption: PPDOption? {
@@ -764,212 +548,14 @@ final class AppModel: ObservableObject {
         setValue(choice.keyword, for: option)
     }
 
-    var colorProfileOptions: [PPDOption] {        guard let ppd else { return [] }
-        return ppd.options.filter { option in
-            guard !option.choices.isEmpty,
-                  option.group != .paperSize,
-                  option.group != .duplex,
-                  option.group != .color else { return false }
-            let text = (option.keyword + " " + option.label).lowercased()
-            return text.contains("profile") || text.contains("icc")
-        }
-    }
-
     var qualityPresets: [PrintQualityPreset] {
         presetResolver?.availablePresets ?? []
     }
 
     /// PPD options the quality editor can tune. Color stays an independent
     /// switch, so only quality groups and media are listed here.
-    var qualityTunableOptions: [PPDOption] {
-        guard let ppd else { return [] }
-        var options = ppd.options.filter {
-            $0.group == .quality && !$0.choices.isEmpty
-        }
-        if let media = mediaTypeOption {
-            options.append(media)
-        }
-        return options
-    }
-
-    func effectiveQualityValue(for preset: PrintQualityPreset, option: PPDOption) -> String {
-        effectiveQualityValue(forPresetID: preset.rawValue, option: option)
-    }
-
-    /// The value a preset would use for an option: the saved override when
-    /// valid, otherwise the resolver's driver-based choice for built-ins, or
-    /// the driver default for custom presets.
-    func effectiveQualityValue(forPresetID presetID: String, option: PPDOption) -> String {
-        if let override = qualityOverrides[presetID]?[option.keyword],
-           option.choice(keyword: override) != nil {
-            return override
-        }
-        if let preset = PrintQualityPreset(rawValue: presetID) {
-            return presetResolver?.apply(preset, to: optionSelection)
-                .options[option.keyword]
-                ?? option.selectedDefault
-                ?? ""
-        }
-        return option.selectedDefault ?? ""
-    }
-
-    func setQualityOverride(
-        _ value: String,
-        for preset: PrintQualityPreset,
-        option: PPDOption
-    ) {
-        setQualityOverride(value, forPresetID: preset.rawValue, option: option)
-    }
-
-    func setQualityOverride(
-        _ value: String,
-        forPresetID presetID: String,
-        option: PPDOption
-    ) {
-        guard option.choice(keyword: value) != nil else { return }
-        var overrides = qualityOverrides[presetID] ?? [:]
-        overrides[option.keyword] = value
-        qualityOverrides[presetID] = overrides
-        persistQualityOverrides()
-        if selectedQualityPreset?.rawValue == presetID || selectedCustomPresetID == presetID {
-            optionSelection[option.keyword] = value
-            if let id = selectedPrinter?.id {
-                preferencesStore.saveOptionChoices(optionSelection, for: id)
-            }
-        }
-    }
-
-    func resetQualityOverride(_ preset: PrintQualityPreset) {
-        resetQualityOverride(presetID: preset.rawValue)
-    }
-
-    func resetQualityOverride(presetID: String) {
-        qualityOverrides[presetID] = nil
-        persistQualityOverrides()
-        if selectedQualityPreset?.rawValue == presetID {
-            if let preset = PrintQualityPreset(rawValue: presetID) {
-                applyQualityPreset(preset)
-            }
-        } else if selectedCustomPresetID == presetID {
-            applyCustomPreset(presetID)
-        }
-    }
-
-    func hasQualityOverride(_ preset: PrintQualityPreset) -> Bool {
-        hasQualityOverride(presetID: preset.rawValue)
-    }
-
-    func hasQualityOverride(presetID: String) -> Bool {
-        !(qualityOverrides[presetID]?.isEmpty ?? true)
-    }
-
-    private func persistQualityOverrides() {
-        guard let id = selectedPrinter?.id else { return }
-        preferencesStore.saveQualityOverrides(qualityOverrides, for: id)
-    }
-
-    // MARK: Custom quality presets
-
-    /// Built-in presets plus the user's custom ones for the selected queue.
-    var qualityPresetItems: [QualityPresetItem] {
-        let builtIns = qualityPresets.map(QualityPresetItem.init(preset:))
-        let customs = customPresets.map(QualityPresetItem.init(custom:))
-        return builtIns + customs
-    }
-
-    /// The preset currently reflected in the driver options, built-in or
-    /// custom, or nil when the selection is custom/free-form.
-    var activePresetItem: QualityPresetItem? {
-        if let id = selectedCustomPresetID, customPresets.contains(where: { $0.id == id }) {
-            return customPresets.first { $0.id == id }.map(QualityPresetItem.init(custom:))
-        }
-        if let preset = activeQualityPreset {
-            return QualityPresetItem(preset: preset)
-        }
-        return nil
-    }
-
-    func applyQualityPresetItem(_ item: QualityPresetItem) {
-        if let preset = PrintQualityPreset(rawValue: item.id) {
-            applyQualityPreset(preset)
-        } else {
-            applyCustomPreset(item.id)
-        }
-    }
-
-    /// Applies a custom preset: every saved override is pushed into the
-    /// driver options. Keywords the preset does not control keep their
-    /// current value.
-    func applyCustomPreset(_ presetID: String) {
-        guard customPresets.contains(where: { $0.id == presetID }) else { return }
-        let preserveGrayscale = isGrayscaleSelected
-        for (keyword, value) in qualityOverrides[presetID] ?? [:] {
-            guard let option = ppd?.option(keyword: keyword),
-                  option.choice(keyword: value) != nil else { continue }
-            optionSelection[keyword] = value
-        }
-        if preserveGrayscale,
-           let colorOption = colorModeOption,
-           let grayscale = grayscaleChoice {
-            optionSelection[colorOption.keyword] = grayscale.keyword
-        }
-        selectedQualityPreset = nil
-        selectedCustomPresetID = presetID
-        if let id = selectedPrinter?.id {
-            preferencesStore.saveOptionChoices(optionSelection, for: id)
-        }
-    }
-
-    /// Creates a custom preset seeded with the currently selected quality
-    /// values, so the new step starts as a copy of the current setup.
-    func addCustomPreset(name: String) {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, let id = selectedPrinter?.id else { return }
-        let preset = CustomQualityPreset(name: trimmed)
-        customPresets.append(preset)
-        var overrides: [String: String] = [:]
-        for option in qualityTunableOptions {
-            let current = selectedValue(for: option)
-            if option.choice(keyword: current) != nil {
-                overrides[option.keyword] = current
-            }
-        }
-        if !overrides.isEmpty {
-            qualityOverrides[preset.id] = overrides
-        }
-        persistQualityOverrides()
-        preferencesStore.saveCustomQualityPresets(customPresets, for: id)
-        applyCustomPreset(preset.id)
-    }
-
-    func removeCustomPreset(_ presetID: String) {
-        guard let id = selectedPrinter?.id else { return }
-        customPresets.removeAll { $0.id == presetID }
-        // Keep the overrides: re-adding a preset with the same id restores
-        // the tuned values instead of starting from scratch.
-        preferencesStore.saveCustomQualityPresets(customPresets, for: id)
-        if selectedCustomPresetID == presetID {
-            selectedCustomPresetID = nil
-        }
-    }
-
-    var discoveredPrinters: [DiscoveredPrinter] {
-        let queuedURIs = Set(
-            printers
-                .compactMap(\.deviceURI)
-                .map(Self.normalizedDeviceURI)
-        )
-        return discoveredDevices.filter {
-            !queuedURIs.contains(Self.normalizedDeviceURI($0.uri))
-        }
-    }
-
     var activeQualityPreset: PrintQualityPreset? {
         selectedQualityPreset ?? presetResolver?.matchingPreset(for: optionSelection)
-    }
-
-    var displayStatus: PrinterStatus? {
-        status
     }
 
     var printerState: PrinterState {
@@ -1076,15 +662,6 @@ final class AppModel: ObservableObject {
 
     /// Shown when the queue is healthy but the printer does not expose marker
     /// supplies (common on USB-only photo printers such as the L1800).
-    var supplyFallbackNote: String? {
-        guard selectedPrinter != nil, let status else { return nil }
-        if !status.supplies.isEmpty { return nil }
-        // The health note already explains an entirely unavailable status;
-        // avoid saying the same thing twice in the header.
-        if status.origin == .unavailable { return nil }
-        return L("Supply levels are not reported by this printer.")
-    }
-
     var activeStateReasons: [String] {
         let reasons = status?.stateReasons ?? selectedPrinter?.stateReasons ?? []
         let filtered = reasons.filter { reason in
@@ -1098,19 +675,6 @@ final class AppModel: ObservableObject {
         }
         return filtered.compactMap(PrinterReason.humanReadable)
     }
-
-    var lowSupplies: [SupplyLevel] {
-        (status?.supplies ?? []).filter(\.isLow)
-    }
-
-    var bookletSignatureLabel: String {
-        guard let plan = bookletPlan else { return L("Auto") }
-        if plan.signatureCount > 1 {
-            return String(format: L("%lld sheets × %lld"), plan.signatureSheetCount, plan.signatureCount)
-        }
-        return FlipFormat.sheets(plan.signatureSheetCount)
-    }
-
     var selectedDocumentLabel: String {
         selectedDocument?.name ?? "No document"
     }
@@ -1266,14 +830,10 @@ final class AppModel: ObservableObject {
         localJobTitles.removeAll()
         preferencesStore.lastPrinterID = printer.id
         preferences = preferencesStore.load(for: printer.id)
-        qualityOverrides = preferencesStore.loadQualityOverrides(for: printer.id)
-        customPresets = preferencesStore.loadCustomQualityPresets(for: printer.id)
-        selectedCustomPresetID = nil
         let layout = preferencesStore.loadLayout(for: printer.id)
         pageOrientation = layout.pageOrientation
         fitToPage = layout.fitToPage
         scalePercent = layout.scalePercent
-        closePreview()
         optionSelection = [:]
         ppd = nil
         presetResolver = nil
@@ -1281,7 +841,6 @@ final class AppModel: ObservableObject {
         ppdNote = nil
         status = nil
         queue = []
-        recomputeBookletPlan()
         await reloadDetails(for: printer)
     }
 
@@ -1419,12 +978,6 @@ final class AppModel: ObservableObject {
         let preserveGrayscale = isGrayscaleSelected
         let result = resolver.apply(preset, to: optionSelection)
         optionSelection = result.options
-        selectedCustomPresetID = nil
-        for (keyword, value) in qualityOverrides[preset.rawValue] ?? [:] {
-            guard let option = ppd?.option(keyword: keyword),
-                  option.choice(keyword: value) != nil else { continue }
-            optionSelection[keyword] = value
-        }
         // Quality and color mode are independent. Applying a quality preset
         // must not silently put a B&W print back into color.
         if preserveGrayscale,
@@ -1488,7 +1041,6 @@ final class AppModel: ObservableObject {
               !isMaintenanceBusy,
               flipCalibration == nil,
               flipAxisSetup == nil else { return }
-        closePreview()
         isShowingQueue = false
         isShowingSettings = true
     }
@@ -1551,7 +1103,6 @@ final class AppModel: ObservableObject {
               !isMaintenanceBusy else {
             return
         }
-        closePreview()
         isShowingQueue = false
         banner = nil
         let autoStart = flipAxisSetup?.autoStartsPrint ?? false
@@ -1833,7 +1384,6 @@ final class AppModel: ObservableObject {
                 pageHeight = 841.89
             }
         }
-        closePreview()
         selectedDocument = SelectedDocument(
             url: pdfURL,
             name: name,
@@ -1845,183 +1395,18 @@ final class AppModel: ObservableObject {
         pageSelectionMode = .all
         pageRangeText = ""
         banner = nil
-        recomputeBookletPlan()
     }
 
     func clearDocument() {
         guard !orchestrator.phase.isActive,
               flipAxisSetup == nil,
               flipCalibration == nil else { return }
-        closePreview()
         discardWorkingFiles()
         selectedDocument = nil
         pageSelectionMode = .all
         pageRangeText = ""
-        bookletPlan = nil
         localJobIDs.removeAll()
         localJobTitles.removeAll()
-    }
-
-    // MARK: Preview
-
-    func togglePreview() {
-        if isShowingPreview || isPreparingPreview {
-            closePreview()
-            return
-        }
-        isShowingQueue = false
-        Task { await preparePreview() }
-    }
-
-    func showPreviewBacks(_ showBacks: Bool) {
-        guard previewBacksURL != nil else { return }
-        previewShowsBacks = showBacks
-    }
-
-    private func preparePreview() async {
-        guard let document = selectedDocument else { return }
-        let selection = pageSelectionInfo
-        guard selection.isValid, selection.pageCount > 0 else {
-            banner = AppBanner(
-                kind: .warning,
-                title: L("Check the page range"),
-                message: selection.message ?? "Choose at least one page to preview."
-            )
-            return
-        }
-        let mode = self.mode
-        let printMode = mode
-        let pages = selection.ranges
-        let selectionIsAll = selection.isAll
-        let signature = bookletSignatureSheets > 0 ? bookletSignatureSheets : nil
-        let imposer = bookletImposer
-
-        closePreviewFiles()
-        previewGeneration += 1
-        let generation = previewGeneration
-        isPreparingPreview = true
-        isShowingPreview = false
-        previewShowsBacks = false
-        previewURL = nil
-        previewBacksURL = nil
-
-        var temporaryDirectory: URL?
-        do {
-            var sourceURL = document.url
-            var extractedDirectory: URL?
-            if !selectionIsAll {
-                let pageNumbers = try PDFPageExtractor.pageNumbers(
-                    for: pages,
-                    pageCount: document.pageCount
-                )
-                let directory = Self.workingDirectory(prefix: "PreviewSource")
-                let destination = directory.appendingPathComponent("selected-pages.pdf")
-                try await Task.detached(priority: .userInitiated) {
-                    _ = try PDFPageExtractor.extract(
-                        from: document.url,
-                        pageNumbers: pageNumbers,
-                        to: destination
-                    )
-                }.value
-                extractedDirectory = directory
-                temporaryDirectory = directory
-                sourceURL = destination
-            }
-
-            guard generation == previewGeneration,
-                  !Task.isCancelled,
-                  selectedDocument?.id == document.id,
-                  self.mode == printMode else {
-                if let temporaryDirectory {
-                    try? FileManager.default.removeItem(at: temporaryDirectory)
-                }
-                isPreparingPreview = false
-                return
-            }
-
-            if printMode == .booklet {
-                let output = try await Task.detached(priority: .userInitiated) {
-                    let plan = try imposer.plan(
-                        pageCount: selection.pageCount,
-                        signatureSheets: signature
-                    )
-                    return try imposer.makeDocuments(from: sourceURL, plan: plan)
-                }.value
-                if let extractedDirectory {
-                    try? FileManager.default.removeItem(at: extractedDirectory)
-                }
-                guard generation == previewGeneration,
-                      !Task.isCancelled,
-                      selectedDocument?.id == document.id,
-                      self.mode == printMode else {
-                    imposer.cleanUp(output)
-                    isPreparingPreview = false
-                    return
-                }
-                previewDirectory = output.workingDirectory
-                previewURL = output.frontsURL
-                previewBacksURL = output.backsURL
-            } else {
-                previewDirectory = temporaryDirectory
-                previewURL = sourceURL
-                previewBacksURL = nil
-            }
-            guard generation == previewGeneration, !Task.isCancelled else {
-                closePreviewFiles()
-                isPreparingPreview = false
-                return
-            }
-            isPreparingPreview = false
-            isShowingPreview = true
-        } catch {
-            if let temporaryDirectory {
-                try? FileManager.default.removeItem(at: temporaryDirectory)
-            }
-            guard generation == previewGeneration else { return }
-            isPreparingPreview = false
-            isShowingPreview = false
-            banner = AppBanner(
-                kind: .error,
-                title: L("The preview could not be prepared"),
-                message: error.localizedDescription
-            )
-        }
-    }
-
-    private func closePreview() {
-        previewRefreshTask?.cancel()
-        previewRefreshTask = nil
-        previewGeneration += 1
-        isPreparingPreview = false
-        isShowingPreview = false
-        previewShowsBacks = false
-        previewURL = nil
-        previewBacksURL = nil
-        closePreviewFiles()
-    }
-
-    private func closePreviewFiles() {
-        if let previewDirectory {
-            try? FileManager.default.removeItem(at: previewDirectory)
-            self.previewDirectory = nil
-        }
-    }
-
-    private func recomputeBookletPlan() {
-        guard mode == .booklet, selectedDocument != nil else {
-            bookletPlan = nil
-            return
-        }
-        let selection = pageSelectionInfo
-        guard selection.isValid, selection.pageCount > 0 else {
-            bookletPlan = nil
-            return
-        }
-        let signature = bookletSignatureSheets > 0 ? bookletSignatureSheets : nil
-        bookletPlan = try? bookletImposer.plan(
-            pageCount: selection.pageCount,
-            signatureSheets: signature
-        )
     }
 
     // MARK: Print flow
@@ -2044,12 +1429,9 @@ final class AppModel: ObservableObject {
         let selectedPageCount = selection.pageCount
         let selectedRanges = selection.ranges
         let source = document
-        let signature = bookletSignatureSheets > 0 ? bookletSignatureSheets : nil
-        let imposer = bookletImposer
         let requestedScale = scalePercent
         let useFitToPage = fitToPage
 
-        closePreview()
         activePrintMode = printMode
         isPreparingPrint = true
         banner = nil
@@ -2095,8 +1477,7 @@ final class AppModel: ObservableObject {
                     sourceURL = destination
                 }
 
-                if printMode != .booklet,
-                   !useFitToPage,
+                if !useFitToPage,
                    requestedScale != 100 {
                     let directory = preparedSelectionDirectory
                         ?? Self.workingDirectory(prefix: "Scale")
@@ -2128,7 +1509,10 @@ final class AppModel: ObservableObject {
                     return
                 }
 
-                self.discardWorkingFiles()
+                // Only discard selection/scale working copies here. The ingested
+                // document itself lives in ingestWorkingDirectory and is the file
+                // being submitted — it is cleaned up when the flow ends.
+                self.discardSelectionWorkingDirectory()
                 if let preparedSelectionDirectory {
                     self.selectionWorkingDirectory = preparedSelectionDirectory
                 }
@@ -2154,7 +1538,7 @@ final class AppModel: ObservableObject {
                     finishPreparation()
                     self.launch(job, configuration: configuration)
 
-                case .manualDuplex:
+                case .manualDuplex, .booklet:
                     var job = try DuplexDocument.manualDuplex(
                         fileURL: sourceURL,
                         pageCount: selectedPageCount,
@@ -2171,28 +1555,6 @@ final class AppModel: ObservableObject {
                     finishPreparation()
                     self.launch(job, configuration: configuration)
 
-                case .booklet:
-                    let output = try await Task.detached(priority: .userInitiated) {
-                        let plan = try imposer.plan(
-                            pageCount: selectedPageCount,
-                            signatureSheets: signature
-                        )
-                        return try imposer.makeDocuments(from: sourceURL, plan: plan)
-                    }.value
-
-                    guard isCurrent(),
-                          self.selectedDocument?.id == source.id,
-                          self.selectedPrinter?.id == printer.id,
-                          self.mode == printMode else {
-                        imposer.cleanUp(output)
-                        finishPreparation()
-                        return
-                    }
-                    self.bookletDocuments = output
-                    self.discardSelectionWorkingDirectory()
-                    let imposed = self.makeBookletDocument(output, title: source.title)
-                    finishPreparation()
-                    self.launch(imposed, configuration: configuration)
                 }
             } catch {
                 if let preparedSelectionDirectory {
@@ -2224,29 +1586,6 @@ final class AppModel: ObservableObject {
             .appendingPathComponent("FlipStack-\(UUID().uuidString)", isDirectory: true)
     }
 
-    private func makeBookletDocument(_ output: BookletDocuments, title: String) -> DuplexDocument {
-        let plan = output.plan
-        return DuplexDocument(
-            title: "\(title) booklet",
-            sourcePageCount: plan.sourcePageCount,
-            sheetCount: plan.sheetCount,
-            firstPass: PrintSource(
-                fileURL: output.frontsURL,
-                pageSet: .all,
-                pageCount: plan.sheetCount,
-                numberUp: 2
-            ),
-            secondPass: PrintSource(
-                fileURL: output.backsURL,
-                pageSet: .all,
-                pageCount: plan.sheetCount,
-                numberUp: 2
-            ),
-            isBooklet: true,
-            hasOddPageCount: false
-        )
-    }
-
     private func makeConfiguration(for printer: Printer, flipAxis: FlipAxis) -> DuplexConfiguration {
         DuplexConfiguration(
             printerID: printer.id,
@@ -2260,7 +1599,7 @@ final class AppModel: ObservableObject {
             // the manual pass.
             forceOneSidedPasses: activePrintMode != .singleSided
                 && (ppd == nil || ppd?.supportsHardwareDuplex == true),
-            fitToPage: activePrintMode != .booklet && fitToPage,
+            fitToPage: fitToPage,
             // Non-booklet documents are scaled into a temporary PDF before
             // submission, so CUPS must not scale them a second time.
             scalePercent: 100
@@ -2340,10 +1679,6 @@ final class AppModel: ObservableObject {
             try? FileManager.default.removeItem(at: directory)
             ingestWorkingDirectory = nil
         }
-        if let documents = bookletDocuments {
-            bookletImposer.cleanUp(documents)
-            bookletDocuments = nil
-        }
         discardSelectionWorkingDirectory()
     }
 
@@ -2392,10 +1727,8 @@ final class AppModel: ObservableObject {
         switch activePrintMode {
         case .singleSided:
             suffix = ""
-        case .manualDuplex:
+        case .manualDuplex, .booklet:
             suffix = " — \(L(pass.rawValue))"
-        case .booklet:
-            suffix = String(format: L(" — booklet %@"), L(pass.rawValue))
         }
         localJobTitles[job.id] = "\(document.title)\(suffix)"
     }

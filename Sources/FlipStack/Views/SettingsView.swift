@@ -1,6 +1,8 @@
 import FlipStackCore
 import SwiftUI
 
+/// Minimal settings: just the interface language. Everything about the
+/// print itself lives in the composer's Print settings disclosure.
 @MainActor
 struct SettingsView: View {
     @ObservedObject var model: AppModel
@@ -35,16 +37,10 @@ struct SettingsView: View {
 
             sectionBreak
 
-            printerSection
-
-            sectionBreak
-
             aboutSection
         }
         .padding(.bottom, 10)
     }
-
-    // MARK: Language
 
     private var languageSection: some View {
         VStack(alignment: .leading, spacing: 9) {
@@ -87,9 +83,7 @@ struct SettingsView: View {
                     .monospacedDigit()
                     .foregroundStyle(selected ? FlipColor.onCoral : FlipColor.tertiaryInk)
                     .frame(width: 24, height: 20)
-                    .background(
-                        Capsule().fill(selected ? FlipColor.onCoral.opacity(0.14) : FlipColor.tone)
-                    )
+                    .background(Capsule().fill(selected ? FlipColor.onCoral.opacity(0.14) : FlipColor.tone))
 
                 Text(language.displayName)
                     .font(FlipType.footnoteStrong)
@@ -122,234 +116,12 @@ struct SettingsView: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    // MARK: Printer
-
-    private var printerSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 7) {
-                FlipIconMedallion(systemName: "slider.horizontal.3", tint: FlipColor.coralDeep, size: 25)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Printer quality presets")
-                        .font(FlipType.bodyStrong)
-                        .foregroundStyle(FlipColor.ink)
-                    Text(
-                        model.selectedPrinter.map {
-                            String(format: L("Customize Eco, Standard, High, and Photo for %@."), $0.displayName)
-                        } ?? L("Select a printer to customize its quality presets.")
-                    )
-                    .font(FlipType.caption)
-                    .foregroundStyle(FlipColor.secondaryInk)
-                    .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 0)
-            }
-
-            if model.selectedPrinter == nil {
-                Text("No printer selected.")
-                    .font(FlipType.footnote)
-                    .foregroundStyle(FlipColor.tertiaryInk)
-            } else if model.qualityTunableOptions.isEmpty {
-                Text("This queue does not expose adjustable quality or media choices.")
-                    .font(FlipType.footnote)
-                    .foregroundStyle(FlipColor.tertiaryInk)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                VStack(spacing: 9) {
-                    ForEach(model.qualityPresetItems) { item in
-                        qualityPresetCard(item)
-                    }
-
-                    addPresetRow
-                }
-            }
-        }
-        .accessibilityElement(children: .contain)
-    }
-
-    /// Quality choices are listed lowest to highest by the resolution number
-    /// parsed from the driver's own labels, so every real intermediate step
-    /// the printer offers is visible in order.
-    private func sortedChoices(_ option: PPDOption) -> [PPDChoice] {
-        guard option.group == .quality else { return option.choices }
-        return option.choices.enumerated().sorted { lhs, rhs in
-            let left = PrintPresetResolver.numericValue(for: lhs.element) ?? Int.max
-            let right = PrintPresetResolver.numericValue(for: rhs.element) ?? Int.max
-            if left != right { return left < right }
-            return lhs.offset < rhs.offset
-        }.map(\.element)
-    }
-
-    @State private var newPresetName = ""
-
-    private var addPresetRow: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "plus")
-                .font(.system(size: 9, weight: .bold))
-                .foregroundStyle(FlipColor.coralDeep)
-            TextField(L("New preset name, e.g. Fine 300 dpi"), text: $newPresetName)
-                .textFieldStyle(.plain)
-                .font(.system(.caption, design: .default))
-                .foregroundStyle(FlipColor.ink)
-                .onSubmit { addPreset() }
-            Button {
-                addPreset()
-            } label: {
-                Text(L("Add"))
-                    .font(.system(.caption2, design: .default, weight: .semibold))
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(FlipColor.onCoral)
-            .padding(.horizontal, 9)
-            .frame(height: 24)
-            .background(Capsule().fill(FlipColor.coral))
-            .disabled(newPresetName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            .opacity(newPresetName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.45 : 1)
-            .contentShape(Capsule())
-            .accessibilityLabel("Add custom quality preset")
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(
-            RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
-                .fill(FlipColor.tone)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
-                .strokeBorder(FlipColor.hairline, lineWidth: 0.5)
-        }
-    }
-
-    private func addPreset() {
-        let name = newPresetName
-        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        withAnimation(FlipMotion.quick(reduceMotion)) {
-            model.addCustomPreset(name: name)
-        }
-        newPresetName = ""
-    }
-
-    private func qualityPresetCard(_ item: QualityPresetItem) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 5) {
-                Text(item.title)
-                    .font(FlipType.bodyStrong)
-                    .foregroundStyle(FlipColor.ink)
-                if model.hasQualityOverride(presetID: item.id) {
-                    Text("CUSTOM")
-                        .font(.system(size: 7, weight: .semibold))
-                        .tracking(0.8)
-                        .foregroundStyle(FlipColor.coralDeep)
-                }
-                Spacer(minLength: 4)
-                if item.isCustom {
-                    Button {
-                        withAnimation(FlipMotion.quick(reduceMotion)) {
-                            model.removeCustomPreset(item.id)
-                        }
-                    } label: {
-                        Image(systemName: "trash")
-                            .font(.system(size: 9, weight: .semibold))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(FlipColor.danger)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 5)
-                    .contentShape(Rectangle())
-                    .accessibilityLabel(String(format: L("Delete preset %@"), item.title))
-                }
-                if model.hasQualityOverride(presetID: item.id) {
-                    Button("Reset") {
-                        withAnimation(FlipMotion.quick(reduceMotion)) {
-                            model.resetQualityOverride(presetID: item.id)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(FlipColor.coralDeep)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .contentShape(Rectangle())
-                    .accessibilityHint(String(format: L("Restores the driver-based default for %@."), item.title))
-                }
-            }
-
-            ForEach(model.qualityTunableOptions) { option in
-                qualityChoiceRow(presetID: item.id, presetTitle: item.title, option: option)
-            }
-        }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
-                .fill(FlipColor.tone)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
-                .strokeBorder(FlipColor.hairline, lineWidth: 0.5)
-        }
-        .accessibilityElement(children: .contain)
-    }
-
-    private func qualityChoiceRow(presetID: String, presetTitle: String, option: PPDOption) -> some View {
-        let selected = model.effectiveQualityValue(forPresetID: presetID, option: option)
-        let label = option.choice(keyword: selected).map { L($0.displayLabel) } ?? L("Driver default")
-        return HStack(spacing: 6) {
-            Text(L(option.displayLabel))
-                .font(FlipType.caption)
-                .foregroundStyle(FlipColor.secondaryInk)
-                .lineLimit(1)
-            Spacer(minLength: 4)
-            Menu {
-                ForEach(sortedChoices(option)) { choice in
-                    Button {
-                        model.setQualityOverride(choice.keyword, forPresetID: presetID, option: option)
-                    } label: {
-                        if choice.keyword == selected {
-                            Label(L(choice.displayLabel), systemImage: "checkmark")
-                        } else {
-                            Text(L(choice.displayLabel))
-                        }
-                    }
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    Text(label)
-                        .font(.system(.caption2, design: .default, weight: .semibold))
-                        .foregroundStyle(FlipColor.secondaryInk)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 6.5, weight: .bold))
-                        .foregroundStyle(FlipColor.tertiaryInk)
-                }
-                .padding(.horizontal, 8)
-                .frame(height: 24)
-                .background(
-                    RoundedRectangle(cornerRadius: FlipMetrics.smallRadius, style: .continuous)
-                        .fill(FlipColor.paper.opacity(0.55))
-                )
-                .overlay {
-                    RoundedRectangle(cornerRadius: FlipMetrics.smallRadius, style: .continuous)
-                        .strokeBorder(FlipColor.hairline, lineWidth: 0.5)
-                }
-                .contentShape(Rectangle())
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .frame(maxWidth: 190, alignment: .trailing)
-            .accessibilityLabel("\(presetTitle) \(option.displayLabel)")
-            .accessibilityValue(label)
-            .accessibilityHint(String(format: L("Choose a real value from this printer driver for the %@ preset."), presetTitle))
-        }
-    }
-
-    // MARK: About
-
     private var aboutSection: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text("About FlipStack")
                 .font(FlipType.bodyStrong)
                 .foregroundStyle(FlipColor.ink)
-            Text("Manual duplex for simplex printers. Everything stays on this Mac.")
+            Text("Guided two-sided printing for printers that can't turn a page themselves. Everything stays on this Mac.")
                 .font(FlipType.caption)
                 .foregroundStyle(FlipColor.secondaryInk)
                 .fixedSize(horizontal: false, vertical: true)

@@ -1,6 +1,9 @@
 // swift-tools-version: 5.9
 import PackageDescription
 
+// FlipStack — the minimal main application, focused exclusively on guided
+// manual duplex printing. The previous, feature-rich implementation lives in
+// Advanced/ as a standalone package and is preserved there unchanged.
 let package = Package(
     name: "FlipStack",
     platforms: [.macOS(.v13)],
