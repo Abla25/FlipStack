@@ -28,6 +28,7 @@ There are no timer-based "the printer is probably done" transitions. FlipStack w
 ## Features
 
 - **Everyday single-sided printing.** One clean pass for ordinary documents, envelopes, and labels, with copies, page ranges, and the same PPD-driven options.
+- **Photos and documents, not just PDFs.** Drop JPEG, HEIC, PNG, TIFF, GIF, WebP and more — each photo becomes a PDF page at its native pixel size, and JPEGs are embedded byte-for-byte (no recompression, no downsampling), so print quality is exactly what the file has. Word (.docx/.doc/.odt), RTF, HTML, and plain text are converted locally. Drop several files at once to print them as one job.
 - **Guided manual duplex.** Two passes, one clear flip prompt, and a state machine that keeps the document in order from start to finish.
 - **Guided flip calibration.** On the first two-sided job, FlipStack opens a setup screen and prints one generic orientation sheet only after you confirm. Its answers become a saved flip axis and tray setting before the real document is sent. Re-run it from printer settings at any time.
 - **PPD-driven options.** Color or black-and-white, paper size, media type, and print quality come from the queue's real PPD. FlipStack does not invent driver choices, and remembers the choices per printer.
@@ -52,7 +53,7 @@ The screenshots below use a demo queue so no real document or printer data is sh
 
 ### First-time setup
 
-![FlipStack menu-bar panel with a printer selected, a document drop area, and a guided first-time setup card](docs/screenshots/empty.png)
+![FlipStack menu-bar panel with a printer selected, a drop area accepting PDFs, photos, and documents, and a guided first-time setup card](docs/screenshots/empty.png)
 
 ### A document ready to print
 

@@ -33,6 +33,7 @@ There are no accounts, sign-ins, remote logging services, crash-reporting SDKs, 
 ## Documents and temporary files
 
 - PDFs are read only to prepare previews, page selections, booklets, or print passes.
+- Photos and Word/text documents you drop are converted to PDF locally on this Mac (images are embedded at native resolution, never recompressed; Word goes through the system `textutil` to RTF) before anything is queued. Only the resulting PDF is ever sent to the printer.
 - Temporary PDFs are written inside a user-only temporary directory, used for the local print operation, and removed after submission or preparation finishes. After a print failure, the prepared files may remain so **Retry backs** or **Start over** can work; they are removed when you dismiss/reset the flow, quit the app, or on the next launch. FlipStack creates the containing directories with `0700` and generated files with `0600` at creation time (never after the content exists), inside the per-user temporary directory.
 - FlipStack removes its temporary working directory on launch and on normal quit. A force-quit or crash can leave files until the next launch; they are never uploaded.
 - FlipStack does not create its own document history or recent-documents list. It does read the selected CUPS queue and its recent job metadata, which CUPS retains independently.

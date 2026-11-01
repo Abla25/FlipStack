@@ -33,6 +33,8 @@ struct SelectedDocument: Identifiable, Equatable {
     let pageCount: Int
     let pageWidth: CGFloat
     let pageHeight: CGFloat
+    /// Short format tag for the document card: PDF, IMG, or DOC.
+    let formatTag: String
 
     var isLandscape: Bool { pageWidth > pageHeight }
 
@@ -376,6 +378,8 @@ final class AppModel: ObservableObject {
 
     private var bookletDocuments: BookletDocuments?
     private var selectionWorkingDirectory: URL?
+    private var ingestWorkingDirectory: URL?
+    @Published private(set) var isIngestingDocument = false
     private var presetResolver: PrintPresetResolver?
     private var monitorTask: Task<Void, Never>?
     private var queueMonitorTask: Task<Void, Never>?
@@ -1717,20 +1721,20 @@ final class AppModel: ObservableObject {
               flipAxisSetup == nil,
               flipCalibration == nil else { return }
         let panel = NSOpenPanel()
-        panel.title = L("Choose a PDF")
-        panel.message = L("Pick the document FlipStack should print.")
+        panel.title = L("Choose files")
+        panel.message = L("Pick PDFs, photos, or documents to print. Photos keep their full resolution.")
         panel.prompt = L("Choose")
-        panel.allowsMultipleSelection = false
+        panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
-        panel.allowedContentTypes = [.pdf]
+        panel.allowedContentTypes = DocumentIngest.acceptedContentTypes
         NSApp.activate(ignoringOtherApps: true)
         let response = panel.runModal()
         // AppKit's open panel otherwise persists the last folder as a bookmark
         // in UserDefaults, which can reveal a user's document location.
         clearOpenPanelState()
-        guard response == .OK, let url = panel.url else { return }
-        Task { await acceptDocument(url: url) }
+        guard response == .OK, !panel.urls.isEmpty else { return }
+        Task { await acceptDocuments(urls: panel.urls) }
     }
 
     func clearOpenPanelState() {
@@ -1746,20 +1750,57 @@ final class AppModel: ObservableObject {
     }
 
     func acceptDocument(url: URL) async {
+        await acceptDocuments(urls: [url])
+    }
+
+    /// Accepts any supported file(s): PDFs, photos (JPEG, HEIC, PNG, …), and
+    /// Word/text documents. Non-PDFs are converted to a PDF locally first —
+    /// photos keep their native resolution bit-exact — and the result is
+    /// what the print pipeline sees.
+    func acceptDocuments(urls: [URL]) async {
         guard !isPreparingPrint,
               !orchestrator.phase.isActive,
               !isShowingSettings,
               flipAxisSetup == nil,
               flipCalibration == nil else { return }
+        let accepted = urls.filter { DocumentIngest.isAccepted($0) }
+        guard accepted.count == urls.count, !accepted.isEmpty else {
+            banner = AppBanner(
+                kind: .error,
+                title: L("That file can’t be printed"),
+                message: L("FlipStack accepts PDFs, photos (JPEG, HEIC, PNG, TIFF and more), and Word or text documents (.docx, .doc, .rtf, .txt, .html).")
+            )
+            return
+        }
         if !orchestrator.phase.isIdle {
             orchestrator.reset()
             discardWorkingFiles()
         }
-        guard let pdf = PDFDocument(url: url) else {
+
+        let sourceKind = DocumentIngest.kind(of: accepted[0])
+        isIngestingDocument = true
+        let pdfURL: URL
+        do {
+            pdfURL = try await Task.detached(priority: .userInitiated) {
+                try DocumentIngest.makePDF(from: accepted)
+            }.value
+        } catch {
+            isIngestingDocument = false
             banner = AppBanner(
                 kind: .error,
-                title: L("That file is not a PDF"),
-                message: L("Choose a PDF document to print.")
+                title: L("The file could not be prepared"),
+                message: error.localizedDescription
+            )
+            return
+        }
+        isIngestingDocument = false
+        ingestWorkingDirectory = pdfURL.deletingLastPathComponent()
+
+        guard let pdf = PDFDocument(url: pdfURL) else {
+            banner = AppBanner(
+                kind: .error,
+                title: L("The file could not be prepared"),
+                message: L("The converted document could not be read.")
             )
             return
         }
@@ -1779,7 +1820,7 @@ final class AppModel: ObservableObject {
             )
             return
         }
-        let name = url.lastPathComponent
+        let name = accepted[0].lastPathComponent
         var pageWidth: CGFloat = 595.28
         var pageHeight: CGFloat = 841.89
         if let firstPage = pdf.page(at: 0) {
@@ -1794,11 +1835,12 @@ final class AppModel: ObservableObject {
         }
         closePreview()
         selectedDocument = SelectedDocument(
-            url: url,
+            url: pdfURL,
             name: name,
             pageCount: pdf.pageCount,
             pageWidth: pageWidth,
-            pageHeight: pageHeight
+            pageHeight: pageHeight,
+            formatTag: DocumentIngest.formatTag(for: sourceKind)
         )
         pageSelectionMode = .all
         pageRangeText = ""
@@ -2294,6 +2336,10 @@ final class AppModel: ObservableObject {
     }
 
     private func discardWorkingFiles() {
+        if let directory = ingestWorkingDirectory {
+            try? FileManager.default.removeItem(at: directory)
+            ingestWorkingDirectory = nil
+        }
         if let documents = bookletDocuments {
             bookletImposer.cleanUp(documents)
             bookletDocuments = nil

@@ -608,3 +608,12 @@
 "Confirms the stack is back in the printer and starts the backs." = "Confirme que la pile est remise dans l’imprimante et lance les verso.";
 "Confirms the stack was flipped as one block and starts the backs." = "Confirme que la pile a été retournée d’un seul bloc et lance les verso.";
 "Stops the duplex job after the first pass." = "Arrête le travail recto verso après la première passe.";
+"That file can’t be printed" = "Ce fichier ne peut pas être imprimé";
+"FlipStack accepts PDFs, photos (JPEG, HEIC, PNG, TIFF and more), and Word or text documents (.docx, .doc, .rtf, .txt, .html)." = "FlipStack accepte les PDF, les photos (JPEG, HEIC, PNG, TIFF et plus) et les documents Word ou texte (.docx, .doc, .rtf, .txt, .html).";
+"The file could not be prepared" = "Le fichier n’a pas pu être préparé";
+"The converted document could not be read." = "Le document converti n’a pas pu être lu.";
+"Choose files" = "Choisir des fichiers";
+"Pick PDFs, photos, or documents to print. Photos keep their full resolution." = "Choisissez des PDF, des photos ou des documents à imprimer. Les photos conservent leur résolution complète.";
+"Drop files to begin" = "Déposez des fichiers pour commencer";
+"PDFs, photos (JPEG, HEIC, PNG and more — full resolution), and Word or text documents. FlipStack prints the fronts, pauses while you flip the stack, then prints the backs." = "PDF, photos (JPEG, HEIC, PNG et plus, en résolution complète) et documents Word ou texte. FlipStack imprime les rectos, pause pendant que vous retournez la pile, puis imprime les versos.";
+"Converting file" = "Conversion du fichier en cours";

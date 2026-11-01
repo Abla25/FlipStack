@@ -15,8 +15,12 @@ struct DocumentSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             FlipSectionHeader("Document") {
-                if model.selectedDocument != nil {
-                    Text("PDF")
+                if model.isIngestingDocument {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .accessibilityLabel("Converting file")
+                } else if let document = model.selectedDocument {
+                    Text(document.formatTag)
                         .font(.system(size: 8, weight: .semibold))
                         .tracking(1.1)
                         .foregroundStyle(FlipColor.tertiaryInk)
@@ -42,13 +46,13 @@ struct DocumentSection: View {
             DropPageArt(isTargeted: isTargeted, size: artSize)
                 .padding(.bottom, 12)
 
-            Text(isTargeted ? L("Release to open") : L("Drop a PDF to begin"))
+            Text(isTargeted ? L("Release to open") : L("Drop files to begin"))
                 .font(FlipType.displaySmall)
                 .foregroundStyle(FlipColor.ink)
                 .multilineTextAlignment(.center)
                 .accessibilityAddTraits(.isHeader)
 
-            Text("FlipStack prints the fronts, pauses while you flip the stack, then prints the backs.")
+            Text("PDFs, photos (JPEG, HEIC, PNG and more — full resolution), and Word or text documents. FlipStack prints the fronts, pauses while you flip the stack, then prints the backs.")
                 .font(FlipType.footnote)
                 .foregroundStyle(FlipColor.secondaryInk)
                 .multilineTextAlignment(.center)
@@ -63,12 +67,12 @@ struct DocumentSection: View {
                 HStack(spacing: 6) {
                     Image(systemName: "folder")
                         .font(.system(size: 10, weight: .semibold))
-                    Text("Choose PDF")
+                    Text("Choose files")
                 }
             }
             .buttonStyle(FlipSmallPrimaryButtonStyle())
             .padding(.top, 14)
-            .accessibilityHint("Opens a file picker. Command-O works anywhere in the panel.")
+            .accessibilityHint("Opens a file picker for PDFs, photos, and documents. Command-O works anywhere in the panel.")
         }
         .padding(.vertical, 18)
         .padding(.horizontal, 14)
@@ -213,27 +217,33 @@ struct DocumentSection: View {
     // MARK: Drop handling
 
     private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
-        guard let provider = providers.first(where: {
+        let fileProviders = providers.filter {
             $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
-        }) else {
-            return false
         }
+        guard !fileProviders.isEmpty else { return false }
 
-        provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-            let url: URL?
-            if let data = item as? Data {
-                url = URL(dataRepresentation: data, relativeTo: nil)
-            } else if let fileURL = item as? URL {
-                url = fileURL
-            } else if let fileURL = item as? NSURL {
-                url = fileURL as URL
-            } else {
-                url = nil
+        var urls: [URL] = []
+        let group = DispatchGroup()
+        for provider in fileProviders {
+            group.enter()
+            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                defer { group.leave() }
+                let url: URL?
+                if let data = item as? Data {
+                    url = URL(dataRepresentation: data, relativeTo: nil)
+                } else if let fileURL = item as? URL {
+                    url = fileURL
+                } else if let fileURL = item as? NSURL {
+                    url = fileURL as URL
+                } else {
+                    url = nil
+                }
+                if let url { urls.append(url) }
             }
-
-            guard let url else { return }
+        }
+        group.notify(queue: .main) {
             Task { @MainActor in
-                await model.acceptDocument(url: url)
+                await model.acceptDocuments(urls: urls)
             }
         }
         return true
