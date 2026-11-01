@@ -24,17 +24,20 @@ public struct PageRange: Hashable, Codable, Sendable {
         self.upperBound = upperBound
     }
 
-    /// Parses `"1-3,7,10-12"`. Invalid fragments are ignored.
+    /// Parses `"1-3,7,10-12"`. Invalid fragments are ignored. Dashes may be
+    /// hyphens, en/em dashes, or the Unicode minus sign, with or without
+    /// spaces around them (`"1 - 3"` is a valid range).
     public static func list(from string: String) -> [PageRange] {
         string
             .replacingOccurrences(of: "–", with: "-")
             .replacingOccurrences(of: "—", with: "-")
+            .replacingOccurrences(of: "−", with: "-")
             .split(separator: ",")
             .compactMap { fragment -> PageRange? in
                 let value = fragment.trimmingCharacters(in: .whitespaces)
                 if let dash = value.firstIndex(of: "-") {
-                    let lower = Int(value[..<dash])
-                    let upper = Int(value[value.index(after: dash)...])
+                    let lower = Int(value[..<dash].trimmingCharacters(in: .whitespaces))
+                    let upper = Int(value[value.index(after: dash)...].trimmingCharacters(in: .whitespaces))
                     guard let lower, let upper else { return nil }
                     return PageRange(lower, upper)
                 }
@@ -45,6 +48,21 @@ public struct PageRange: Hashable, Codable, Sendable {
 
     public var cupsValue: String {
         lowerBound == upperBound ? "\(lowerBound)" : "\(lowerBound)-\(upperBound)"
+    }
+}
+
+/// A user-defined quality preset: a named bundle of driver-option overrides,
+/// persisted per printer queue. Custom presets let a user build their own
+/// ladder of steps (for example Eco 180, Fine 300, Max 600) out of the real
+/// choices the printer's PPD advertises — FlipStack never invents a value the
+/// driver does not expose.
+public struct CustomQualityPreset: Identifiable, Codable, Hashable, Sendable {
+    public var id: String
+    public var name: String
+
+    public init(id: String = UUID().uuidString, name: String) {
+        self.id = id
+        self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 
@@ -229,6 +247,7 @@ public enum CUPSCommandError: LocalizedError, Equatable, Sendable {
     case printerNotFound(String)
     case jobNotFound(Int)
     case fileNotFound(String)
+    case spoolCopyFailed
     case timedOut(tool: String)
 
     public var errorDescription: String? {
@@ -244,8 +263,12 @@ public enum CUPSCommandError: LocalizedError, Equatable, Sendable {
             return String(format: L("Printer “%@” is not available."), printer)
         case .jobNotFound(let id):
             return String(format: L("Print job %lld could not be found."), id)
-        case .fileNotFound(let path):
-            return String(format: L("The file at %@ does not exist."), path)
+        // Never embed the user's document path: these descriptions reach
+        // in-app banners and the unified log via NSLog.
+        case .fileNotFound:
+            return L("The print file could not be read.")
+        case .spoolCopyFailed:
+            return L("The document could not be copied for printing.")
         case .timedOut(let tool):
             return String(format: L("%@ did not respond in time."), tool)
         }

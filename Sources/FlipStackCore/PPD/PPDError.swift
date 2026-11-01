@@ -10,10 +10,12 @@ public enum PPDError: LocalizedError, Equatable, Sendable {
 
     public var errorDescription: String? {
         switch self {
+        // System PPD paths only: keep the filename for diagnosis, never the
+        // full path.
         case .fileNotFound(let path):
-            return "The PPD at \(path) does not exist."
+            return "The printer driver file \((path as NSString).lastPathComponent) does not exist."
         case .unreadableFile(let path):
-            return "The PPD at \(path) could not be read."
+            return "The printer driver file \((path as NSString).lastPathComponent) could not be read."
         case .decompressionFailed(let message):
             let detail = message.trimmingCharacters(in: .whitespacesAndNewlines)
             return "The PPD could not be decompressed\(detail.isEmpty ? "." : ": \(detail)")"

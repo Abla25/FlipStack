@@ -15,7 +15,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         NSApp.setActivationPolicy(.accessory)
 
         let arguments = ProcessInfo.processInfo.arguments
+        // Demo and capture flags exist only in debug builds; release binaries
+        // never parse --demo/--capture-*/--show-* into behavior.
+        #if DEBUG
         let demo = DemoSession(arguments: arguments)
+        #else
+        let demo: DemoSession? = nil
+        #endif
 
         let spooler: any PrintSpooling
         let ppdProvider: any PPDProviding
@@ -158,6 +164,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
         // Useful for local UI review. It is not advertised in the app UI and
         // does not alter normal launch behavior.
+        #if DEBUG
         if let documentPath = Self.argumentValue("--open-document", in: arguments) {
             Task { await model.acceptDocument(url: URL(fileURLWithPath: documentPath)) }
         }
@@ -210,6 +217,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 }
             }
         }
+        #endif
     }
 
     private static func argumentValue(_ name: String, in arguments: [String]) -> String? {

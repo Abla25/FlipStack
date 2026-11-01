@@ -64,6 +64,26 @@ enum PageSelectionMode: String, CaseIterable, Identifiable {
     }
 }
 
+/// One entry in the quality picker: a built-in preset (Eco/Standard/High/
+/// Photo) or a user-defined custom preset, unified by a stable id.
+struct QualityPresetItem: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let isCustom: Bool
+
+    init(preset: PrintQualityPreset) {
+        self.id = preset.rawValue
+        self.title = preset.title
+        self.isCustom = false
+    }
+
+    init(custom: CustomQualityPreset) {
+        self.id = custom.id
+        self.title = custom.name
+        self.isCustom = true
+    }
+}
+
 struct PageSelectionInfo: Equatable {
     var mode: PageSelectionMode
     var ranges: [PageRange]
@@ -203,7 +223,11 @@ final class AppModel: ObservableObject {
     private var isAdjustingSelectionFromPreview = false
     @Published private(set) var activePrintMode: PrintMode = .manualDuplex
     @Published private(set) var selectedQualityPreset: PrintQualityPreset?
-    @Published private(set) var qualityOverrides: [PrintQualityPreset: [String: String]] = [:]
+    @Published private(set) var selectedCustomPresetID: String?
+    /// Overrides keyed by preset id: a built-in preset's raw value, or a
+    /// custom preset's id.
+    @Published private(set) var qualityOverrides: [String: [String: String]] = [:]
+    @Published private(set) var customPresets: [CustomQualityPreset] = []
     @Published var pageOrientation: PageOrientationChoice = .automatic {
         didSet {
             guard oldValue != pageOrientation else { return }
@@ -228,8 +252,68 @@ final class AppModel: ObservableObject {
         }
     }
 
-    var effectiveScale: CGFloat {
-        fitToPage ? 1 : CGFloat(scalePercent) / 100
+    // MARK: Preview geometry (macOS print-panel semantics)
+
+    /// The selected paper's physical size in PostScript points, from the
+    /// PPD's own `*PaperDimension` when it declares one, otherwise from the
+    /// standard page-size catalog. Nil when no paper option exists.
+    var selectedPaperSize: CGSize? {
+        guard let option = paperSizeOption else { return nil }
+        return ppd?.paperSize(for: selectedValue(for: option))
+    }
+
+    /// The printable rectangle of the selected paper, when the PPD declares it.
+    var selectedImageableArea: CGRect? {
+        guard let option = paperSizeOption else { return nil }
+        return ppd?.imageableArea(for: selectedValue(for: option))
+    }
+
+    /// The paper sheet shown in the preview and setup diagram, in points, in
+    /// the paper's own orientation. Falls back to the document's page size.
+    var previewSheetSize: CGSize {
+        if let paper = selectedPaperSize {
+            return paper
+        }
+        if let document = selectedDocument {
+            return CGSize(width: document.pageWidth, height: document.pageHeight)
+        }
+        return CGSize(width: 595.28, height: 841.89)
+    }
+
+    /// The page content box as it lands on the sheet, in points: the document
+    /// page with width and height swapped when the print orientation rotates
+    /// it 90 degrees.
+    var previewContentSize: CGSize {
+        guard let document = selectedDocument else { return previewSheetSize }
+        let rotates = printOrientation == .landscape || printOrientation == .reverseLandscape
+        if rotates != document.isLandscape {
+            return CGSize(width: document.pageHeight, height: document.pageWidth)
+        }
+        return CGSize(width: document.pageWidth, height: document.pageHeight)
+    }
+
+    /// The rotation applied to the content on the sheet, in degrees.
+    var previewContentRotation: Double {
+        switch printOrientation {
+        case .portrait: return 0
+        case .landscape: return 90
+        case .reverseLandscape: return -90
+        case .reversePortrait: return 180
+        }
+    }
+
+    /// The scale applied to the content inside the sheet. This mirrors what
+    /// CUPS does at print time: `fit-to-page` scales the page to fit the
+    /// paper; an exact percentage scales the page itself. The sheet never
+    /// changes size — exactly like the macOS print panel preview.
+    var previewContentScale: CGFloat {
+        guard !fitToPage else {
+            let sheet = previewSheetSize
+            let content = previewContentSize
+            guard content.width > 0, content.height > 0 else { return 1 }
+            return min(sheet.width / content.width, sheet.height / content.height)
+        }
+        return CGFloat(scalePercent) / 100
     }
 
     func setScalePercent(_ value: Int) {
@@ -437,13 +521,21 @@ final class AppModel: ObservableObject {
                 .filter { !$0.isEmpty }
             let raw = PageRange.list(from: pageRangeText)
             guard !raw.isEmpty, raw.count == fragments.count else {
+                // Fragments that are purely numeric but produced no valid
+                // range (0, reversed, beyond the document) deserve the range
+                // message; anything else is a syntax problem.
+                let looksLikeNumbers = !fragments.isEmpty && fragments.allSatisfy { fragment in
+                    fragment.allSatisfy { $0.isNumber || $0.isWhitespace || $0 == "-" || $0 == "–" || $0 == "—" || $0 == "−" }
+                }
                 return PageSelectionInfo(
                     mode: .range,
                     ranges: [],
                     pageCount: 0,
                     totalPages: document.pageCount,
                     isValid: false,
-                    message: L("Use commas between pages, like 1-4, 7.")
+                    message: looksLikeNumbers
+                        ? String(format: L("Pages must be between 1 and %lld."), document.pageCount)
+                        : L("Use commas between pages, like 1-4, 7.")
                 )
             }
             do {
@@ -594,6 +686,19 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// PPD options that have no curated control (everything outside color,
+    /// paper, media, quality, duplex, and color profiles). Shown under the
+    /// "Driver options" disclosure so nothing the driver exposes is hidden.
+    var extraDriverOptions: [PPDOption] {
+        guard let ppd else { return [] }
+        let curated: Set<PPDOptionGroup> = [.color, .paperSize, .mediaType, .quality, .duplex]
+        return ppd.options.filter { option in
+            guard !option.choices.isEmpty, !curated.contains(option.group) else { return false }
+            let text = (option.keyword + " " + option.label).lowercased()
+            return !(text.contains("profile") || text.contains("icc"))
+        }
+    }
+
     var paperSizeOption: PPDOption? {
         ppd?.option(in: .paperSize)
     }
@@ -684,14 +789,24 @@ final class AppModel: ObservableObject {
     }
 
     func effectiveQualityValue(for preset: PrintQualityPreset, option: PPDOption) -> String {
-        if let override = qualityOverrides[preset]?[option.keyword],
+        effectiveQualityValue(forPresetID: preset.rawValue, option: option)
+    }
+
+    /// The value a preset would use for an option: the saved override when
+    /// valid, otherwise the resolver's driver-based choice for built-ins, or
+    /// the driver default for custom presets.
+    func effectiveQualityValue(forPresetID presetID: String, option: PPDOption) -> String {
+        if let override = qualityOverrides[presetID]?[option.keyword],
            option.choice(keyword: override) != nil {
             return override
         }
-        return presetResolver?.apply(preset, to: optionSelection)
-            .options[option.keyword]
-            ?? option.selectedDefault
-            ?? ""
+        if let preset = PrintQualityPreset(rawValue: presetID) {
+            return presetResolver?.apply(preset, to: optionSelection)
+                .options[option.keyword]
+                ?? option.selectedDefault
+                ?? ""
+        }
+        return option.selectedDefault ?? ""
     }
 
     func setQualityOverride(
@@ -699,12 +814,20 @@ final class AppModel: ObservableObject {
         for preset: PrintQualityPreset,
         option: PPDOption
     ) {
+        setQualityOverride(value, forPresetID: preset.rawValue, option: option)
+    }
+
+    func setQualityOverride(
+        _ value: String,
+        forPresetID presetID: String,
+        option: PPDOption
+    ) {
         guard option.choice(keyword: value) != nil else { return }
-        var overrides = qualityOverrides[preset] ?? [:]
+        var overrides = qualityOverrides[presetID] ?? [:]
         overrides[option.keyword] = value
-        qualityOverrides[preset] = overrides
+        qualityOverrides[presetID] = overrides
         persistQualityOverrides()
-        if selectedQualityPreset == preset {
+        if selectedQualityPreset?.rawValue == presetID || selectedCustomPresetID == presetID {
             optionSelection[option.keyword] = value
             if let id = selectedPrinter?.id {
                 preferencesStore.saveOptionChoices(optionSelection, for: id)
@@ -713,23 +836,117 @@ final class AppModel: ObservableObject {
     }
 
     func resetQualityOverride(_ preset: PrintQualityPreset) {
-        qualityOverrides[preset] = nil
+        resetQualityOverride(presetID: preset.rawValue)
+    }
+
+    func resetQualityOverride(presetID: String) {
+        qualityOverrides[presetID] = nil
         persistQualityOverrides()
-        if selectedQualityPreset == preset {
-            applyQualityPreset(preset)
+        if selectedQualityPreset?.rawValue == presetID {
+            if let preset = PrintQualityPreset(rawValue: presetID) {
+                applyQualityPreset(preset)
+            }
+        } else if selectedCustomPresetID == presetID {
+            applyCustomPreset(presetID)
         }
     }
 
     func hasQualityOverride(_ preset: PrintQualityPreset) -> Bool {
-        !(qualityOverrides[preset]?.isEmpty ?? true)
+        hasQualityOverride(presetID: preset.rawValue)
+    }
+
+    func hasQualityOverride(presetID: String) -> Bool {
+        !(qualityOverrides[presetID]?.isEmpty ?? true)
     }
 
     private func persistQualityOverrides() {
         guard let id = selectedPrinter?.id else { return }
-        let raw = Dictionary(uniqueKeysWithValues: qualityOverrides.map { preset, values in
-            (preset.rawValue, values)
-        })
-        preferencesStore.saveQualityOverrides(raw, for: id)
+        preferencesStore.saveQualityOverrides(qualityOverrides, for: id)
+    }
+
+    // MARK: Custom quality presets
+
+    /// Built-in presets plus the user's custom ones for the selected queue.
+    var qualityPresetItems: [QualityPresetItem] {
+        let builtIns = qualityPresets.map(QualityPresetItem.init(preset:))
+        let customs = customPresets.map(QualityPresetItem.init(custom:))
+        return builtIns + customs
+    }
+
+    /// The preset currently reflected in the driver options, built-in or
+    /// custom, or nil when the selection is custom/free-form.
+    var activePresetItem: QualityPresetItem? {
+        if let id = selectedCustomPresetID, customPresets.contains(where: { $0.id == id }) {
+            return customPresets.first { $0.id == id }.map(QualityPresetItem.init(custom:))
+        }
+        if let preset = activeQualityPreset {
+            return QualityPresetItem(preset: preset)
+        }
+        return nil
+    }
+
+    func applyQualityPresetItem(_ item: QualityPresetItem) {
+        if let preset = PrintQualityPreset(rawValue: item.id) {
+            applyQualityPreset(preset)
+        } else {
+            applyCustomPreset(item.id)
+        }
+    }
+
+    /// Applies a custom preset: every saved override is pushed into the
+    /// driver options. Keywords the preset does not control keep their
+    /// current value.
+    func applyCustomPreset(_ presetID: String) {
+        guard customPresets.contains(where: { $0.id == presetID }) else { return }
+        let preserveGrayscale = isGrayscaleSelected
+        for (keyword, value) in qualityOverrides[presetID] ?? [:] {
+            guard let option = ppd?.option(keyword: keyword),
+                  option.choice(keyword: value) != nil else { continue }
+            optionSelection[keyword] = value
+        }
+        if preserveGrayscale,
+           let colorOption = colorModeOption,
+           let grayscale = grayscaleChoice {
+            optionSelection[colorOption.keyword] = grayscale.keyword
+        }
+        selectedQualityPreset = nil
+        selectedCustomPresetID = presetID
+        if let id = selectedPrinter?.id {
+            preferencesStore.saveOptionChoices(optionSelection, for: id)
+        }
+    }
+
+    /// Creates a custom preset seeded with the currently selected quality
+    /// values, so the new step starts as a copy of the current setup.
+    func addCustomPreset(name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let id = selectedPrinter?.id else { return }
+        let preset = CustomQualityPreset(name: trimmed)
+        customPresets.append(preset)
+        var overrides: [String: String] = [:]
+        for option in qualityTunableOptions {
+            let current = selectedValue(for: option)
+            if option.choice(keyword: current) != nil {
+                overrides[option.keyword] = current
+            }
+        }
+        if !overrides.isEmpty {
+            qualityOverrides[preset.id] = overrides
+        }
+        persistQualityOverrides()
+        preferencesStore.saveCustomQualityPresets(customPresets, for: id)
+        applyCustomPreset(preset.id)
+    }
+
+    func removeCustomPreset(_ presetID: String) {
+        guard let id = selectedPrinter?.id else { return }
+        customPresets.removeAll { $0.id == presetID }
+        // Keep the overrides: re-adding a preset with the same id restores
+        // the tuned values instead of starting from scratch.
+        preferencesStore.saveCustomQualityPresets(customPresets, for: id)
+        if selectedCustomPresetID == presetID {
+            selectedCustomPresetID = nil
+        }
     }
 
     var discoveredPrinters: [DiscoveredPrinter] {
@@ -1045,11 +1262,9 @@ final class AppModel: ObservableObject {
         localJobTitles.removeAll()
         preferencesStore.lastPrinterID = printer.id
         preferences = preferencesStore.load(for: printer.id)
-        let rawOverrides = preferencesStore.loadQualityOverrides(for: printer.id)
-        qualityOverrides = Dictionary(uniqueKeysWithValues: rawOverrides.compactMap { key, value in
-            guard let preset = PrintQualityPreset(rawValue: key) else { return nil }
-            return (preset, value)
-        })
+        qualityOverrides = preferencesStore.loadQualityOverrides(for: printer.id)
+        customPresets = preferencesStore.loadCustomQualityPresets(for: printer.id)
+        selectedCustomPresetID = nil
         let layout = preferencesStore.loadLayout(for: printer.id)
         pageOrientation = layout.pageOrientation
         fitToPage = layout.fitToPage
@@ -1200,7 +1415,8 @@ final class AppModel: ObservableObject {
         let preserveGrayscale = isGrayscaleSelected
         let result = resolver.apply(preset, to: optionSelection)
         optionSelection = result.options
-        for (keyword, value) in qualityOverrides[preset] ?? [:] {
+        selectedCustomPresetID = nil
+        for (keyword, value) in qualityOverrides[preset.rawValue] ?? [:] {
             guard let option = ppd?.option(keyword: keyword),
                   option.choice(keyword: value) != nil else { continue }
             optionSelection[keyword] = value
@@ -1958,15 +2174,12 @@ final class AppModel: ObservableObject {
     }
 
     private static func workingDirectory(prefix: String) -> URL {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("FlipStack", isDirectory: true)
-            .appendingPathComponent("\(prefix)-\(UUID().uuidString)", isDirectory: true)
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try? FileManager.default.setAttributes(
-            [.posixPermissions: 0o700],
-            ofItemAtPath: directory.path
-        )
-        return directory
+        // SecureTemp creates the directory with 0700 at creation time.
+        if let directory = try? SecureTemp.makeDirectory(prefix: prefix) {
+            return directory
+        }
+        return FileManager.default.temporaryDirectory
+            .appendingPathComponent("FlipStack-\(UUID().uuidString)", isDirectory: true)
     }
 
     private func makeBookletDocument(_ output: BookletDocuments, title: String) -> DuplexDocument {

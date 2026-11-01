@@ -350,6 +350,10 @@ public final class DuplexOrchestrator: ObservableObject {
         guard isCurrent(token), !Task.isCancelled else { return false }
 
         activePass = pass
+        // Anchor the watchdog to this pass's submission, not to the fronts
+        // start: a long flip prompt or a retry must not consume the backs
+        // pass's budget.
+        passStartedAt = Date()
         setProgress(pass == .fronts ? 0.02 : 0.55)
         let singleSidedOptions = configuration.driverOptions.merging(
             ["sides": "one-sided"],
@@ -459,12 +463,19 @@ public final class DuplexOrchestrator: ObservableObject {
             }
 
             if var latest {
-                // A reused numeric id must not resurrect an old completion.
-                if latest.state == .completed,
-                   let submittedAt = initialJob.createdAt,
-                   let completedAt = latest.createdAt,
-                   completedAt < submittedAt {
-                    latest = currentJob
+                // A reused numeric id must not resurrect an old completion:
+                // the completed entry must not predate this job, and it must
+                // belong to the same owner when both report one.
+                if latest.state == .completed {
+                    let olderCompletion = latest.createdAt != nil
+                        && initialJob.createdAt != nil
+                        && latest.createdAt! < initialJob.createdAt!
+                    let otherOwner = latest.owner != nil
+                        && initialJob.owner != nil
+                        && latest.owner != initialJob.owner
+                    if olderCompletion || otherOwner {
+                        latest = currentJob
+                    }
                 }
                 unknownSince = nil
                 if latest != currentJob {

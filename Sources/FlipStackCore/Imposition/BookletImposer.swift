@@ -147,20 +147,9 @@ public struct BookletImposer: BookletImposing {
         }
 
         let fileManager = FileManager.default
-        let workingDirectory = fileManager.temporaryDirectory
-            .appendingPathComponent(Self.workingFolderName, isDirectory: true)
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-
+        let workingDirectory: URL
         do {
-            try fileManager.createDirectory(
-                at: workingDirectory,
-                withIntermediateDirectories: true,
-                attributes: nil
-            )
-            try? fileManager.setAttributes(
-                [.posixPermissions: 0o700],
-                ofItemAtPath: workingDirectory.path
-            )
+            workingDirectory = try SecureTemp.makeDirectory(prefix: Self.workingFolderName)
         } catch {
             throw BookletError.cannotCreateWorkingDirectory(error.localizedDescription)
         }
@@ -250,13 +239,14 @@ public struct BookletImposer: BookletImposing {
                 "The imposed PDF was expected to have \(sequence.count) pages."
             )
         }
-        guard output.write(to: url) else {
-            throw BookletError.cannotWrite("Could not write \(url.lastPathComponent).")
+        guard let data = output.dataRepresentation() else {
+            throw BookletError.cannotWrite("Could not write the imposed PDF.")
         }
-        try? FileManager.default.setAttributes(
-            [.posixPermissions: 0o600],
-            ofItemAtPath: url.path
-        )
+        do {
+            try SecureTemp.write(data, to: url)
+        } catch {
+            throw BookletError.cannotWrite("Could not write the imposed PDF.")
+        }
     }
 }
 

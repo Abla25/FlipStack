@@ -8,15 +8,12 @@ struct ModeSection: View {
     @ObservedObject var model: AppModel
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Namespace private var modeNamespace
 
     private var isBusy: Bool { model.isPreparingPrint }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 11) {
-            HStack(spacing: 8) {
-                FlipEyebrow("Mode")
-                Spacer()
+            FlipSectionHeader("Mode") {
                 if model.mode == .booklet {
                     Text("LONG-EDGE FLIP")
                         .font(.system(size: 7.5, weight: .semibold))
@@ -57,60 +54,28 @@ struct ModeSection: View {
     }
 
     private var modeSwitch: some View {
-        HStack(spacing: 3) {
-            ForEach(PrintMode.allCases) { option in
-                let isSelected = model.mode == option
-                Button {
-                    guard !isBusy, !isSelected else { return }
-                    withAnimation(FlipMotion.standard(reduceMotion)) {
-                        model.mode = option
-                    }
-                } label: {
-                    Text(option.label)
-                        .font(.system(.footnote, design: .default, weight: .semibold))
-                        .foregroundStyle(isSelected ? FlipColor.onCoral : FlipColor.secondaryInk)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 31)
-                        .background {
-                            if isSelected {
-                                RoundedRectangle(cornerRadius: FlipMetrics.smallRadius, style: .continuous)
-                                    .fill(FlipColor.coral)
-                                    .matchedGeometryEffect(id: "mode.indicator", in: modeNamespace)
-                            }
-                        }
-                        .contentShape(Rectangle())
+        FlipSegmentedPicker(
+            labels: PrintMode.allCases.map(\.label),
+            selectedIndex: Binding(
+                get: { PrintMode.allCases.firstIndex(of: model.mode) ?? 0 },
+                set: { _ in }
+            ),
+            height: 31,
+            font: .system(.footnote, design: .default, weight: .semibold),
+            accessibilityLabels: PrintMode.allCases.map(\.label),
+            onChange: { index in
+                guard !isBusy else { return }
+                withAnimation(FlipMotion.standard(reduceMotion)) {
+                    model.mode = PrintMode.allCases[index]
                 }
-                .buttonStyle(.plain)
-                .disabled(isBusy)
-                .accessibilityLabel(option.label)
-                .accessibilityValue(isSelected ? "Selected" : "Not selected")
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
-                .accessibilityHint(hint(for: option))
             }
-        }
-        .padding(3)
-        .background(
-            RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
-                .fill(FlipColor.tone)
         )
-        .overlay {
-            RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
-                .strokeBorder(FlipColor.hairline, lineWidth: 0.5)
-        }
+        .disabled(isBusy)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(L("Mode"))
     }
 
     // MARK: Booklet
-
-    private func hint(for option: PrintMode) -> String {
-        switch option {
-        case .booklet:
-            return L("Imposes the pages as folded signatures.")
-        case .singleSided:
-            return L("Prints each page once, without a flip.")
-        case .manualDuplex:
-            return L("Prints odd pages, pauses for a flip, then prints even pages.")
-        }
-    }
 
     private var bookletDetails: some View {
         VStack(alignment: .leading, spacing: 9) {
@@ -292,15 +257,66 @@ struct OutputSection: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var expandedOptionKeyword: String?
     @State private var isOptionsExpanded = false
+    @State private var expandedSetupPicker: SetupPicker?
     @FocusState private var isPageRangeFocused: Bool
+
+    /// Which in-panel popover list is open inside the page-setup card.
+    private enum SetupPicker: Equatable {
+        case paper
+        case media
+        case profile(String)
+    }
+
+    private func setupOption(for picker: SetupPicker) -> PPDOption? {
+        switch picker {
+        case .paper:
+            return model.paperSizeOption
+        case .media:
+            return model.mediaTypeOption
+        case .profile(let keyword):
+            return model.colorProfileOptions.first { $0.keyword == keyword }
+        }
+    }
+
+    private func toggleSetupPicker(_ picker: SetupPicker) {
+        guard !isBusy else { return }
+        withAnimation(FlipMotion.quick(reduceMotion)) {
+            expandedSetupPicker = expandedSetupPicker == picker ? nil : picker
+        }
+    }
+
+    /// A paper/media/profile value button that opens the in-panel choice list
+    /// instead of a system menu, keeping the popover feel consistent.
+    private func setupPickerButton(
+        label: String,
+        font: Font,
+        tint: Color = FlipColor.ink,
+        isExpanded: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Text(label)
+                    .font(font)
+                    .foregroundStyle(tint)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundStyle(FlipColor.tertiaryInk)
+                    .rotationEffect(.degrees(isExpanded ? 180 : 0))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isBusy)
+    }
 
     private var isBusy: Bool { model.isPreparingPrint }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                FlipEyebrow("Output")
-                Spacer()
+            FlipSectionHeader("Output") {
                 if model.isLoadingPPD {
                     ProgressView()
                         .controlSize(.mini)
@@ -337,6 +353,34 @@ struct OutputSection: View {
                 }
             }
 
+            if !model.extraDriverOptions.isEmpty {
+                driverOptionsSummary
+
+                if isOptionsExpanded {
+                    VStack(spacing: 6) {
+                        ForEach(model.extraDriverOptions) { option in
+                            DriverOptionChip(
+                                option: option,
+                                selectedKeyword: model.selectedValue(for: option),
+                                isExpanded: expandedOptionKeyword == option.keyword
+                            ) {
+                                toggleExpanded(option)
+                            }
+
+                            if expandedOptionKeyword == option.keyword {
+                                DriverChoiceList(
+                                    option: option,
+                                    selectedKeyword: model.selectedValue(for: option),
+                                    onSelect: { model.setValue($0, for: option) },
+                                    onClose: { toggleExpanded(option) }
+                                )
+                            }
+                        }
+                    }
+                    .transition(.opacity)
+                }
+            }
+
             if model.ppd == nil, !model.isLoadingPPD {
                 driverNote
             } else if model.isLoadingPPD {
@@ -351,6 +395,7 @@ struct OutputSection: View {
         .onChange(of: model.selectedPrinter?.id) { _ in
             expandedOptionKeyword = nil
             isOptionsExpanded = false
+            expandedSetupPicker = nil
         }
     }
 
@@ -397,12 +442,14 @@ struct OutputSection: View {
     }
 
     private var driverOptionSummaryText: String {
-        let values = model.driverOptions.compactMap { option -> String? in
+        let values = model.extraDriverOptions.compactMap { option -> String? in
             let keyword = model.selectedValue(for: option)
             guard !keyword.isEmpty else { return nil }
             return option.choice(keyword: keyword)?.displayLabel ?? keyword
         }
-        return values.isEmpty ? "Driver defaults" : values.joined(separator: " · ")
+        return values.isEmpty
+            ? L("Driver defaults")
+            : "\(model.extraDriverOptions.count) · " + values.joined(separator: " · ")
     }
 
     private var expandedOption: PPDOption? {
@@ -450,39 +497,25 @@ struct OutputSection: View {
 
                 Spacer(minLength: 4)
 
-                HStack(spacing: 2) {
-                    ForEach(PageSelectionMode.allCases) { option in
-                        let isSelected = model.pageSelectionMode == option
-                        Button {
-                            guard !isBusy, !isSelected else { return }
-                            withAnimation(FlipMotion.quick(reduceMotion)) {
-                                model.pageSelectionMode = option
+                FlipSegmentedPicker(
+                    labels: PageSelectionMode.allCases.map(\.label),
+                    selectedIndex: Binding(
+                        get: { model.pageSelectionMode == .all ? 0 : 1 },
+                        set: { _ in }
+                    ),
+                    accessibilityLabels: [L("All pages"), L("Selected pages")],
+                    onChange: { index in
+                        let option = PageSelectionMode.allCases[index]
+                        guard !isBusy else { return }
+                        model.pageSelectionMode = option
+                        if option == .range {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                                isPageRangeFocused = true
                             }
-                            if option == .range {
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-                                    isPageRangeFocused = true
-                                }
-                            }
-                        } label: {
-                            Text(option.label)
-                                .font(.system(.caption2, design: .default, weight: .semibold))
-                                .foregroundStyle(isSelected ? FlipColor.onCoral : FlipColor.secondaryInk)
-                                .padding(.horizontal, 9)
-                                .frame(height: 22)
-                                .background(
-                                    Capsule().fill(isSelected ? FlipColor.coral : Color.clear)
-                                )
-                                .contentShape(Capsule())
                         }
-                        .buttonStyle(.plain)
-                        .disabled(isBusy)
-                        .accessibilityLabel(option == .all ? "All pages" : "Selected pages")
-                        .accessibilityAddTraits(isSelected ? .isSelected : [])
                     }
-                }
-                .padding(2)
-                .background(Capsule().fill(FlipColor.tone))
-                .overlay(Capsule().strokeBorder(FlipColor.hairline, lineWidth: 0.5))
+                )
+                .disabled(isBusy)
 
                 Text(selection.summary)
                     .font(.system(.caption, design: .rounded, weight: .medium))
@@ -535,13 +568,14 @@ struct OutputSection: View {
     }
 
     private var qualityPresetControl: some View {
-        HStack(spacing: 5) {
+        let items = model.qualityPresetItems
+        return HStack(spacing: 5) {
             Text("Quality")
                 .font(FlipType.captionStrong)
                 .foregroundStyle(FlipColor.secondaryInk)
                 .lineLimit(1)
 
-            if model.activeQualityPreset == nil {
+            if model.activePresetItem == nil {
                 Text("Custom")
                     .font(.system(size: 9, weight: .medium))
                     .foregroundStyle(FlipColor.tertiaryInk)
@@ -550,35 +584,23 @@ struct OutputSection: View {
 
             Spacer(minLength: 4)
 
-            ForEach(model.qualityPresets) { preset in
-                let isSelected = model.activeQualityPreset == preset
-                Button {
+            FlipSegmentedPicker(
+                labels: items.map(\.title),
+                selectedIndex: Binding(
+                    get: {
+                        guard let active = model.activePresetItem else { return -1 }
+                        return items.firstIndex { $0.id == active.id } ?? -1
+                    },
+                    set: { _ in }
+                ),
+                onChange: { index in
+                    guard index >= 0, index < items.count else { return }
                     withAnimation(FlipMotion.quick(reduceMotion)) {
-                        model.applyQualityPreset(preset)
+                        model.applyQualityPresetItem(items[index])
                     }
-                } label: {
-                    Text(preset.title)
-                        .font(.system(.caption2, design: .default, weight: .semibold))
-                        .foregroundStyle(isSelected ? FlipColor.onCoral : FlipColor.secondaryInk)
-                        .padding(.horizontal, 7)
-                        .frame(height: 22)
-                        .background(
-                            Capsule().fill(isSelected ? FlipColor.coral : FlipColor.tone)
-                        )
-                        .overlay {
-                            if !isSelected {
-                                Capsule().strokeBorder(FlipColor.hairline, lineWidth: 0.5)
-                            }
-                        }
-                        .contentShape(Capsule())
                 }
-                .buttonStyle(.plain)
-                .help(preset.detail)
-                .accessibilityLabel("\(preset.title) quality")
-                .accessibilityValue(isSelected ? "Selected" : "Not selected")
-                .accessibilityHint(preset.detail)
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
-            }
+            )
+            .help(model.qualityPresets.map(\.detail).joined(separator: "\n"))
         }
         .disabled(isBusy)
         .help("Quality is independent of Color / B&W. Choosing a quality preset never switches the print back to color.")
@@ -595,13 +617,21 @@ struct OutputSection: View {
 
             Spacer(minLength: 4)
 
-            HStack(spacing: 2) {
-                colorModeChip(title: "Color", grayscale: false)
-                colorModeChip(title: "B&W", grayscale: true)
-            }
-            .padding(2)
-            .background(Capsule().fill(FlipColor.tone))
-            .overlay(Capsule().strokeBorder(FlipColor.hairline, lineWidth: 0.5))
+            FlipSegmentedPicker(
+                labels: [L("Color"), L("B&W")],
+                selectedIndex: Binding(
+                    get: { model.isGrayscaleSelected ? 1 : 0 },
+                    set: { _ in }
+                ),
+                accessibilityLabels: [L("Color"), L("Black and white")],
+                onChange: { index in
+                    guard !isBusy else { return }
+                    withAnimation(FlipMotion.quick(reduceMotion)) {
+                        model.setGrayscale(index == 1)
+                    }
+                }
+            )
+            .help(L("Sets the color mode exposed by this printer driver."))
         }
         .disabled(isBusy)
         .accessibilityElement(children: .contain)
@@ -609,82 +639,58 @@ struct OutputSection: View {
         .accessibilityValue(model.isGrayscaleSelected ? "Black and white" : "Color")
     }
 
-    private func colorModeChip(title: String, grayscale: Bool) -> some View {
-        let isSelected = model.isGrayscaleSelected == grayscale
-        return Button {
-            guard !isBusy, !isSelected else { return }
-            withAnimation(FlipMotion.quick(reduceMotion)) {
-                model.setGrayscale(grayscale)
-            }
-        } label: {
-            Text(L(title))
-                .font(.system(.caption2, design: .default, weight: .semibold))
-                .foregroundStyle(isSelected ? FlipColor.onCoral : FlipColor.secondaryInk)
-                .padding(.horizontal, 10)
-                .frame(height: 22)
-                .background(Capsule().fill(isSelected ? FlipColor.coral : Color.clear))
-                .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .disabled(isBusy)
-        .help(grayscale ? "Print using the driver's grayscale or monochrome mode." : "Print using the driver's color mode.")
-        .accessibilityLabel(grayscale ? "Black and white" : "Color")
-        .accessibilityValue(isSelected ? "Selected" : "Not selected")
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .accessibilityHint("Sets the color mode exposed by this printer driver.")
-    }
-
     private func colorProfileControl(_ option: PPDOption) -> some View {
         let selected = model.selectedValue(for: option)
-        let selectedLabel = option.choice(keyword: selected)?.displayLabel ?? "Driver default"
-        return HStack(spacing: 6) {
-            Text(option.displayLabel)
-                .font(FlipType.captionStrong)
-                .foregroundStyle(FlipColor.secondaryInk)
-                .lineLimit(1)
-                .truncationMode(.tail)
+        let selectedLabel = option.choice(keyword: selected)?.displayLabel ?? L("Driver default")
+        let isExpanded = expandedSetupPicker == .profile(option.keyword)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text(option.displayLabel)
+                    .font(FlipType.captionStrong)
+                    .foregroundStyle(FlipColor.secondaryInk)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
 
-            Spacer(minLength: 4)
+                Spacer(minLength: 4)
 
-            Menu {
-                ForEach(option.choices) { choice in
-                    Button {
-                        model.setValue(choice.keyword, for: option)
-                    } label: {
-                        if choice.keyword == selected {
-                            Label(choice.displayLabel, systemImage: "checkmark")
-                        } else {
-                            Text(choice.displayLabel)
-                        }
+                Button {
+                    toggleSetupPicker(.profile(option.keyword))
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "circle.lefthalf.filled")
+                            .font(.system(size: 8, weight: .semibold))
+                        Text(selectedLabel)
+                            .font(.system(.caption2, design: .default, weight: .semibold))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 6.5, weight: .bold))
+                            .rotationEffect(.degrees(isExpanded ? 180 : 0))
                     }
+                    .foregroundStyle(FlipColor.secondaryInk)
+                    .padding(.horizontal, 8)
+                    .frame(height: 22)
+                    .background(Capsule().fill(FlipColor.tone))
+                    .overlay(Capsule().strokeBorder(FlipColor.hairline, lineWidth: 0.5))
+                    .contentShape(Capsule())
                 }
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "circle.lefthalf.filled")
-                        .font(.system(size: 8, weight: .semibold))
-                    Text(selectedLabel)
-                        .font(.system(.caption2, design: .default, weight: .semibold))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 6.5, weight: .bold))
-                }
-                .foregroundStyle(FlipColor.secondaryInk)
-                .padding(.horizontal, 8)
-                .frame(height: 22)
-                .background(Capsule().fill(FlipColor.tone))
-                .overlay(Capsule().strokeBorder(FlipColor.hairline, lineWidth: 0.5))
-                .contentShape(Capsule())
+                .buttonStyle(.plain)
+                .disabled(isBusy)
+                .help("Color profile exposed by this printer driver.")
+                .accessibilityLabel("\(option.displayLabel) color profile")
+                .accessibilityValue(selectedLabel)
+                .accessibilityHint("Chooses the color profile provided by this printer driver.")
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .tint(FlipColor.secondaryInk)
-            .frame(maxWidth: 210, alignment: .trailing)
-            .disabled(isBusy)
-            .help("Color profile exposed by this printer driver.")
-            .accessibilityLabel("\(option.displayLabel) color profile")
-            .accessibilityValue(selectedLabel)
-            .accessibilityHint("Chooses the color profile provided by this printer driver.")
+
+            if isExpanded {
+                DriverChoiceList(
+                    option: option,
+                    selectedKeyword: selected,
+                    onSelect: { model.setValue($0, for: option) },
+                    onClose: { expandedSetupPicker = nil }
+                )
+                .transition(.opacity)
+            }
         }
     }
 
@@ -693,6 +699,19 @@ struct OutputSection: View {
     private var pageSetupCard: some View {
         VStack(spacing: 0) {
             HStack(alignment: .top, spacing: 10) {
+                if model.mode != .booklet {
+                    FlipSheetDiagram(
+                        sheetSize: model.previewSheetSize,
+                        contentSize: model.previewContentSize,
+                        contentScale: model.previewContentScale,
+                        contentRotation: model.previewContentRotation,
+                        imageableArea: model.selectedImageableArea,
+                        height: 56
+                    )
+                    .frame(width: 44)
+                    .help("The paper sheet with your page scaled inside it, exactly as it will print.")
+                }
+
                 VStack(alignment: .leading, spacing: 3) {
                     FlipEyebrow("PDF page", color: FlipColor.tertiaryInk)
                     Text(model.documentPageSizeText ?? L("No document"))
@@ -721,35 +740,14 @@ struct OutputSection: View {
 
                 VStack(alignment: .trailing, spacing: 3) {
                     FlipEyebrow("Paper", color: FlipColor.tertiaryInk)
-                    if let option = model.paperSizeOption {
-                        Menu {
-                            ForEach(option.choices) { choice in
-                                Button {
-                                    model.setValue(choice.keyword, for: option)
-                                } label: {
-                                    if choice.keyword == model.selectedValue(for: option) {
-                                        Label(L(choice.displayLabel), systemImage: "checkmark")
-                                    } else {
-                                        Text(L(choice.displayLabel))
-                                    }
-                                }
-                            }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Text(model.selectedPaperLabel.map(L) ?? L("System default"))
-                                    .font(FlipType.footnoteStrong)
-                                    .foregroundStyle(FlipColor.ink)
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                                Image(systemName: "chevron.down")
-                                    .font(.system(size: 7, weight: .bold))
-                                    .foregroundStyle(FlipColor.tertiaryInk)
-                            }
-                            .contentShape(Rectangle())
+                    if model.paperSizeOption != nil {
+                        setupPickerButton(
+                            label: model.selectedPaperLabel.map(L) ?? L("System default"),
+                            font: FlipType.footnoteStrong,
+                            isExpanded: expandedSetupPicker == .paper
+                        ) {
+                            toggleSetupPicker(.paper)
                         }
-                        .menuStyle(.borderlessButton)
-                        .menuIndicator(.hidden)
-                        .fixedSize(horizontal: false, vertical: true)
                         .help("Paper size reported by this printer driver.")
                         .accessibilityLabel("Paper size")
                         .accessibilityValue(model.selectedPaperLabel ?? "System default")
@@ -759,34 +757,15 @@ struct OutputSection: View {
                             .foregroundStyle(FlipColor.ink)
                             .lineLimit(1)
                     }
-                    if let option = model.mediaTypeOption {
-                        Menu {
-                            ForEach(option.choices) { choice in
-                                Button {
-                                    model.setValue(choice.keyword, for: option)
-                                } label: {
-                                    if choice.keyword == model.selectedValue(for: option) {
-                                        Label(L(choice.displayLabel), systemImage: "checkmark")
-                                    } else {
-                                        Text(L(choice.displayLabel))
-                                    }
-                                }
-                            }
-                        } label: {
-                            HStack(spacing: 3) {
-                                Text(model.selectedMediaLabel.map(L) ?? L("Driver default"))
-                                    .font(FlipType.caption)
-                                    .foregroundStyle(FlipColor.tertiaryInk)
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                                Image(systemName: "chevron.down")
-                                    .font(.system(size: 6, weight: .bold))
-                                    .foregroundStyle(FlipColor.tertiaryInk)
-                            }
-                            .contentShape(Rectangle())
+                    if model.mediaTypeOption != nil {
+                        setupPickerButton(
+                            label: model.selectedMediaLabel.map(L) ?? L("Driver default"),
+                            font: FlipType.caption,
+                            tint: FlipColor.tertiaryInk,
+                            isExpanded: expandedSetupPicker == .media
+                        ) {
+                            toggleSetupPicker(.media)
                         }
-                        .menuStyle(.borderlessButton)
-                        .menuIndicator(.hidden)
                         .help("Media type reported by this printer driver.")
                         .accessibilityLabel("Media type")
                         .accessibilityValue(model.selectedMediaLabel ?? "Driver default")
@@ -801,6 +780,18 @@ struct OutputSection: View {
             }
             .padding(.horizontal, 11)
             .padding(.top, 10)
+
+            if let picker = expandedSetupPicker, let option = setupOption(for: picker) {
+                DriverChoiceList(
+                    option: option,
+                    selectedKeyword: model.selectedValue(for: option),
+                    onSelect: { model.setValue($0, for: option) },
+                    onClose: { expandedSetupPicker = nil }
+                )
+                .padding(.horizontal, 11)
+                .padding(.top, 8)
+                .transition(.opacity)
+            }
 
             FlipHairline()
                 .padding(.top, 9)
@@ -836,54 +827,30 @@ struct OutputSection: View {
                         .font(FlipType.captionStrong)
                         .foregroundStyle(FlipColor.secondaryInk)
                     Spacer(minLength: 4)
-                    ForEach(PageOrientationChoice.allCases) { orientation in
-                        orientationChip(orientation)
-                    }
+                    FlipSegmentedPicker(
+                        labels: PageOrientationChoice.allCases.map(\.label),
+                        selectedIndex: Binding(
+                            get: { PageOrientationChoice.allCases.firstIndex(of: model.pageOrientation) ?? 0 },
+                            set: { _ in }
+                        ),
+                        height: 23,
+                        font: .system(size: 9, weight: .semibold),
+                        onChange: { index in
+                            withAnimation(FlipMotion.quick(reduceMotion)) {
+                                model.pageOrientation = PageOrientationChoice.allCases[index]
+                            }
+                        }
+                    )
+                    .help(L("Rotates pages on the paper. Match PDF uses each page's own orientation."))
                 }
                 .padding(.horizontal, 11)
                 .padding(.top, 7)
                 .padding(.bottom, 10)
             }
         }
-        .background(
-            RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
-                .fill(FlipColor.tone)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
-                .strokeBorder(FlipColor.hairline, lineWidth: 0.5)
-        }
+        .background(FlipGlassCard(radius: FlipMetrics.compactRadius))
         .disabled(isBusy)
         .accessibilityElement(children: .contain)
-    }
-
-    private func orientationChip(_ orientation: PageOrientationChoice) -> some View {
-        let isSelected = model.pageOrientation == orientation
-        return Button {
-            withAnimation(FlipMotion.quick(reduceMotion)) {
-                model.pageOrientation = orientation
-            }
-        } label: {
-            Text(orientation.label)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(isSelected ? FlipColor.onCoral : FlipColor.secondaryInk)
-                .padding(.horizontal, 7)
-                .frame(height: 23)
-                .background(
-                    Capsule().fill(isSelected ? FlipColor.coral : Color.clear)
-                )
-                .overlay {
-                    if !isSelected {
-                        Capsule().strokeBorder(FlipColor.hairline, lineWidth: 0.5)
-                    }
-                }
-                .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .help(orientation == .automatic ? "Use each page's own orientation." : "Rotate pages to \(orientation.label.lowercased()).")
-        .accessibilityLabel(orientation.label)
-        .accessibilityValue(isSelected ? "Selected" : "Not selected")
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var copiesStepper: some View {

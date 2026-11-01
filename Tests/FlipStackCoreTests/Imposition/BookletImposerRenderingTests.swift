@@ -35,7 +35,10 @@ final class BookletImpositionRenderingTests: XCTestCase {
 
         XCTAssertEqual(documents.plan, plan)
         XCTAssertEqual(documents.workingDirectory.deletingLastPathComponent().lastPathComponent, "FlipStack")
-        XCTAssertNotNil(UUID(uuidString: documents.workingDirectory.lastPathComponent))
+        // SecureTemp names the leaf "<prefix>-<uuid>" (prefix is "FlipStack").
+        let leaf = documents.workingDirectory.lastPathComponent
+        XCTAssertTrue(leaf.hasPrefix("FlipStack-"), "unexpected working dir leaf: \(leaf)")
+        XCTAssertNotNil(UUID(uuidString: String(leaf.dropFirst("FlipStack-".count))))
         XCTAssertTrue(FileManager.default.fileExists(atPath: documents.frontsURL.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: documents.backsURL.path))
         XCTAssertGreaterThan(fileSize(at: documents.frontsURL), 0)

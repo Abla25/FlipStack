@@ -549,7 +549,19 @@ struct DemoPPDProvider: PPDProviding {    func locatePPD(for printer: Printer) -
                 )
             ],
             supportsHardwareDuplex: false,
-            sourcePath: "/Library/Printers/PPDs/Demo/Epson-L1800.ppd"
+            sourcePath: "/Library/Printers/PPDs/Demo/Epson-L1800.ppd",
+            paperDimensions: [
+                "a4": CGSize(width: 595.28, height: 841.89),
+                "a5": CGSize(width: 419.53, height: 595.28),
+                "letter": CGSize(width: 612, height: 792),
+                "legal": CGSize(width: 612, height: 1008)
+            ],
+            imageableAreas: [
+                "a4": CGRect(x: 18, y: 12, width: 559.28, height: 817.89),
+                "a5": CGRect(x: 14, y: 10, width: 391.53, height: 575.28),
+                "letter": CGRect(x: 18, y: 12, width: 576, height: 768),
+                "legal": CGRect(x: 18, y: 12, width: 576, height: 984)
+            ]
         )
     }
 }
@@ -646,19 +658,12 @@ enum DemoPDF {
         }
         context.closePDF()
 
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("FlipStackDemo", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try? FileManager.default.setAttributes(
-            [.posixPermissions: 0o700],
-            ofItemAtPath: directory.path
-        )
+        // The demo document lives under its own parent directory: the app
+        // wipes $TMPDIR/FlipStack on launch, and the demo PDF is created just
+        // before that cleanup runs.
+        let directory = try SecureTemp.makeDirectory(prefix: "Demo", parentName: "FlipStackDemo")
         let url = directory.appendingPathComponent("Field-Notes-\(pageCount)-pages.pdf")
-        try (data as Data).write(to: url, options: .atomic)
-        try? FileManager.default.setAttributes(
-            [.posixPermissions: 0o600],
-            ofItemAtPath: url.path
-        )
+        try SecureTemp.write(data as Data, to: url)
         return url
     }
 

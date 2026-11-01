@@ -82,6 +82,8 @@ protocol PreferencesStoring: AnyObject {
     func saveLayout(_ layout: PrintLayoutPreferences, for printerID: String)
     func loadQualityOverrides(for printerID: String) -> [String: [String: String]]
     func saveQualityOverrides(_ overrides: [String: [String: String]], for printerID: String)
+    func loadCustomQualityPresets(for printerID: String) -> [CustomQualityPreset]
+    func saveCustomQualityPresets(_ presets: [CustomQualityPreset], for printerID: String)
 }
 
 final class PreferencesStore: PreferencesStoring {
@@ -90,6 +92,7 @@ final class PreferencesStore: PreferencesStoring {
     private let optionsKey = "FlipStack.printerOptions.v1"
     private let layoutKey = "FlipStack.printLayout.v1"
     private let qualityOverridesKey = "FlipStack.qualityOverrides.v1"
+    private let customPresetsKey = "FlipStack.customQualityPresets.v1"
     private let lastPrinterKey = "FlipStack.lastPrinterID"
     private let lastModeKey = "FlipStack.lastPrintMode.v1"
 
@@ -184,5 +187,21 @@ final class PreferencesStore: PreferencesStoring {
         var all = defaults.dictionary(forKey: qualityOverridesKey) ?? [:]
         all[printerID] = data
         defaults.set(all, forKey: qualityOverridesKey)
+    }
+
+    func loadCustomQualityPresets(for printerID: String) -> [CustomQualityPreset] {
+        let all = defaults.dictionary(forKey: customPresetsKey) ?? [:]
+        guard let data = all[printerID] as? Data,
+              let decoded = try? JSONDecoder().decode([CustomQualityPreset].self, from: data) else {
+            return []
+        }
+        return decoded
+    }
+
+    func saveCustomQualityPresets(_ presets: [CustomQualityPreset], for printerID: String) {
+        guard let data = try? JSONEncoder().encode(presets) else { return }
+        var all = defaults.dictionary(forKey: customPresetsKey) ?? [:]
+        all[printerID] = data
+        defaults.set(all, forKey: customPresetsKey)
     }
 }

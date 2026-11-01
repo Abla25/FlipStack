@@ -78,19 +78,12 @@ public enum PDFPageScaler {
         }
         context.closePDF()
 
-        try FileManager.default.createDirectory(
-            at: destinationURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        try? FileManager.default.setAttributes(
-            [.posixPermissions: 0o700],
-            ofItemAtPath: destinationURL.deletingLastPathComponent().path
-        )
-        try (data as Data).write(to: destinationURL, options: .atomic)
-        try? FileManager.default.setAttributes(
-            [.posixPermissions: 0o600],
-            ofItemAtPath: destinationURL.path
-        )
+        try SecureTemp.secureParent(of: destinationURL)
+        do {
+            try SecureTemp.write(data as Data, to: destinationURL)
+        } catch {
+            throw ScaleError.cannotWrite
+        }
         return source.pageCount
     }
 }

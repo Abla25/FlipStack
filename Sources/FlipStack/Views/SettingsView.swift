@@ -155,43 +155,126 @@ struct SettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 VStack(spacing: 9) {
-                    ForEach(PrintQualityPreset.allCases) { preset in
-                        qualityPresetCard(preset)
+                    ForEach(model.qualityPresetItems) { item in
+                        qualityPresetCard(item)
                     }
+
+                    addPresetRow
                 }
             }
         }
         .accessibilityElement(children: .contain)
     }
 
-    private func qualityPresetCard(_ preset: PrintQualityPreset) -> some View {
+    /// Quality choices are listed lowest to highest by the resolution number
+    /// parsed from the driver's own labels, so every real intermediate step
+    /// the printer offers is visible in order.
+    private func sortedChoices(_ option: PPDOption) -> [PPDChoice] {
+        guard option.group == .quality else { return option.choices }
+        return option.choices.enumerated().sorted { lhs, rhs in
+            let left = PrintPresetResolver.numericValue(for: lhs.element) ?? Int.max
+            let right = PrintPresetResolver.numericValue(for: rhs.element) ?? Int.max
+            if left != right { return left < right }
+            return lhs.offset < rhs.offset
+        }.map(\.element)
+    }
+
+    @State private var newPresetName = ""
+
+    private var addPresetRow: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "plus")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(FlipColor.coralDeep)
+            TextField(L("New preset name, e.g. Fine 300 dpi"), text: $newPresetName)
+                .textFieldStyle(.plain)
+                .font(.system(.caption, design: .default))
+                .foregroundStyle(FlipColor.ink)
+                .onSubmit { addPreset() }
+            Button {
+                addPreset()
+            } label: {
+                Text(L("Add"))
+                    .font(.system(.caption2, design: .default, weight: .semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(FlipColor.onCoral)
+            .padding(.horizontal, 9)
+            .frame(height: 24)
+            .background(Capsule().fill(FlipColor.coral))
+            .disabled(newPresetName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .opacity(newPresetName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.45 : 1)
+            .contentShape(Capsule())
+            .accessibilityLabel("Add custom quality preset")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
+                .fill(FlipColor.tone)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: FlipMetrics.compactRadius, style: .continuous)
+                .strokeBorder(FlipColor.hairline, lineWidth: 0.5)
+        }
+    }
+
+    private func addPreset() {
+        let name = newPresetName
+        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        withAnimation(FlipMotion.quick(reduceMotion)) {
+            model.addCustomPreset(name: name)
+        }
+        newPresetName = ""
+    }
+
+    private func qualityPresetCard(_ item: QualityPresetItem) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 5) {
-                Text(preset.title)
+                Text(item.title)
                     .font(FlipType.bodyStrong)
                     .foregroundStyle(FlipColor.ink)
-                if model.hasQualityOverride(preset) {
+                if model.hasQualityOverride(presetID: item.id) {
                     Text("CUSTOM")
                         .font(.system(size: 7, weight: .semibold))
                         .tracking(0.8)
                         .foregroundStyle(FlipColor.coralDeep)
                 }
                 Spacer(minLength: 4)
-                if model.hasQualityOverride(preset) {
+                if item.isCustom {
+                    Button {
+                        withAnimation(FlipMotion.quick(reduceMotion)) {
+                            model.removeCustomPreset(item.id)
+                        }
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 9, weight: .semibold))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(FlipColor.danger)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 5)
+                    .contentShape(Rectangle())
+                    .accessibilityLabel(String(format: L("Delete preset %@"), item.title))
+                }
+                if model.hasQualityOverride(presetID: item.id) {
                     Button("Reset") {
                         withAnimation(FlipMotion.quick(reduceMotion)) {
-                            model.resetQualityOverride(preset)
+                            model.resetQualityOverride(presetID: item.id)
                         }
                     }
                     .buttonStyle(.plain)
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(FlipColor.coralDeep)
-                    .accessibilityHint(String(format: L("Restores the driver-based default for %@."), preset.title))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .contentShape(Rectangle())
+                    .accessibilityHint(String(format: L("Restores the driver-based default for %@."), item.title))
                 }
             }
 
             ForEach(model.qualityTunableOptions) { option in
-                qualityChoiceRow(preset: preset, option: option)
+                qualityChoiceRow(presetID: item.id, presetTitle: item.title, option: option)
             }
         }
         .padding(10)
@@ -206,8 +289,8 @@ struct SettingsView: View {
         .accessibilityElement(children: .contain)
     }
 
-    private func qualityChoiceRow(preset: PrintQualityPreset, option: PPDOption) -> some View {
-        let selected = model.effectiveQualityValue(for: preset, option: option)
+    private func qualityChoiceRow(presetID: String, presetTitle: String, option: PPDOption) -> some View {
+        let selected = model.effectiveQualityValue(forPresetID: presetID, option: option)
         let label = option.choice(keyword: selected).map { L($0.displayLabel) } ?? L("Driver default")
         return HStack(spacing: 6) {
             Text(L(option.displayLabel))
@@ -216,9 +299,9 @@ struct SettingsView: View {
                 .lineLimit(1)
             Spacer(minLength: 4)
             Menu {
-                ForEach(option.choices) { choice in
+                ForEach(sortedChoices(option)) { choice in
                     Button {
-                        model.setQualityOverride(choice.keyword, for: preset, option: option)
+                        model.setQualityOverride(choice.keyword, forPresetID: presetID, option: option)
                     } label: {
                         if choice.keyword == selected {
                             Label(L(choice.displayLabel), systemImage: "checkmark")
@@ -253,9 +336,9 @@ struct SettingsView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .frame(maxWidth: 190, alignment: .trailing)
-            .accessibilityLabel("\(preset.title) \(option.displayLabel)")
+            .accessibilityLabel("\(presetTitle) \(option.displayLabel)")
             .accessibilityValue(label)
-            .accessibilityHint(String(format: L("Choose a real value from this printer driver for the %@ preset."), preset.title))
+            .accessibilityHint(String(format: L("Choose a real value from this printer driver for the %@ preset."), presetTitle))
         }
     }
 

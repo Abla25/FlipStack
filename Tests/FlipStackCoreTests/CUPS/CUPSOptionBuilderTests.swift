@@ -39,6 +39,7 @@ final class CUPSOptionBuilderTests: XCTestCase {
             "page-ranges=1-3,5",
             "number-up=1",
             "orientation-requested=3",
+            "fit-to-page=false",
             "scaling=100"
         ])
         XCTAssertEqual(CUPSOptionBuilder.arguments(for: value), [
@@ -49,6 +50,7 @@ final class CUPSOptionBuilderTests: XCTestCase {
             "-o", "page-ranges=1-3,5",
             "-o", "number-up=1",
             "-o", "orientation-requested=3",
+            "-o", "fit-to-page=false",
             "-o", "scaling=100",
             fileURL.path
         ])
@@ -65,6 +67,7 @@ final class CUPSOptionBuilderTests: XCTestCase {
             "page-ranges=2-4,8",
             "number-up=1",
             "orientation-requested=3",
+            "fit-to-page=false",
             "scaling=100"
         ])
         let joined = pairs.joined(separator: " ")
@@ -82,6 +85,7 @@ final class CUPSOptionBuilderTests: XCTestCase {
             "page-set=all",
             "number-up=2",
             "orientation-requested=5",
+            "fit-to-page=false",
             "scaling=100"
         ])
     }
@@ -93,7 +97,8 @@ final class CUPSOptionBuilderTests: XCTestCase {
             "page-set=all",
             "number-up=1",
             "orientation-requested=3",
-            "fit-to-page=true"
+            "fit-to-page=true",
+            "scaling=100"
         ])
         XCTAssertTrue(
             CUPSOptionBuilder.arguments(for: value).contains("fit-to-page=true")
@@ -107,6 +112,7 @@ final class CUPSOptionBuilderTests: XCTestCase {
             "page-set=all",
             "number-up=1",
             "orientation-requested=3",
+            "fit-to-page=false",
             "scaling=90"
         ])
     }
@@ -129,6 +135,7 @@ final class CUPSOptionBuilderTests: XCTestCase {
             "page-set=all",
             "number-up=1",
             "orientation-requested=3",
+            "fit-to-page=false",
             "scaling=100",
             "ColorModel=Grayscale",
             "Duplex=NoTumble",
@@ -143,6 +150,7 @@ final class CUPSOptionBuilderTests: XCTestCase {
             "page-set=all",
             "number-up=1",
             "orientation-requested=3",
+            "fit-to-page=false",
             "scaling=100",
             "Duplex=Tumble"
         ])
@@ -183,6 +191,7 @@ final class CUPSOptionBuilderTests: XCTestCase {
             "-o", "page-ranges=1-3",
             "-o", "number-up=2",
             "-o", "orientation-requested=4",
+            "-o", "fit-to-page=false",
             "-o", "scaling=100",
             "-o", "ColorModel=Color",
             "-o", "Duplex=NoTumble",
@@ -200,6 +209,7 @@ final class CUPSOptionBuilderTests: XCTestCase {
             "page-set=all",
             "number-up=1",
             "orientation-requested=3",
+            "fit-to-page=false",
             "scaling=100",
             "PageSize=A4"
         ])
@@ -218,6 +228,7 @@ final class CUPSOptionBuilderTests: XCTestCase {
             "page-set=all",
             "number-up=1",
             "orientation-requested=3",
+            "fit-to-page=false",
             "scaling=100",
             "PageSize=A4"
         ])

@@ -290,6 +290,64 @@ struct FlipScaleStepper: View {
     }
 }
 
+/// A segmented control with one sliding coral pill, used for every binary or
+/// small choice set in the panel (mode, pages, color, quality, orientation).
+@MainActor
+struct FlipSegmentedPicker: View {
+    let labels: [String]
+    @Binding var selectedIndex: Int
+    var height: CGFloat = 22
+    var font: Font = .system(.caption2, design: .default, weight: .semibold)
+    var accessibilityLabels: [String]? = nil
+    var onChange: ((Int) -> Void)? = nil
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Namespace private var pickerNamespace
+    @State private var hoveredIndex: Int?
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(Array(labels.enumerated()), id: \.offset) { index, label in
+                let isSelected = index == selectedIndex
+                Button {
+                    guard index != selectedIndex else { return }
+                    withAnimation(FlipMotion.quick(reduceMotion)) {
+                        selectedIndex = index
+                    }
+                    onChange?(index)
+                } label: {
+                    Text(label)
+                        .font(font)
+                        .foregroundStyle(isSelected ? FlipColor.onCoral : FlipColor.secondaryInk)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: height)
+                        .background {
+                            if isSelected {
+                                Capsule(style: .continuous)
+                                    .fill(FlipColor.coral)
+                                    .matchedGeometryEffect(id: "picker.pill", in: pickerNamespace)
+                            } else if hoveredIndex == index {
+                                Capsule(style: .continuous)
+                                    .fill(FlipColor.toneStrong)
+                            }
+                        }
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .onHover { hovering in
+                    hoveredIndex = hovering ? index : nil
+                }
+                .accessibilityLabel(accessibilityLabels?[index] ?? label)
+                .accessibilityValue(isSelected ? L("Selected") : L("Not selected"))
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+            }
+        }
+        .padding(2)
+        .background(Capsule(style: .continuous).fill(FlipColor.tone))
+        .overlay(Capsule(style: .continuous).strokeBorder(FlipColor.hairline, lineWidth: 0.5))
+    }
+}
+
 struct FlipHintLine: View {
     let systemName: String
     let text: String
@@ -326,6 +384,46 @@ struct FlipMetric: View {
             FlipEyebrow(label, color: FlipColor.tertiaryInk)
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// One tile of the pre-print job summary: icon-led eyebrow over a value.
+struct FlipSummaryTile: View {
+    let systemName: String
+    let label: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 4) {
+                Image(systemName: systemName)
+                    .font(.system(size: 8.5, weight: .semibold))
+                    .foregroundStyle(FlipColor.coralDeep)
+                Text(label.uppercased())
+                    .font(.system(size: 7, weight: .semibold))
+                    .tracking(0.8)
+                    .foregroundStyle(FlipColor.tertiaryInk)
+                    .lineLimit(1)
+            }
+            Text(value)
+                .font(FlipType.captionStrong)
+                .foregroundStyle(FlipColor.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            RoundedRectangle(cornerRadius: FlipMetrics.smallRadius, style: .continuous)
+                .fill(FlipColor.tone)
+        }
+        .overlay {
+            RoundedRectangle(cornerRadius: FlipMetrics.smallRadius, style: .continuous)
+                .strokeBorder(FlipColor.hairline, lineWidth: 0.5)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label), \(value)")
     }
 }
 
@@ -459,13 +557,37 @@ struct FlipPrimaryButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity, minHeight: FlipMetrics.primaryHeight)
             .background {
                 Capsule(style: .continuous)
-                    .fill(isEnabled ? FlipColor.coral : FlipColor.toneStrong)
+                    .fill(
+                        isEnabled
+                        ? LinearGradient(
+                            colors: [FlipColor.coral, FlipColor.coralDeep],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        : LinearGradient(
+                            colors: [FlipColor.toneStrong, FlipColor.toneStrong],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
             }
             .overlay {
                 Capsule(style: .continuous)
                     .strokeBorder(isEnabled ? Color.clear : FlipColor.hairline, lineWidth: 0.5)
             }
-            .shadow(color: isEnabled ? FlipColor.coral.opacity(0.22) : .clear, radius: 12, x: 0, y: 6)
+            .overlay {
+                if isEnabled {
+                    Capsule(style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.22), .clear],
+                                startPoint: .top,
+                                endPoint: .center
+                            )
+                        )
+                }
+            }
+            .shadow(color: isEnabled ? FlipColor.coral.opacity(0.28) : .clear, radius: 14, x: 0, y: 7)
             .scaleEffect(configuration.isPressed && !reduceMotion ? 0.985 : 1)
             .opacity(configuration.isPressed ? 0.95 : 1)
             .animation(FlipMotion.quick(reduceMotion), value: configuration.isPressed)
@@ -518,35 +640,49 @@ struct FlipSmallPrimaryButtonStyle: ButtonStyle {
     }
 }
 
-struct FlipTertiaryButtonStyle: ButtonStyle {    @Environment(\.isEnabled) private var isEnabled
+struct FlipTertiaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var hovered = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(FlipType.footnoteStrong)
             .foregroundStyle(isEnabled ? FlipColor.coralDeep : FlipColor.tertiaryInk)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background {
+                Capsule(style: .continuous)
+                    .fill(hovered && isEnabled ? FlipColor.tone : Color.clear)
+            }
             .contentShape(Rectangle())
             .opacity(configuration.isPressed ? 0.62 : 1)
+            .onHover { hovered = $0 }
             .animation(FlipMotion.quick(reduceMotion), value: configuration.isPressed)
     }
 }
 
 struct FlipIconButtonStyle: ButtonStyle {
     var tint: Color = FlipColor.secondaryInk
+    var size: CGFloat = 30
 
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var hovered = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(isEnabled ? tint : FlipColor.tertiaryInk)
-            .frame(width: 27, height: 27)
-            .background(Circle().fill(configuration.isPressed ? FlipColor.toneStrong : FlipColor.tone))
+            .frame(width: size, height: size)
+            .background {
+                Circle().fill(
+                    configuration.isPressed || hovered ? FlipColor.toneStrong : FlipColor.tone
+                )
+            }
             .overlay(Circle().strokeBorder(FlipColor.hairline, lineWidth: 0.5))
             .scaleEffect(configuration.isPressed && !reduceMotion ? 0.94 : 1)
+            .onHover { hovered = $0 }
             .animation(FlipMotion.quick(reduceMotion), value: configuration.isPressed)
             .contentShape(Circle())
     }

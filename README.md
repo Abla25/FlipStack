@@ -32,11 +32,11 @@ There are no timer-based "the printer is probably done" transitions. FlipStack w
 - **Guided flip calibration.** On the first two-sided job, FlipStack opens a setup screen and prints one generic orientation sheet only after you confirm. Its answers become a saved flip axis and tray setting before the real document is sent. Re-run it from printer settings at any time.
 - **PPD-driven options.** Color or black-and-white, paper size, media type, and print quality come from the queue's real PPD. FlipStack does not invent driver choices, and remembers the choices per printer.
 - **Quality presets that actually apply.** Eco, Standard, High, and Photo resolve to real PPD choices for resolution, media, color, and optional ICC profile settings. Anything the driver does not expose stays untouched.
-- **Layout and scale controls.** Match the PDF, portrait, or landscape; fit-to-page or an exact 50–150% print scale. The page dimensions, queue paper, exact percentage, color mode, and quality appear before the action bar. Exact scaling is applied to a temporary PDF before submission; the preview updates with the scale.
+- **Layout and scale controls.** Match the PDF, portrait, or landscape; fit-to-page or an exact 50–150% print scale. The page dimensions, queue paper, exact percentage, color mode, and quality appear as a scannable summary right above the print action. Exact scaling is applied to a temporary PDF before submission; the preview updates with the scale.
 - **Page picker with thumbnails.** Open the print preview to get a macOS Preview-style page rail. Every page starts selected; uncheck pages to print only the ones you want. The preview and the printed page ranges update together.
 - **Four languages.** English, Italiano, Español, and Français can be chosen in Settings and apply immediately across the app. Driver-supplied paper/media names remain whatever the PPD advertises.
-- **Tunable quality presets.** Settings exposes the real PPD quality and media choices behind Eco, Standard, High, and Photo for each printer. Tune once; your values persist per queue and apply the next time you choose that preset.
-- **Print preview.** See the selected pages inside the panel before printing. Booklet previews pair the imposed PDF pages back into the actual 2-up sheet sides and let you inspect fronts and backs.
+- **Tunable quality presets.** Settings exposes the real PPD quality and media choices behind Eco, Standard, High, and Photo for each printer, listed in true dpi order so every intermediate step the driver offers is visible. Tune once; your values persist per queue and apply the next time you choose that preset. You can also add your own named presets for mid-steps the built-ins do not cover.
+- **Print preview.** See the selected pages inside the panel before printing, drawn like the macOS print panel: a fixed paper sheet (from the queue's real PPD paper size) with your page scaled, centered, and clipped inside it — "Fit" shows the page scaled to the paper exactly as CUPS `fit-to-page` will print it, and an exact percentage shows the cropping at the sheet edges. The setup card shows the same live sheet diagram next to the page and paper sizes. Booklet previews show each imposed 2-up sheet side, with fronts and backs one tap apart.
 - **Page ranges done right.** Selected pages are compiled in order before the two-pass flow, so the sheet pairing stays correct even when the range starts on an even page. Ranges work in single-sided, duplex, and booklet modes.
 - **Booklet imposition.** Two-up booklet printing with configurable signatures, plus fold and staple hints. Booklets use the same guided front-and-back workflow.
 - **Live queue, ink, and errors.** See active and recent CUPS jobs, cancel a job, watch every supply the printer reports (including light cyan/light magenta/photo black), and read human-friendly state reasons. If a printer exposes no supply data, the panel says so instead of showing a fake level; the header also reports an offline device rather than pretending it is ready.
@@ -64,11 +64,13 @@ The screenshots below use a demo queue so no real document or printer data is sh
 
 Uncheck pages in the rail to print only those pages; the selected-page PDF and the print job update together.
 
+![FlipStack page picker with two pages unchecked in the rail](docs/screenshots/page-picker.png)
+
 ### Settings
 
 ![FlipStack settings with English, Italian, Spanish, and French language choices and per-printer quality preset editors](docs/screenshots/settings.png)
 
-Choose the interface language and tune the real PPD values behind Eco, Standard, High, and Photo for the selected printer. Overrides are local and persist per queue.
+Choose the interface language and tune the real PPD values behind Eco, Standard, High, and Photo for the selected printer. Overrides are local and persist per queue. Quality choices are listed lowest-to-highest by their real dpi, and you can add your own named presets (for example a mid-step between Eco and High) with the Add row — each one maps only to choices the driver actually advertises. Settings opens as a sheet over the document, so your place is never lost.
 
 ### Calibrate the flip
 
@@ -77,6 +79,10 @@ Choose the interface language and tune the real PPD values behind Eco, Standard,
 ### Flip when the fronts are done
 
 ![FlipStack flip prompt with a printer, paper stack, and a whole-block turn illustration](docs/screenshots/flip.png)
+
+The whole two-sided flow — ready, fronts printing, flip, done — as a loop:
+
+![FlipStack two-sided flow: document ready, fronts printing, flip the stack, completed](docs/screenshots/flip-flow.gif)
 
 ### Printing and progress
 

@@ -45,6 +45,61 @@ struct RootView: View {
     }
 
     var body: some View {
+        ZStack {
+            panel
+            if model.isShowingSettings {
+                settingsOverlay
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.clear)
+        .tint(FlipColor.coral)
+        .environment(\.locale, model.language.locale)
+        .clipped()
+        .animation(FlipMotion.standard(reduceMotion), value: model.banner?.id)
+        .animation(FlipMotion.surface(reduceMotion), value: surfaceKey)
+        .animation(FlipMotion.standard(reduceMotion), value: showsComposerActionBar)
+    }
+
+    /// Settings presents as a floating sheet over the composer, the way a
+    /// macOS panel presents preferences: the document stays visible (dimmed)
+    /// behind the card instead of being swapped out.
+    private var settingsOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.24)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    withAnimation(FlipMotion.surface(reduceMotion)) {
+                        model.closeSettings()
+                    }
+                }
+
+            ScrollView(.vertical, showsIndicators: true) {
+                SettingsView(model: model)
+                    .padding(14)
+                    .frame(maxWidth: 460)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(10)
+            .background {
+                RoundedRectangle(cornerRadius: FlipMetrics.panelRadius - 4, style: .continuous)
+                    .fill(.regularMaterial)
+                    .shadow(color: Color.black.opacity(0.35), radius: 30, x: 0, y: 14)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: FlipMetrics.panelRadius - 4, style: .continuous)
+                    .strokeBorder(FlipColor.border, lineWidth: 0.75)
+            }
+            .padding(10)
+            .transition(reduceMotion
+                ? .opacity
+                : .opacity.combined(with: .move(edge: .bottom)))
+        }
+        .transition(.opacity)
+        .accessibilityAddTraits(.isModal)
+    }
+
+    private var panel: some View {
         VStack(spacing: 0) {
             HeaderView(model: model, orchestrator: orchestrator)
 
@@ -70,7 +125,7 @@ struct RootView: View {
                     .padding(.horizontal, FlipMetrics.gutter)
                     .padding(.top, 13)
                     .padding(.bottom, 20)
-                    .transition(.opacity)
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .top)))
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -101,14 +156,6 @@ struct RootView: View {
 
             FooterBar(model: model)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.clear)
-        .tint(FlipColor.coral)
-        .environment(\.locale, model.language.locale)
-        .clipped()
-        .animation(FlipMotion.standard(reduceMotion), value: model.banner?.id)
-        .animation(FlipMotion.surface(reduceMotion), value: surfaceKey)
-        .animation(FlipMotion.standard(reduceMotion), value: showsComposerActionBar)
     }
 
     private var showsComposerActionBar: Bool {
@@ -140,9 +187,7 @@ struct RootView: View {
 
     @ViewBuilder
     private var content: some View {
-        if model.isShowingSettings {
-            SettingsView(model: model)
-        } else if model.isPreparingPrint {
+        if model.isPreparingPrint {
             PreparingSurface(model: model)
         } else if let _ = model.flipCalibration, !isFlowActive {
             FlipCalibrationView(model: model)

@@ -38,6 +38,19 @@ final class PDFPageExtractorTests: XCTestCase {
         )
     }
 
+    func testPageRangeListAcceptsSpacedDashesAndUnicodeMinus() {
+        XCTAssertEqual(
+            PageRange.list(from: "1 - 3, 7, 10−12").map(\.cupsValue),
+            ["1-3", "7", "10-12"]
+        )
+    }
+
+    func testPageRangeListStillRejectsInvalidFragments() {
+        XCTAssertTrue(PageRange.list(from: "0, 5-2, abc, -3, 3-, 1-3-5").isEmpty)
+        // Duplicates are kept here and deduplicated downstream by the Set.
+        XCTAssertEqual(PageRange.list(from: "2, 2, 4").map(\.cupsValue), ["2", "2", "4"])
+    }
+
     func testPageNumbersRejectOutOfRange() throws {
         let ranges = [try XCTUnwrap(PageRange(1, 9))]
         XCTAssertThrowsError(

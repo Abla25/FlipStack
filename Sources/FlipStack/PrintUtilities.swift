@@ -173,19 +173,9 @@ enum PrintUtilities {
         context.endPDFPage()
         context.closePDF()
 
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("FlipStack", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try? FileManager.default.setAttributes(
-            [.posixPermissions: 0o700],
-            ofItemAtPath: directory.path
-        )
+        let directory = try SecureTemp.makeDirectory(prefix: "Sheet")
         let url = directory.appendingPathComponent("FlipStack-\(UUID().uuidString).pdf")
-        try (data as Data).write(to: url, options: .atomic)
-        try? FileManager.default.setAttributes(
-            [.posixPermissions: 0o600],
-            ofItemAtPath: url.path
-        )
+        try SecureTemp.write(data as Data, to: url)
         return url
     }
 

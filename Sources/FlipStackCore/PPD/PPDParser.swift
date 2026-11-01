@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// Parses the subset of the Adobe PPD format that describes user-selectable
@@ -44,18 +45,14 @@ public struct PPDParser: Sendable {
     }
 
     private func decompressGzip(_ data: Data) throws -> String {
-        let temporaryURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent("FlipStack-\(UUID().uuidString).ppd.gz")
-        defer { try? FileManager.default.removeItem(at: temporaryURL) }
+        let directory = try SecureTemp.makeDirectory(prefix: "PPD")
+        let temporaryURL = directory.appendingPathComponent("\(UUID().uuidString).ppd.gz")
+        defer { try? FileManager.default.removeItem(at: directory) }
 
         do {
-            try data.write(to: temporaryURL, options: .atomic)
-            try? FileManager.default.setAttributes(
-                [.posixPermissions: 0o600],
-                ofItemAtPath: temporaryURL.path
-            )
+            try SecureTemp.write(data, to: temporaryURL)
         } catch {
-            throw PPDError.unreadableFile(temporaryURL.path)
+            throw PPDError.decompressionFailed(error.localizedDescription)
         }
 
         let runner = CUPSProcessRunner()
@@ -110,6 +107,8 @@ private struct PPDBuilder {
     private var manufacturer: String?
     private var makeModel: String?
     private var modelName: String?
+    private var paperDimensions: [String: CGSize] = [:]
+    private var imageableAreas: [String: CGRect] = [:]
 
     init(sourcePath: String?) {
         self.sourcePath = sourcePath
@@ -140,6 +139,16 @@ private struct PPDBuilder {
             makeModel = Self.nonEmptyCleanText(value)
         case "modelname":
             modelName = Self.nonEmptyCleanText(value)
+        case "paperdimension":
+            let keyword = Self.cleanText(Self.remainder(afterFirstWordIn: header) ?? "")
+            if !keyword.isEmpty, let size = Self.parsePointPair(value) {
+                paperDimensions[keyword.lowercased()] = size
+            }
+        case "imageablearea":
+            let keyword = Self.cleanText(Self.remainder(afterFirstWordIn: header) ?? "")
+            if !keyword.isEmpty, let rect = Self.parseImageableArea(value) {
+                imageableAreas[keyword.lowercased()] = rect
+            }
         default:
             if lowerToken.hasPrefix("default"), token.count > "default".count {
                 let keyword = String(token.dropFirst("default".count))
@@ -187,8 +196,31 @@ private struct PPDBuilder {
             manufacturer: manufacturer,
             options: parsedOptions,
             supportsHardwareDuplex: supportsDuplex,
-            sourcePath: sourcePath
+            sourcePath: sourcePath,
+            paperDimensions: paperDimensions,
+            imageableAreas: imageableAreas
         )
+    }
+
+    /// Parses `"<width> <height>"` in PostScript points. Numbers may be
+    /// separated by any whitespace (spaces or tabs).
+    private static func parsePointPair(_ value: String) -> CGSize? {
+        let numbers = Self.cleanText(value)
+            .split(whereSeparator: { $0.isWhitespace })
+            .compactMap { Double($0) }
+        guard numbers.count == 2, numbers[0] > 0, numbers[1] > 0 else { return nil }
+        return CGSize(width: numbers[0], height: numbers[1])
+    }
+
+    /// Parses `"<left> <bottom> <right> <top>"` into a CGRect.
+    private static func parseImageableArea(_ value: String) -> CGRect? {
+        let numbers = Self.cleanText(value)
+            .split(whereSeparator: { $0.isWhitespace })
+            .compactMap { Double($0) }
+        guard numbers.count == 4 else { return nil }
+        let (left, bottom, right, top) = (numbers[0], numbers[1], numbers[2], numbers[3])
+        guard right > left, top > bottom else { return nil }
+        return CGRect(x: left, y: bottom, width: right - left, height: top - bottom)
     }
 
     private mutating func beginOption(header: String) {

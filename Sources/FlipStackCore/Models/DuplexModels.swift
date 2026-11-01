@@ -234,6 +234,14 @@ public struct DuplexDocument: Hashable, Codable, Sendable {
         )
     }
 
+    /// Builds the two passes of a manual duplex job: odd pages first, even
+    /// pages after the flip.
+    ///
+    /// `pageRanges` is accepted for callers that select a subset, but it is
+    /// deliberately not forwarded to CUPS together with `page-set=odd/even`:
+    /// the interaction of `page-ranges` with `page-set` is driver-dependent
+    /// and can break sheet pairing. Callers should extract the selected pages
+    /// into a temporary PDF first (as the app does) and pass an empty list.
     public static func manualDuplex(
         fileURL: URL,
         pageCount: Int,
@@ -254,13 +262,13 @@ public struct DuplexDocument: Hashable, Codable, Sendable {
                 fileURL: fileURL,
                 pageSet: .odd,
                 pageCount: frontCount,
-                pageRanges: pageRanges
+                pageRanges: []
             ),
             secondPass: PrintSource(
                 fileURL: fileURL,
                 pageSet: .even,
                 pageCount: backCount,
-                pageRanges: pageRanges
+                pageRanges: []
             ),
             isBooklet: false,
             hasOddPageCount: pageCount % 2 == 1

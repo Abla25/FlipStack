@@ -3,27 +3,54 @@ import FlipStackCore
 import PDFKit
 import SwiftUI
 
-/// A compact, fully in-panel preview of the print file. For booklets it pairs
-/// the imposed PDF pages back into the 2-up sheet sides CUPS will produce.
+/// A compact, fully in-panel preview of the print file, drawn the way the
+/// macOS print panel draws it: a fixed paper sheet with the page content
+/// scaled, centered, and clipped inside the sheet. The sheet itself never
+/// changes size — only the content inside it does, so an exact percentage
+/// shows cropping at the sheet edges instead of zooming the page, and
+/// "Fit" shows the page scaled down onto the paper exactly as CUPS
+/// `fit-to-page` will print it. For booklets each imposed page is one 2-up
+/// sheet side, so the sheet is the imposed page itself.
 struct PDFPagePreview: View {
     let url: URL
     var twoUp: Bool = false
-    var scale: CGFloat = 1
+    var sheetSize: CGSize = CGSize(width: 595.28, height: 841.89)
+    var contentSize: CGSize = CGSize(width: 595.28, height: 841.89)
+    var contentScale: CGFloat = 1
+    var contentRotation: Double = 0
+    var imageableArea: CGRect?
     var isGrayscale: Bool = false
+    var scaleBadge: String?
 
     @State private var pageCount = 0
     @State private var pageIndex = 0
-    @State private var images: [NSImage] = []
+    @State private var image: NSImage?
+    @State private var pageSizes: [Int: CGSize] = [:]
 
-    private var pageStep: Int { twoUp ? 2 : 1 }
+    private let previewHeight: CGFloat = 150
 
-    private var sheetCount: Int {
-        twoUp ? Int(ceil(Double(pageCount) / 2.0)) : pageCount
+    /// The sheet drawn in the preview. Booklet imposed pages are landscape
+    /// sheets already, so the page's own box is the sheet.
+    private var sheet: CGSize {
+        if twoUp, let size = pageSizes[pageIndex] {
+            return size
+        }
+        return sheetSize
     }
 
-    private var currentSheet: Int {
-        min(sheetCount, pageIndex / pageStep + 1)
+    private var content: CGSize {
+        twoUp ? sheet : contentSize
     }
+
+    private var scale: CGFloat {
+        twoUp ? 1 : contentScale
+    }
+
+    private var rotation: Double {
+        twoUp ? 0 : contentRotation
+    }
+
+    private var currentLabel: Int { pageIndex + 1 }
 
     var body: some View {
         VStack(spacing: 7) {
@@ -31,49 +58,42 @@ struct PDFPagePreview: View {
                 RoundedRectangle(cornerRadius: FlipMetrics.smallRadius, style: .continuous)
                     .fill(Color(nsColor: .controlBackgroundColor))
 
-                if images.isEmpty {
+                if image == nil {
                     VStack(spacing: 6) {
                         ProgressView().controlSize(.small)
                         Text("Rendering preview…")
                             .font(FlipType.caption)
                             .foregroundStyle(FlipColor.secondaryInk)
                     }
-                } else if twoUp {
-                    HStack(spacing: 7) {
-                        ForEach(Array(images.enumerated()), id: \.offset) { _, image in
-                            Image(nsImage: image)
-                                .resizable()
-                                .interpolation(.high)
-                                .aspectRatio(contentMode: .fit)
-                        }
-                    }
-                    .padding(8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 4, style: .continuous)
-                            .fill(Color.white)
-                    )
-                    .shadow(color: .black.opacity(0.18), radius: 4, x: 0, y: 2)
-                    .padding(10)
-                    .scaleEffect(scale)
-                    .saturation(isGrayscale ? 0 : 1)
                 } else {
-                    HStack(spacing: 0) {
-                        ForEach(Array(images.enumerated()), id: \.offset) { _, image in
-                            Image(nsImage: image)
-                                .resizable()
-                                .interpolation(.high)
-                                .aspectRatio(contentMode: .fit)
-                                .background(Color.white)
-                                .shadow(color: .black.opacity(0.16), radius: 3, x: 0, y: 2)
+                    GeometryReader { geometry in
+                        let available = CGSize(
+                            width: max(60, geometry.size.width - 6),
+                            height: previewHeight - 6
+                        )
+                        let k = min(available.width / sheet.width, available.height / sheet.height)
+                        let sheetW = sheet.width * k
+                        let sheetH = sheet.height * k
+
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                .fill(FlipColor.printPaper)
+                                .frame(width: sheetW, height: sheetH)
+                                .shadow(color: FlipColor.paperShadow, radius: 4, x: 0, y: 2)
+
+                            sheetContent(k: k)
+                                .frame(width: sheetW, height: sheetH)
+                                .clipped()
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                        .strokeBorder(FlipColor.printPaperEdge, lineWidth: 0.75)
+                                }
                         }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
-                    .padding(10)
-                    .scaleEffect(scale)
-                    .saturation(isGrayscale ? 0 : 1)
                 }
             }
-            .frame(height: 150)
-            .clipped()
+            .frame(height: previewHeight)
             .overlay {
                 RoundedRectangle(cornerRadius: FlipMetrics.smallRadius, style: .continuous)
                     .strokeBorder(FlipColor.hairline, lineWidth: 0.5)
@@ -81,15 +101,15 @@ struct PDFPagePreview: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(twoUp ? L("Booklet sheet preview") : L("Page preview"))
             .accessibilityValue(
-                images.isEmpty
+                image == nil
                 ? "Rendering"
-                : "\(twoUp ? "Sheet" : "Page") \(currentSheet) of \(sheetCount), \(pageCount) source pages"
+                : "\(twoUp ? "Sheet" : "Page") \(currentLabel) of \(pageCount), paper \(Int(sheet.width)) by \(Int(sheet.height)) points, content \(Int(scale * 100)) percent"
             )
 
             HStack(spacing: 8) {
                 Button {
-                    pageIndex = max(0, pageIndex - pageStep)
-                    updateImages()
+                    pageIndex = max(0, pageIndex - 1)
+                    updateImage()
                 } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 9, weight: .bold))
@@ -100,8 +120,8 @@ struct PDFPagePreview: View {
 
                 Text(
                     twoUp
-                    ? String(format: L("Sheet %lld of %lld"), currentSheet, sheetCount)
-                    : String(format: L("Page %lld of %lld"), max(1, currentSheet), sheetCount)
+                    ? String(format: L("Sheet %lld of %lld"), currentLabel, max(1, pageCount))
+                    : String(format: L("Page %lld of %lld"), currentLabel, max(1, pageCount))
                 )
                     .font(.system(.caption, design: .rounded, weight: .semibold))
                     .monospacedDigit()
@@ -109,19 +129,27 @@ struct PDFPagePreview: View {
                     .frame(minWidth: 96)
 
                 Button {
-                    pageIndex = min(max(0, pageCount - 1), pageIndex + pageStep)
-                    updateImages()
+                    pageIndex = min(max(0, pageCount - 1), pageIndex + 1)
+                    updateImage()
                 } label: {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 9, weight: .bold))
                 }
                 .buttonStyle(FlipIconButtonStyle())
-                .disabled(pageIndex + pageStep >= pageCount)
+                .disabled(pageIndex + 1 >= pageCount)
                 .accessibilityLabel(String(format: L("Next %@"), twoUp ? L("sheet") : L("page")))
 
                 Spacer(minLength: 2)
 
-                if twoUp {
+                if let scaleBadge {
+                    Text(scaleBadge)
+                        .font(.system(size: 8, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(FlipColor.coralDeep)
+                        .padding(.horizontal, 6)
+                        .frame(height: 16)
+                        .background(Capsule().fill(FlipColor.coralSoft))
+                } else if twoUp {
                     Text("2-up")
                         .font(.system(size: 8, weight: .semibold))
                         .tracking(0.9)
@@ -135,27 +163,149 @@ struct PDFPagePreview: View {
         }
     }
 
+    /// The page content drawn on the sheet: scaled by `scale`, rotated by
+    /// `rotation`, centered, and clipped to the sheet by the caller.
+    private func sheetContent(k: CGFloat) -> some View {
+        ZStack {
+            if let area = imageableArea, !twoUp, area.width > 0, area.height > 0 {
+                RoundedRectangle(cornerRadius: 1, style: .continuous)
+                    .strokeBorder(
+                        FlipColor.printLine.opacity(0.6),
+                        style: StrokeStyle(lineWidth: 0.6, dash: [3, 2.5])
+                    )
+                    .frame(width: area.width * k, height: area.height * k)
+                    .offset(
+                        x: (area.midX - sheet.width / 2) * k,
+                        y: (sheet.height / 2 - area.midY) * k
+                    )
+                    .accessibilityHidden(true)
+            }
+
+            if let image {
+                let w = content.width * scale * k
+                let h = content.height * scale * k
+                let swaps = rotation.truncatingRemainder(dividingBy: 180) != 0
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: swaps ? h : w, height: swaps ? w : h)
+                    .rotationEffect(.degrees(rotation))
+                    .saturation(isGrayscale ? 0 : 1)
+            }
+        }
+    }
+
     private func loadDocument() {
         guard let document = PDFDocument(url: url) else {
             pageCount = 0
             pageIndex = 0
-            images = []
+            image = nil
+            pageSizes = [:]
             return
         }
         pageCount = document.pageCount
         pageIndex = min(pageIndex, max(0, pageCount - 1))
-        updateImages(document: document)
+        var sizes: [Int: CGSize] = [:]
+        for index in 0..<document.pageCount {
+            guard let page = document.page(at: index) else { continue }
+            let bounds = page.bounds(for: .mediaBox)
+            sizes[index] = CGSize(width: bounds.width, height: bounds.height)
+        }
+        pageSizes = sizes
+        updateImage(document: document)
     }
 
-    private func updateImages(document: PDFDocument? = nil) {
-        guard let document = document ?? PDFDocument(url: url) else { return }
-        let pages = twoUp
-            ? Array(pageIndex..<min(pageCount, pageIndex + 2))
-            : [pageIndex]
-        images = pages.compactMap { index in
-            guard let page = document.page(at: index) else { return nil }
-            return page.thumbnail(of: NSSize(width: 420, height: 560), for: .mediaBox)
+    private func updateImage(document: PDFDocument? = nil) {
+        guard let document = document ?? PDFDocument(url: url),
+              let page = document.page(at: pageIndex) else {
+            image = nil
+            return
         }
+        let bounds = page.bounds(for: .mediaBox)
+        let longest = max(bounds.width, bounds.height, 1)
+        let thumb = min(longest, 640) / longest
+        image = page.thumbnail(
+            of: NSSize(width: bounds.width * thumb, height: bounds.height * thumb),
+            for: .mediaBox
+        )
+    }
+}
+
+/// A small live diagram of the sheet and the scaled content inside it, the
+/// same geometry the big preview uses, for the page-setup card — like the
+/// thumbnail in the macOS print panel.
+struct FlipSheetDiagram: View {
+    let sheetSize: CGSize
+    let contentSize: CGSize
+    let contentScale: CGFloat
+    let contentRotation: Double
+    var imageableArea: CGRect?
+    var height: CGFloat = 64
+
+    var body: some View {
+        GeometryReader { geometry in
+            let available = CGSize(width: geometry.size.width, height: height)
+            let k = min(available.width / sheetSize.width, available.height / sheetSize.height)
+            let sheetW = sheetSize.width * k
+            let sheetH = sheetSize.height * k
+
+            ZStack {
+                RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                    .fill(FlipColor.printPaper)
+                    .frame(width: sheetW, height: sheetH)
+                    .shadow(color: FlipColor.paperShadow, radius: 2.5, x: 0, y: 1.5)
+
+                ZStack {
+                    if let area = imageableArea, area.width > 0, area.height > 0 {
+                        RoundedRectangle(cornerRadius: 1, style: .continuous)
+                            .strokeBorder(
+                                FlipColor.printLine.opacity(0.6),
+                                style: StrokeStyle(lineWidth: 0.5, dash: [2.5, 2])
+                            )
+                            .frame(width: area.width * k, height: area.height * k)
+                            .offset(
+                                x: (area.midX - sheetSize.width / 2) * k,
+                                y: (sheetSize.height / 2 - area.midY) * k
+                            )
+                    }
+
+                    let w = contentSize.width * contentScale * k
+                    let h = contentSize.height * contentScale * k
+                    let swaps = contentRotation.truncatingRemainder(dividingBy: 180) != 0
+                    RoundedRectangle(cornerRadius: 1, style: .continuous)
+                        .fill(FlipColor.coral.opacity(0.14))
+                        .overlay {
+                            VStack(alignment: .leading, spacing: max(1, h * 0.09)) {
+                                Capsule().fill(FlipColor.coral.opacity(0.75))
+                                    .frame(width: w * 0.42, height: max(1, h * 0.045))
+                                Capsule().fill(FlipColor.coral.opacity(0.4))
+                                    .frame(width: w * 0.62, height: max(0.8, h * 0.032))
+                                Capsule().fill(FlipColor.coral.opacity(0.28))
+                                    .frame(width: w * 0.5, height: max(0.8, h * 0.032))
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .padding(.leading, w * 0.09)
+                            .padding(.top, h * 0.1)
+                        }
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 1, style: .continuous)
+                                .strokeBorder(FlipColor.coral.opacity(0.65), lineWidth: 0.8)
+                        }
+                        .frame(width: swaps ? h : w, height: swaps ? w : h)
+                        .rotationEffect(.degrees(contentRotation))
+                }
+                .frame(width: sheetW, height: sheetH)
+                .clipped()
+                .overlay {
+                    RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                        .strokeBorder(FlipColor.printPaperEdge, lineWidth: 0.6)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(height: height)
+        .accessibilityHidden(true)
     }
 }
 
@@ -185,6 +335,9 @@ private struct PageSelectionSidebar: View {
                 .font(.system(size: 8, weight: .semibold))
                 .buttonStyle(.plain)
                 .foregroundStyle(selectedCount == pageCount ? FlipColor.tertiaryInk : FlipColor.coralDeep)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
                 .disabled(selectedCount == pageCount)
                 .help("Select every page")
                 .accessibilityLabel("Select all pages")
@@ -360,17 +513,14 @@ struct DocumentPreviewPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 7) {
-                FlipEyebrow("Print preview")
-                Spacer(minLength: 4)
-
+            FlipSectionHeader("Print preview") {
                 Button {
                     model.togglePreview()
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 8.5, weight: .bold))
                 }
-                .buttonStyle(FlipIconButtonStyle())
+                .buttonStyle(FlipIconButtonStyle(size: 26))
                 .help("Close preview")
                 .accessibilityLabel("Close print preview")
             }
@@ -401,8 +551,15 @@ struct DocumentPreviewPanel: View {
                     PDFPagePreview(
                         url: activeURL,
                         twoUp: model.mode == .booklet,
-                        scale: model.effectiveScale,
-                        isGrayscale: model.isGrayscaleSelected
+                        sheetSize: model.previewSheetSize,
+                        contentSize: model.previewContentSize,
+                        contentScale: model.previewContentScale,
+                        contentRotation: model.previewContentRotation,
+                        imageableArea: model.selectedImageableArea,
+                        isGrayscale: model.isGrayscaleSelected,
+                        scaleBadge: model.mode == .booklet
+                            ? nil
+                            : (model.fitToPage ? L("Fit") : "\(model.scalePercent)%")
                     )
                 }
 
@@ -415,14 +572,7 @@ struct DocumentPreviewPanel: View {
             }
         }
         .padding(11)
-        .background(
-            RoundedRectangle(cornerRadius: FlipMetrics.cardRadius, style: .continuous)
-                .fill(FlipColor.tone)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: FlipMetrics.cardRadius, style: .continuous)
-                .strokeBorder(FlipColor.hairline, lineWidth: 0.5)
-        }
+        .background(FlipGlassCard())
         .accessibilityElement(children: .contain)
     }
 

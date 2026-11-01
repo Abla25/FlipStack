@@ -338,8 +338,56 @@ struct PrimaryActionSection: View {
         }
     }
 
+    private var sidesText: String {
+        switch model.mode {
+        case .singleSided: return L("One side")
+        case .manualDuplex: return L("Two sides")
+        case .booklet: return L("Folded 2-up")
+        }
+    }
+
+    /// The pre-print summary: every fact that decides the job, as scannable
+    /// tiles above the action — the way a print panel recap reads.
+    private var jobSummary: some View {
+        let columns = [GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6), GridItem(.flexible(), spacing: 6)]
+        return LazyVGrid(columns: columns, spacing: 6) {
+            FlipSummaryTile(
+                systemName: "doc.text",
+                label: L("Pages"),
+                value: model.pageSelectionInfo.isValid ? model.pageSelectionInfo.summary : "—"
+            )
+            FlipSummaryTile(
+                systemName: "doc.on.doc",
+                label: L("Sheets"),
+                value: sheetCount.map(FlipFormat.sheets) ?? "—"
+            )
+            FlipSummaryTile(
+                systemName: "arrow.triangle.2.circlepath",
+                label: L("Sides"),
+                value: sidesText
+            )
+            FlipSummaryTile(
+                systemName: "square",
+                label: L("Paper"),
+                value: model.selectedPaperLabel.map(L) ?? L("Default")
+            )
+            FlipSummaryTile(
+                systemName: "speedometer",
+                label: L("Quality"),
+                value: model.activePresetItem?.title ?? L("Custom")
+            )
+            FlipSummaryTile(
+                systemName: "number",
+                label: L("Copies"),
+                value: "\(model.copies)"
+            )
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            jobSummary
+
             Button {
                 model.requestPrint()
             } label: {

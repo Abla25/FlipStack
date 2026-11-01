@@ -408,7 +408,10 @@ public struct PrintPresetResolver: Sendable {
         normalized(choice.keyword + " " + choice.label).contains("photo")
     }
 
-    private static func numericValue(for choice: PPDChoice) -> Int? {
+    /// The largest number embedded in a choice's keyword or label (for
+    /// example `600` for `600dpi`), used to order quality choices by their
+    /// real resolution. Public so the settings UI can sort the same way.
+    public static func numericValue(for choice: PPDChoice) -> Int? {
         let text = choice.keyword + " " + choice.label
         let numbers = text
             .components(separatedBy: CharacterSet.decimalDigits.inverted)

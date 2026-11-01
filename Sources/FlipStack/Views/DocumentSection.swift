@@ -14,9 +14,7 @@ struct DocumentSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
-            HStack(spacing: 8) {
-                FlipEyebrow("Document")
-                Spacer()
+            FlipSectionHeader("Document") {
                 if model.selectedDocument != nil {
                     Text("PDF")
                         .font(.system(size: 8, weight: .semibold))
@@ -76,8 +74,12 @@ struct DocumentSection: View {
         .padding(.horizontal, 14)
         .frame(maxWidth: .infinity)
         .background {
-            RoundedRectangle(cornerRadius: FlipMetrics.cardRadius, style: .continuous)
-                .fill(isTargeted ? FlipColor.coral.opacity(0.07) : FlipColor.tone)
+            if isTargeted {
+                RoundedRectangle(cornerRadius: FlipMetrics.cardRadius, style: .continuous)
+                    .fill(FlipColor.coral.opacity(0.07))
+            } else {
+                FlipGlassCard()
+            }
         }
         .overlay {
             if isTargeted {
@@ -179,8 +181,12 @@ struct DocumentSection: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 11)
         .background {
-            RoundedRectangle(cornerRadius: FlipMetrics.cardRadius, style: .continuous)
-                .fill(isTargeted ? FlipColor.coral.opacity(0.07) : FlipColor.tone)
+            if isTargeted {
+                RoundedRectangle(cornerRadius: FlipMetrics.cardRadius, style: .continuous)
+                    .fill(FlipColor.coral.opacity(0.07))
+            } else {
+                FlipGlassCard()
+            }
         }
         .overlay {
             if isTargeted {

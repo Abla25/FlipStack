@@ -340,7 +340,8 @@ final class CUPSClientTests: XCTestCase {
                 "-o", "page-set=odd",
                 "-o", "number-up=2",
                 "-o", "orientation-requested=3",
-                "-o", "scaling=100",
+                "-o", "fit-to-page=false",
+            "-o", "scaling=100",
                 "-o", "Duplex=NoTumble"
             ])
             spooledPath = arguments.last

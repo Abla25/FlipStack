@@ -35,9 +35,13 @@ public enum CUPSOptionBuilder {
         pairs.append(("number-up", String(max(1, request.numberUp))))
         pairs.append(("orientation-requested", request.orientation.cupsValue))
 
+        // Both keys are always emitted so a queue-level default of the other
+        // one cannot leak through and double-scale the job.
         if request.fitToPage {
             pairs.append(("fit-to-page", "true"))
+            pairs.append(("scaling", "100"))
         } else {
+            pairs.append(("fit-to-page", "false"))
             // Explicit even at 100%, so a queue default scaling percentage
             // cannot silently shrink or enlarge the document.
             pairs.append(("scaling", String(min(max(request.scalePercent, 50), 150))))

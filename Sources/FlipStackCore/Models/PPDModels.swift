@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 public enum PPDOptionGroup: String, Codable, Sendable, CaseIterable {
@@ -109,6 +110,12 @@ public struct PPDDocument: Hashable, Codable, Sendable {
     public var options: [PPDOption]
     public var supportsHardwareDuplex: Bool
     public var sourcePath: String?
+    /// `*PaperDimension` entries, keyed by lowercased page-size keyword,
+    /// in PostScript points (1/72 inch).
+    public var paperDimensions: [String: CGSize]
+    /// `*ImageableArea` entries, keyed by lowercased page-size keyword, as
+    /// the printable rectangle in the same coordinate space as the media box.
+    public var imageableAreas: [String: CGRect]
 
     public init(
         nickname: String? = nil,
@@ -116,7 +123,9 @@ public struct PPDDocument: Hashable, Codable, Sendable {
         manufacturer: String? = nil,
         options: [PPDOption] = [],
         supportsHardwareDuplex: Bool = false,
-        sourcePath: String? = nil
+        sourcePath: String? = nil,
+        paperDimensions: [String: CGSize] = [:],
+        imageableAreas: [String: CGRect] = [:]
     ) {
         self.nickname = nickname
         self.makeAndModel = makeAndModel
@@ -124,6 +133,22 @@ public struct PPDDocument: Hashable, Codable, Sendable {
         self.options = options
         self.supportsHardwareDuplex = supportsHardwareDuplex
         self.sourcePath = sourcePath
+        self.paperDimensions = paperDimensions
+        self.imageableAreas = imageableAreas
+    }
+
+    /// The physical size of a page-size keyword, preferring the PPD's own
+    /// `*PaperDimension` and falling back to the standard-size catalog.
+    public func paperSize(for keyword: String) -> CGSize? {
+        if let size = paperDimensions[keyword.lowercased()] {
+            return size
+        }
+        return PaperSizeCatalog.size(forKeyword: keyword)
+    }
+
+    /// The printable rectangle of a page-size keyword, if the PPD declares it.
+    public func imageableArea(for keyword: String) -> CGRect? {
+        imageableAreas[keyword.lowercased()]
     }
 
     public func option(keyword: String) -> PPDOption? {

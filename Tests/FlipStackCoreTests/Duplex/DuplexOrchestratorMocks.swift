@@ -11,6 +11,10 @@ actor MockPrintSpooler: PrintSpooling {
         case forever(JobState, impressionsCompleted: Int?)
         /// The submitted job disappears from both live and recent history.
         case missingAfterSubmit
+        /// Reports a `.completed` job whose owner/creation date are overridden,
+        /// to simulate a reused numeric id belonging to another user or to an
+        /// older job.
+        case spoofedCompletion(owner: String?, createdAt: Date?)
     }
 
     struct Submission: Sendable {
@@ -46,6 +50,7 @@ actor MockPrintSpooler: PrintSpooling {
     private var jobReasons: [String] = []
     private var submitError: MockError?
     private var printerLookupError: MockError?
+    private var jobOwner: String?
     private var storedPrinter = Printer(
         id: "printer-1",
         name: "Epson L1800",
@@ -69,6 +74,12 @@ actor MockPrintSpooler: PrintSpooling {
 
     func setPrinterLookupError(_ error: MockError?) {
         printerLookupError = error
+    }
+
+    /// Owner stamped on every submitted job, so tests can exercise the
+    /// reused-job-id owner check in the orchestrator's monitor loop.
+    func setJobOwner(_ owner: String?) {
+        jobOwner = owner
     }
 
     func setPrinter(state: PrinterState, reasons: [String] = []) {
@@ -129,7 +140,8 @@ actor MockPrintSpooler: PrintSpooling {
             stateReasons: [],
             impressionsCompleted: 0,
             impressionsTotal: 4,
-            createdAt: Date()
+            createdAt: Date(),
+            owner: jobOwner
         )
 
         submissions.append(Submission(request: request, jobID: jobID))
@@ -149,6 +161,15 @@ actor MockPrintSpooler: PrintSpooling {
         case .missingAfterSubmit:
             hiddenJobIDs.insert(id)
             return nil
+
+        case .spoofedCompletion(let owner, let createdAt):
+            job.state = .completed
+            job.impressionsCompleted = 4
+            job.stateReasons = []
+            job.owner = owner ?? job.owner
+            job.createdAt = createdAt ?? job.createdAt
+            jobRecords[id] = job
+            return job
 
         case .forever(let state, let impressions):
             job.state = state

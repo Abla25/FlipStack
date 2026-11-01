@@ -76,21 +76,15 @@ public enum PDFPageExtractor {
         guard output.pageCount == unique.count else {
             throw ExtractError.cannotWrite("Unexpected page count after extraction.")
         }
-        try FileManager.default.createDirectory(
-            at: destinationURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
-        try? FileManager.default.setAttributes(
-            [.posixPermissions: 0o700],
-            ofItemAtPath: destinationURL.deletingLastPathComponent().path
-        )
-        guard output.write(to: destinationURL) else {
+        try SecureTemp.secureParent(of: destinationURL)
+        guard let data = output.dataRepresentation() else {
             throw ExtractError.cannotWrite("Could not write the selected pages.")
         }
-        try? FileManager.default.setAttributes(
-            [.posixPermissions: 0o600],
-            ofItemAtPath: destinationURL.path
-        )
+        do {
+            try SecureTemp.write(data, to: destinationURL)
+        } catch {
+            throw ExtractError.cannotWrite("Could not write the selected pages.")
+        }
         return output.pageCount
     }
 }

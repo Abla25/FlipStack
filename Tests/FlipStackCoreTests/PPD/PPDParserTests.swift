@@ -216,4 +216,49 @@ final class PPDParserTests: XCTestCase {
         XCTAssertFalse(document.supportsHardwareDuplex)
         XCTAssertTrue(document.isEmpty)
     }
+
+    func testPaperDimensionsAndImageableAreasAreParsed() throws {
+        let epson = try parser.parse(url: CUPSFixtureLocator.ppdURL("Epson-L1800.ppd"))
+        XCTAssertEqual(epson.paperDimensions["a4"], CGSize(width: 595.28, height: 841.89))
+        XCTAssertEqual(epson.paperDimensions["letter"], CGSize(width: 612, height: 792))
+        XCTAssertEqual(epson.paperSize(for: "A4"), CGSize(width: 595.28, height: 841.89))
+        XCTAssertEqual(epson.imageableArea(for: "A4"), CGRect(x: 0, y: 0, width: 595.28, height: 841.89))
+
+        let brother = try parser.parse(url: CUPSFixtureLocator.ppdURL("Brother-HL-L2350DW.ppd"))
+        XCTAssertEqual(brother.paperSize(for: "Letter"), CGSize(width: 612, height: 792))
+        XCTAssertNotNil(brother.imageableArea(for: "legal"))
+    }
+
+    func testPaperSizeFallsBackToCatalogWhenPPDHasNoDimension() {
+        let document = parser.parse(contents: """
+        *PPD-Adobe: "4.3"
+        *OpenUI *PageSize/Paper: PickOne
+        *DefaultPageSize: na-letter
+        *PageSize na-letter/US Letter: ""
+        *CloseUI: *PageSize
+        *End
+        """)
+        XCTAssertEqual(document.paperSize(for: "na-letter"), CGSize(width: 612, height: 792))
+        XCTAssertNil(document.paperSize(for: "custom-unknown"))
+    }
+
+    func testInlinePaperDimensionAndImageableAreaParsing() {
+        let document = parser.parse(contents: """
+        *PPD-Adobe: "4.3"
+        *PaperDimension A4: "595.28 841.89"
+        *PaperDimension 4x6: "288 432"
+        *ImageableArea A4: "18 12 577.28 829.89"
+        *PaperDimension Broken: "not numbers"
+        *ImageableArea Broken: "1 2 3"
+        *End
+        """)
+        XCTAssertEqual(document.paperDimensions["a4"], CGSize(width: 595.28, height: 841.89))
+        XCTAssertEqual(document.paperSize(for: "4x6"), CGSize(width: 288, height: 432))
+        XCTAssertEqual(
+            document.imageableArea(for: "A4"),
+            CGRect(x: 18, y: 12, width: 559.28, height: 817.89)
+        )
+        XCTAssertNil(document.paperDimensions["broken"])
+        XCTAssertNil(document.imageableAreas["broken"])
+    }
 }

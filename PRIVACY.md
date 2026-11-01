@@ -24,7 +24,8 @@ The only network or process activity is related to printing:
 - Local CUPS commands and status requests (`lp`, `lpstat`, `cancel`, and local CUPS/IPP).
 - Printer discovery via CUPS `lpinfo`, which may generate local network/mDNS traffic.
 - A print job sent to the CUPS queue the user selected. That queue may represent a printer on the local network or a directly connected USB printer.
-- Optional read-only SNMP queries to a configured network printer when CUPS does not provide supply levels.
+- Optional read-only SNMP queries to the network printer named by the queue's device URI when CUPS does not provide supply levels. The queries are SNMP v1/v2c over cleartext UDP with the default community string `public`, limited to read-only Printer-MIB supply columns. FlipStack does not store or send the community anywhere else.
+- Because of App Transport Security, a remote `CUPS_SERVER` is only contacted over `https`/`ipps` (or plain `http` to localhost); a cleartext remote host is blocked by the system and FlipStack falls back to local status.
 - If the environment explicitly points `CUPS_SERVER` at a remote CUPS host, status requests go to that configured host. No document content is included in status requests.
 
 There are no accounts, sign-ins, remote logging services, crash-reporting SDKs, third-party dependencies, or background uploads.
@@ -32,7 +33,7 @@ There are no accounts, sign-ins, remote logging services, crash-reporting SDKs, 
 ## Documents and temporary files
 
 - PDFs are read only to prepare previews, page selections, booklets, or print passes.
-- Temporary PDFs are written inside a user-only temporary directory, used for the local print operation, and removed after submission or preparation finishes. After a print failure, the prepared files may remain so **Retry backs** or **Start over** can work; they are removed when you dismiss/reset the flow, quit the app, or on the next launch. FlipStack sets the containing directories to `0700` and sets generated files to `0600` where applicable.
+- Temporary PDFs are written inside a user-only temporary directory, used for the local print operation, and removed after submission or preparation finishes. After a print failure, the prepared files may remain so **Retry backs** or **Start over** can work; they are removed when you dismiss/reset the flow, quit the app, or on the next launch. FlipStack creates the containing directories with `0700` and generated files with `0600` at creation time (never after the content exists), inside the per-user temporary directory.
 - FlipStack removes its temporary working directory on launch and on normal quit. A force-quit or crash can leave files until the next launch; they are never uploaded.
 - FlipStack does not create its own document history or recent-documents list. It does read the selected CUPS queue and its recent job metadata, which CUPS retains independently.
 - The calibration sheet contains no document content. It is a generic orientation sheet and is safe to discard. The separate test and head-alignment sheets include the printer display name and local date/time by design; they are printed locally and are not uploaded.

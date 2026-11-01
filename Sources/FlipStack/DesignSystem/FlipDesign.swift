@@ -309,6 +309,94 @@ struct FlipToneLayer: View {
     }
 }
 
+/// A card with real depth over the popover material: a soft vertical ramp,
+/// an inner top highlight, and a gentle shadow — the layered-glass look of
+/// premium menu-bar utilities.
+struct FlipGlassCard: View {
+    var radius: CGFloat = FlipMetrics.cardRadius
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: radius, style: .continuous)
+            .fill(
+                LinearGradient(
+                    colors: [
+                        FlipColor.paper.opacity(0.085),
+                        FlipColor.paper.opacity(0.028)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .strokeBorder(FlipColor.hairline, lineWidth: 0.5)
+            }
+            .overlay(alignment: .top) {
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .strokeBorder(Color.white.opacity(0.16), lineWidth: 0.5)
+                    .mask {
+                        LinearGradient(
+                            colors: [.black, .clear],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .frame(height: radius)
+                    }
+            }
+            .shadow(color: Color.black.opacity(0.07), radius: 5, x: 0, y: 2)
+    }
+}
+
+/// Section heading with the coral tick motif, used above every composer card.
+struct FlipSectionHeader: View {
+    let title: String
+    var trailing: AnyView? = nil
+
+    init(_ title: String) {
+        self.title = title
+        self.trailing = nil
+    }
+
+    init(_ title: String, @ViewBuilder trailing: () -> some View) {
+        self.title = title
+        self.trailing = AnyView(trailing())
+    }
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Rectangle()
+                .fill(FlipColor.coral)
+                .frame(width: 16, height: 2)
+            FlipEyebrow(title)
+            Spacer(minLength: 4)
+            if let trailing {
+                trailing
+            }
+        }
+    }
+}
+
+/// Pointer hover affordance for controls that only had a pressed state.
+struct FlipHoverable: ViewModifier {
+    @State private var hovered = false
+    var cornerRadius: CGFloat = FlipMetrics.smallRadius
+
+    func body(content: Content) -> some View {
+        content
+            .background {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(FlipColor.tone.opacity(hovered ? 1 : 0))
+            }
+            .onHover { hovered = $0 }
+    }
+}
+
+extension View {
+    func flipHoverable(cornerRadius: CGFloat = FlipMetrics.smallRadius) -> some View {
+        modifier(FlipHoverable(cornerRadius: cornerRadius))
+    }
+}
+
 struct FlipIconMedallion: View {
     let systemName: String
     var tint: Color = FlipColor.coral

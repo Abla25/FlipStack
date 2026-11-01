@@ -215,7 +215,7 @@ public final class CUPSClient: PrintSpooling, @unchecked Sendable {
             )
         } catch {
             try? FileManager.default.removeItem(at: spoolDirectory)
-            throw CUPSCommandError.fileNotFound(path)
+            throw CUPSCommandError.spoolCopyFailed
         }
         defer { try? FileManager.default.removeItem(at: spoolDirectory) }
 
@@ -401,11 +401,18 @@ public final class CUPSClient: PrintSpooling, @unchecked Sendable {
         if let activeJob, activeJob.state == .completed { return activeJob }
         // CUPS job ids can be reused after scheduler history is cleared. A
         // completion timestamp older than the active job's creation timestamp
-        // is old history, not this job.
+        // is old history, not this job, and so is a completion owned by a
+        // different user when both entries report an owner.
         if let activeJob,
            let activeCreated = activeJob.createdAt,
            let completedAt = job.createdAt,
            completedAt < activeCreated {
+            return activeJob
+        }
+        if let activeJob,
+           let activeOwner = activeJob.owner,
+           let completedOwner = job.owner,
+           completedOwner != activeOwner {
             return activeJob
         }
         return try await enrichCompletedJob(job, queue: queue)

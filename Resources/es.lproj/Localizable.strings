@@ -604,3 +604,7 @@
 "PRINT STUDIO" = "PRINT STUDIO";
 "Checking the printer…" = "Comprobando la impresora…";
 "Setup" = "Configurar";
+"Cancel preparation" = "Cancelar preparación";
+"Confirms the stack is back in the printer and starts the backs." = "Confirma que la pila está de nuevo en la impresora e inicia los dorsos.";
+"Confirms the stack was flipped as one block and starts the backs." = "Confirma que la pila se giró como un solo bloque e inicia los dorsos.";
+"Stops the duplex job after the first pass." = "Detiene el trabajo a doble cara después de la primera pasada.";

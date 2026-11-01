@@ -59,8 +59,11 @@ final class DuplexOrchestratorTests: XCTestCase {
         XCTAssertEqual(backs.title, "FlipStack backs")
         XCTAssertEqual(fronts.pageSet, .odd)
         XCTAssertEqual(backs.pageSet, .even)
-        XCTAssertEqual(fronts.pageRanges, ranges)
-        XCTAssertEqual(backs.pageRanges, ranges)
+        // page-ranges must never travel together with page-set=odd/even: the
+        // combination is driver-dependent and can break sheet pairing. The
+        // caller selects pages by extracting them into a temporary PDF first.
+        XCTAssertEqual(fronts.pageRanges, [])
+        XCTAssertEqual(backs.pageRanges, [])
         XCTAssertEqual(fronts.copies, 2)
         XCTAssertEqual(backs.copies, 2)
         XCTAssertEqual(fronts.numberUp, 1)
