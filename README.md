@@ -44,4 +44,14 @@ Release bundles: `Scripts/bundle.sh --dmg` (ad-hoc locally; the signed/notarized
 
 Tests: `swift test` — 248 tests covering the engine (CUPS option building, duplex orchestration, imposition, PPD parsing, ingest, security regressions).
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/composer-doc.png" width="300" alt="Composer with a document loaded">
+  <img src="docs/screenshots/receipt-flip.png" width="300" alt="Guided flip step">
+  <img src="docs/screenshots/receipt-composer.png" width="300" alt="Receipt-style panel">
+</p>
+
+Live site with download: **https://abla25.github.io** · Source: this repo.
+
 The full feature set and screenshots of the previous interface are in [`Advanced/`](Advanced/README.md) (`Advanced/docs/screenshots/`).
