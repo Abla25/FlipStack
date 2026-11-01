@@ -52,6 +52,6 @@ Tests: `swift test` — 248 tests covering the engine (CUPS option building, dup
   <img src="docs/screenshots/panel-done.png" width="280" alt="Print completed">
 </p>
 
-Live site with download: **https://abla25.github.io** · Source: this repo.
+Live site with download: **https://abla25.github.io/flipstack-website/** · Source: this repo.
 
 The full feature set and screenshots of the previous interface are in [`Advanced/`](Advanced/README.md) (`Advanced/docs/screenshots/`).
