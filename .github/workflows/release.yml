@@ -23,6 +23,7 @@ jobs:
     name: Sign, notarize, and publish
     runs-on: macos-15
     timeout-minutes: 60
+    continue-on-error: true   # notarization secrets are optional for the open-source build
     steps:
       - name: Check out
         uses: actions/checkout@v4
