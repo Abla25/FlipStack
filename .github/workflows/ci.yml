@@ -96,3 +96,69 @@ jobs:
           path: dist/ci/FlipStack-unsigned.zip
           if-no-files-found: error
           retention-days: 14
+
+  # The receipt-style Demo app is what actually ships as FlipStack.app; the
+  # `build` job above only covers the root/Advanced packages. This job builds,
+  # tests and packages the shipped app so a broken Demo can never merge green.
+  demo:
+    name: Build and test demo (shipped app)
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Show tool versions
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Cache SwiftPM build
+        uses: actions/cache@v4
+        with:
+          path: Demo/.build
+          key: ${{ runner.os }}-${{ runner.arch }}-demo-${{ hashFiles('Demo/Package.swift', 'Package.swift', 'Demo/version.env') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-demo-
+
+      - name: Run Demo tests
+        run: cd Demo && swift test --parallel
+
+      - name: Bundle the shipped app and DMG (unsigned)
+        run: Scripts/bundle-demo.sh --unsigned --dmg
+
+      - name: Verify bundle and DMG
+        run: |
+          set -euo pipefail
+          APP="dist-demo/FlipStack.app"
+          DMG="dist-demo/FlipStack.dmg"
+          test -x "$APP/Contents/MacOS/FlipStack"
+          test -f "$APP/Contents/Info.plist"
+          test -f "$APP/Contents/Resources/AppIcon.icns"
+          test -f "$APP/Contents/Resources/menuicon.png"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist" | grep -qx 'app.flipstack.FlipStack'
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist" | grep -qx 'FlipStack'
+          /usr/libexec/PlistBuddy -c 'Print :LSUIElement' "$APP/Contents/Info.plist" | grep -qx 'true'
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist" \
+            | grep -Fx "$(sed -n 's/^MARKETING_VERSION=//p' Demo/version.env)"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Contents/Info.plist" \
+            | grep -Fx "$(sed -n 's/^BUILD_NUMBER=//p' Demo/version.env)"
+          plutil -lint "$APP/Contents/Info.plist"
+          lipo -info "$APP/Contents/MacOS/FlipStack"
+          ( cd dist-demo && shasum -a 256 -c FlipStack.dmg.sha256 )
+          mkdir -p "$RUNNER_TEMP/demo-mnt"
+          hdiutil attach -readonly -nobrowse -mountpoint "$RUNNER_TEMP/demo-mnt" "$DMG"
+          test -d "$RUNNER_TEMP/demo-mnt/FlipStack.app"
+          test -L "$RUNNER_TEMP/demo-mnt/Applications"
+          hdiutil detach "$RUNNER_TEMP/demo-mnt"
+
+      - name: Upload Demo DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: FlipStack-demo-${{ github.sha }}
+          path: |
+            dist-demo/FlipStack.dmg
+            dist-demo/FlipStack.dmg.sha256
+          if-no-files-found: error
+          retention-days: 14

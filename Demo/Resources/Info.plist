@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+    FlipStack.app Info.plist TEMPLATE (the Demo receipt app, i.e. the app that ships).
+
+    Scripts/bundle-demo.sh renders this file into
+        dist-demo/FlipStack.app/Contents/Info.plist
+    substituting:
+        __VERSION__  <- MARKETING_VERSION (Demo/version.env or the environment)
+        __BUILD__    <- BUILD_NUMBER      (Demo/version.env or the environment)
+
+    Do not put the concrete version here: it must stay a placeholder so there is
+    exactly one place to bump it (Demo/version.env).
+
+    NSBonjourServices / NSLocalNetworkUsageDescription: the app probes printers
+    with NWBrowser over the Bonjour types listed below and opens TCP sockets to
+    them (Demo/Sources/FlipStackDemo/NetworkProbe.swift). macOS 15+ shows a
+    "Local Network" permission prompt for that; these keys make the prompt
+    accurate instead of generic.
+-->
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleDisplayName</key>
+    <string>FlipStack</string>
+    <key>CFBundleExecutable</key>
+    <string>FlipStack</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon.icns</string>
+    <key>CFBundleIdentifier</key>
+    <string>app.flipstack.FlipStack</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>FlipStack</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>__VERSION__</string>
+    <key>CFBundleVersion</key>
+    <string>__BUILD__</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.utilities</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © 2026 FlipStack contributors. MIT License.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_ipp._tcp</string>
+        <string>_ipps._tcp</string>
+        <string>_pdl-datastream._tcp</string>
+    </array>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>FlipStack checks your network printers locally to show whether they are switched on and to read their ink levels. Nothing is sent off your Mac.</string>
+</dict>
+</plist>

@@ -3,112 +3,43 @@ import AppKit
 import PDFKit
 import FlipStackCore
 
-// MARK: - Pure print math (unit-tested)
-enum PrintMath {
-    static func selectedPages(total: Int, pages: String) -> Int {
-        switch pages {
-        case "odd": return (total + 1) / 2
-        case "even": return total / 2
-        default: return total
-        }
-    }
-    static func sheets(pages: Int, duplex: Bool, copies: Int) -> Int {
-        let s = duplex ? (pages + 1) / 2 : pages
-        return s * copies
-    }
-    static func dpi(quality: String, resOverride: String) -> Int {
-        if let v = Int(resOverride), v > 0 { return v }
-        switch quality {
-        case "draft": return 180
-        case "normal": return 366
-        default: return 600
-        }
-    }
-    static func qualityLevel(forDPI dpi: Int) -> Int {
-        dpi <= 180 ? 3 : dpi <= 366 ? 4 : 5
-    }
-    static func qualityLevel(_ q: String) -> Int {
-        switch q { case "draft": return 3; case "normal": return 4; default: return 5 }
-    }
-    static func pageRange(pages: Int, side: String) -> String {
-        var nums: [Int] = []
-        var i = side == "odd" ? 1 : 2
-        while i <= pages { nums.append(i); i += 2 }
-        return compressRange(nums)
-    }
-    /// Compress sorted page numbers into "1-3,5,7-9" form.
-    static func compressRange(_ pages: [Int]) -> String {
-        let sorted = Array(Set(pages)).sorted()
-        guard !sorted.isEmpty else { return "" }
-        var parts: [String] = []
-        var start = sorted[0], prev = sorted[0]
-        for p in sorted.dropFirst() {
-            if p == prev + 1 { prev = p; continue }
-            parts.append(start == prev ? "\(start)" : "\(start)-\(prev)")
-            start = p; prev = p
-        }
-        parts.append(start == prev ? "\(start)" : "\(start)-\(prev)")
-        return parts.joined(separator: ",")
-    }
-    /// Parse a user page spec like "1-5, 8, 12-14" against a total page count.
-    static func parsePageSpec(_ spec: String, total: Int) -> [Int] {
-        var result = Set<Int>()
-        for part in spec.split(separator: ",") {
-            let p = part.trimmingCharacters(in: .whitespaces)
-            if let dash = p.firstIndex(of: "-") {
-                let a = Int(p[..<dash].trimmingCharacters(in: .whitespaces)) ?? 0
-                let b = Int(p[p.index(after: dash)...].trimmingCharacters(in: .whitespaces)) ?? 0
-                if a > 0, b >= a { for i in a...min(b, total) { result.insert(i) } }
-            } else if let n = Int(p), n >= 1 {
-                result.insert(min(n, total))
-            }
-        }
-        return result.sorted()
-    }
-    /// The actual pages to print, given the mode ("all"/"odd"/"even"/"custom") and spec.
-    static func selectedPageList(total: Int, pages: String, spec: String) -> [Int] {
-        switch pages {
-        case "odd": return stride(from: 1, through: total, by: 2).map { $0 }
-        case "even": return stride(from: 2, through: total, by: 2).map { $0 }
-        case "custom":
-            let list = parsePageSpec(spec, total: total)
-            return list.isEmpty ? Array(1...max(total, 1)) : list
-        default: return total > 0 ? Array(1...total) : []
-        }
-    }
-    /// Scale factor so a page fits inside a fixed sheet (zoom=1.0 → fit).
-    static func fitScale(sheetW: Double, sheetH: Double, pageW: Double, pageH: Double) -> Double {
-        guard pageW > 0, pageH > 0 else { return 1 }
-        return min(sheetW / pageW, sheetH / pageH)
-    }
-    static func isPhoto(_ name: String) -> Bool {
-        let exts = ["jpg", "jpeg", "heic", "heif", "png", "tiff", "tif", "bmp", "gif", "webp"]
-        return exts.contains((name as NSString).pathExtension.lowercased())
-    }
-}
-
 // MARK: - App model
+
 enum FlowPhase: Equatable { case idle, printing, flip, done }
 
 enum PopoverKind: Equatable {
     case paper, color, quality, copies, duplexEdge, pages, orientation, scale, media, tray, resOverride, inkSave
 }
 
-struct DemoSettings {
-    var lang = "EN"
-    var defQuality = "high"
-}
-
+/// The single source of truth for the receipt UI.
+///
+/// v1.0.2 changes:
+/// - `settings` is `@Published`, so settings taps repaint immediately;
+/// - app defaults + per-printer last-used options are persisted
+///   (`DemoSettingsStore`, `FlipStack.demo.*` keys) and restored at launch;
+/// - the print flow is a cancellable state machine with a generation token, so
+///   cancel/retry/document changes can never be overridden by stale completions;
+/// - documents are validated/converted with `FlipStackCore.DocumentIngest`
+///   (DOCX/RTF/text really work), and page selection resets per document;
+/// - photos/oversized pages are scaled to fit the chosen media instead of being
+///   clipped (`PrintMath.effectiveScale`);
+/// - every user-visible string goes through `T(...)` (EN + IT).
+@MainActor
 final class AppModel: ObservableObject {
-    // document
+    // MARK: Document
     @Published var docURL: URL?
     @Published var docName = ""
     @Published var docPages = 0
     @Published var docSizeMB = 0.0
-    @Published var previewDoc: PDFDocument?   // cached so we don't re-parse per render
+    @Published var documentTag = "PDF"
+    @Published var previewDoc: PDFDocument?     // cached so we don't re-parse per render
+    @Published var isPreparingDoc = false
     var isPhoto: Bool { docURL.map { PrintMath.isPhoto($0.lastPathComponent) } ?? false }
+    private var printableURL: URL?              // what actually goes to `lp` (PDF)
+    private var ingestedTempDirectory: URL?     // owned temp dir for converted files
+    private var docLoadGeneration = 0
 
-    // printers — real CUPS queues from FlipStackCore
+    // MARK: Printers — real CUPS queues from FlipStackCore
     @Published var printers: [Printer] = []
     @Published var printerID = ""
     @Published var supplies: [SupplyLevel] = []          // real levels (IPP/SNMP via core)
@@ -116,34 +47,47 @@ final class AppModel: ObservableObject {
     @Published var queuedJobs = 0
     @Published var statusOrigin: StatusOrigin = .unavailable
     @Published var printerStates: [String: PrinterStatus] = [:]   // live status for ALL queues
-    @Published var probeOffline: Set<String> = []                // network printers that fail TCP probe (power off)
+    @Published var probeOffline: Set<String> = []                 // network printers that fail TCP probe
+    @Published var printersLoading = false
     var printer: Printer? { printers.first(where: { $0.id == printerID }) }
     var printerName: String { printer?.name ?? printerID }
 
-    // options
-    @Published var duplex = true
-    @Published var duplexEdge = "long"
-    @Published var paper = "A4"
-    @Published var colorMode = "Color"
-    @Published var quality = "high"
+    // MARK: Options (persisted per printer)
+    @Published var duplex = true { didSet { optionsChanged() } }
+    @Published var duplexEdge = "long" { didSet { optionsChanged() } }
+    @Published var paper = "A4" { didSet { optionsChanged() } }
+    @Published var colorMode = "Color" { didSet { optionsChanged() } }
+    @Published var quality = "high" { didSet { optionsChanged() } }
     @Published var pagesSel = "all"
     @Published var pageSpec = ""
-    @Published var orientation = "auto"
-    @Published var scale = 100
-    @Published var media = "Plain"
-    @Published var tray = "auto"
+    @Published var orientation = "auto" { didSet { optionsChanged() } }
+    @Published var scale = 100 { didSet { optionsChanged() } }
+    @Published var media = "Plain" { didSet { optionsChanged() } }
+    @Published var tray = "auto" { didSet { optionsChanged() } }
     @Published var copies = 1
-    @Published var resOverride = "off"
-    @Published var inkSave = false
+    @Published var resOverride = "off" { didSet { optionsChanged() } }
+    @Published var inkSave = false { didSet { optionsChanged() } }
 
-    // ui state
+    // MARK: App settings (persisted; @Published so the Settings page repaints)
+    @Published var settings: DemoAppSettings {
+        didSet {
+            guard !isRestoringSettings else { return }
+            L10n.current = settings.language
+            store.saveAppSettings(settings)
+            if settings.defaultQuality != oldValue.defaultQuality {
+                quality = settings.defaultQuality
+            }
+        }
+    }
+
+    // MARK: UI state
     @Published var moreOpen = false
     @Published var popover: PopoverKind?
-    @Published var customPagesDraft = ""
+    @Published var customPagesDraft = ""          // kept for the pages popover compatibility
     @Published var previewOpen = false
     @Published var previewPage = 1
     @Published var previewZoom: CGFloat = 1.0
-    @Published var selectMode = false                    // filmstrip tap = include/exclude pages
+    @Published var selectMode = false              // filmstrip tap = include/exclude pages
     @Published var settingsOpen = false
     @Published var printersOpen = false
     @Published var calibOpen = false
@@ -152,49 +96,168 @@ final class AppModel: ObservableObject {
     @Published var flowProgress: Double = 0
     @Published var flowLabel = ""
     @Published var lastPrint: String?
+    @Published var flowCopyIndex = 1
+    @Published var flowCopiesTotal = 1
 
-    var settings = DemoSettings()
+    /// Called when the flow needs the user (flip prompt / done) so the app can
+    /// present the panel even if the user closed it.
+    var onNeedsAttention: (() -> Void)?
+
     var simulate = false
-    private var flowTimer: Timer?
-    private var statusTimer: Timer?
-    private var flowSide = "all"
 
-    // derived
+    // MARK: Private state
+    private let store: DemoSettingsStore
+    private var isRestoringOptions = false
+    private var isRestoringSettings = false
+    private var statusTimer: Timer?
+    private var isPolling = false
+    private var progressTimer: Timer?
+    private var toastID = 0
+    private var flowGeneration = 0
+    private var flowTask: Task<Void, Never>?
+    private var flowPrinterID = ""
+    private var flowJobID: Int?
+    private var flowFronts: [Int] = []
+    private var flowBacks: [Int] = []
+    private var flipContinuation: CheckedContinuation<Bool, Never>?
+
+    // MARK: - Init / persistence
+
+    init(store: DemoSettingsStore = DemoSettingsStore()) {
+        self.store = store
+        let loaded = store.loadAppSettings()
+        self.settings = loaded
+        self.quality = loaded.defaultQuality
+        L10n.current = loaded.language
+    }
+
+    deinit {
+        statusTimer?.invalidate()
+        progressTimer?.invalidate()
+    }
+
+    private var currentOptions: DemoPrinterOptions {
+        DemoPrinterOptions(
+            duplex: duplex,
+            duplexEdge: duplexEdge,
+            paper: paper,
+            colorMode: colorMode,
+            quality: quality,
+            orientation: orientation,
+            scale: scale,
+            media: media,
+            tray: tray,
+            resOverride: resOverride,
+            inkSave: inkSave,
+            lastUsedAt: Date()
+        )
+    }
+
+    private func optionsChanged() {
+        guard !isRestoringOptions, !printerID.isEmpty else { return }
+        store.saveOptions(currentOptions, for: printerID)
+    }
+
+    private func applyOptions(_ options: DemoPrinterOptions) {
+        isRestoringOptions = true
+        duplex = options.duplex
+        duplexEdge = options.duplexEdge
+        paper = options.paper
+        colorMode = options.colorMode
+        quality = options.quality
+        orientation = options.orientation
+        scale = options.scale
+        media = options.media
+        tray = options.tray
+        resOverride = options.resOverride
+        inkSave = options.inkSave
+        isRestoringOptions = false
+    }
+
+    /// Writes pending settings to disk (called from the terminate hook).
+    func prepareForTermination() {
+        cancelFlow()
+        store.flush()
+        stopStatusTimer()
+        progressTimer?.invalidate()
+        progressTimer = nil
+    }
+
+    /// Stops polling while the panel is hidden; refreshes when shown again.
+    func setPanelVisible(_ visible: Bool) {
+        if visible {
+            if printers.isEmpty { refreshPrinters() }
+            startStatusTimer()
+            Task {
+                await pollStatus()
+                await pollAllPrinters()
+            }
+        } else {
+            stopStatusTimer()
+        }
+    }
+
+    // MARK: Derived print math
     var selectedPageList: [Int] { PrintMath.selectedPageList(total: docPages, pages: pagesSel, spec: pageSpec) }
     var selectedPages: Int { selectedPageList.count }
     var sheets: Int { PrintMath.sheets(pages: selectedPages, duplex: duplex, copies: copies) }
     var dpi: Int { PrintMath.dpi(quality: quality, resOverride: resOverride) }
+    var isPrinting: Bool { flowPhase == .printing || flowPhase == .flip }
 
-    // MARK: printers & live status
+    /// Everything that must be true before PRINT is allowed to start.
+    var canPrint: Bool {
+        !isPrinting && !isPreparingDoc
+            && docURL != nil && printableURL != nil
+            && !printerID.isEmpty && printer != nil
+            && !selectedPageList.isEmpty
+    }
+
+    /// Media box of the first page; used for auto orientation and fit scaling.
+    private var printPageSize: PrintMath.Size? {
+        guard let pdf = previewDoc, let page = pdf.page(at: 0) else { return nil }
+        let bounds = page.bounds(for: .mediaBox)
+        guard bounds.width > 0, bounds.height > 0 else { return nil }
+        return PrintMath.Size(width: Double(bounds.width), height: Double(bounds.height))
+    }
+
+    // MARK: - Printers & live status
+
     func refreshPrinters() {
+        guard !printersLoading else { return }
+        printersLoading = true
         Task {
             let list = (try? await CUPSClient().listPrinters()) ?? []
-            await MainActor.run {
-                self.printers = list
-                if self.printerID.isEmpty {
-                    self.printerID = list.first(where: { $0.isDefault })?.id ?? list.first?.id ?? ""
-                }
-                Task { await self.pollStatus() }
-                Task { await self.pollAllPrinters() }
-                self.statusTimer?.invalidate()
-                self.statusTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { _ in
-                    Task { await self.pollStatus() }
-                    Task { await self.pollAllPrinters() }
-                }
+            self.printers = list
+            self.printersLoading = false
+            self.store.prunePrinterOptions(known: Set(list.map(\.id)))
+            let stored = self.store.lastPrinterID
+            let target: String?
+            if let stored, list.contains(where: { $0.id == stored }) {
+                target = stored
+            } else if list.contains(where: { $0.id == self.printerID }) {
+                target = self.printerID
+            } else {
+                target = list.first(where: { $0.isDefault })?.id ?? list.first?.id
             }
+            if let target {
+                if target != self.printerID { self.printerID = target }
+                self.applyOptions(self.store.loadOptions(for: target, appDefaultQuality: self.settings.defaultQuality))
+                if self.store.lastPrinterID == nil { self.store.lastPrinterID = target }
+            }
+            await self.pollStatus()
+            await self.pollAllPrinters()
+            self.startStatusTimer()
         }
     }
 
     func pollStatus() async {
         guard let p = printer else { return }
         let st = await IPPStatusClient().status(for: p)
-        await MainActor.run {
-            self.supplies = st.supplies
-            self.printerState = st.state
-            self.queuedJobs = st.queuedJobCount ?? 0
-            self.statusOrigin = st.origin
-            self.printerStates[st.printerID] = st
-        }
+        supplies = st.supplies
+        printerState = st.state
+        queuedJobs = st.queuedJobCount ?? 0
+        statusOrigin = st.origin
+        printerStates[st.printerID] = st
     }
 
     /// Poll every queue so the picker can show real offline/online state.
@@ -202,16 +265,19 @@ final class AppModel: ObservableObject {
     /// answers for them even when the printer is off, so TCP reachability is
     /// the ground truth for "online".
     func pollAllPrinters() async {
-        // One Bonjour browse resolves every advertised printer to host:port.
         let endpoints = await NetworkProbe.bonjourEndpoints(timeout: 2.5)
-        let canJudge = !endpoints.isEmpty   // if Bonjour sees nothing at all, don't judge (fall back to CUPS)
-        // Probe all queues in parallel with short deadlines — never block the UI.
+        let canJudge = !endpoints.isEmpty   // if Bonjour sees nothing, fall back to CUPS
+        let list = printers
+        var states: [String: PrinterStatus] = [:]
+        var offlineSet: Set<String> = []
         await withTaskGroup(of: (String, PrinterStatus?, Bool).self) { group in
-            for p in printers {
+            for p in list {
                 group.addTask {
                     let st = await IPPStatusClient().status(for: p)
                     var offline = false
-                    if canJudge, let uri = p.deviceURI, NetworkProbe.parseDnssd(uri)?.uuid != nil || uri.hasPrefix("socket://") {
+                    if canJudge,
+                       let uri = p.deviceURI,
+                       NetworkProbe.parseDnssd(uri)?.uuid != nil || uri.hasPrefix("socket://") {
                         if let target = NetworkProbe.target(for: uri, endpoints: endpoints) {
                             var reachable = await NetworkProbe.canReachAsync(host: target.host, port: target.port)
                             if !reachable { reachable = await NetworkProbe.canReachAsync(host: target.host, port: 9100) }
@@ -224,49 +290,86 @@ final class AppModel: ObservableObject {
                     return (p.id, st, offline)
                 }
             }
-            var states: [String: PrinterStatus] = [:]
-            var offlineSet: Set<String> = []
             for await (id, st, off) in group {
                 if let st { states[id] = st }
                 if off { offlineSet.insert(id) }
             }
-            await MainActor.run {
-                // publish only on change so the UI does not re-render needlessly
-                if states != self.printerStates { self.printerStates = states }
-                if offlineSet != self.probeOffline { self.probeOffline = offlineSet }
-            }
         }
+        // publish only on change so the UI does not re-render needlessly
+        if states != printerStates { printerStates = states }
+        if offlineSet != probeOffline { probeOffline = offlineSet }
     }
 
     func isOffline(_ id: String) -> Bool {
         if probeOffline.contains(id) { return true }
-        let reasons = printerStates[id]?.stateReasons ?? printers.first(where: { $0.id == id })?.stateReasons ?? []
-        return reasons.contains { $0.contains("offline") || $0.contains("connecting") || $0.contains("unreachable") }
+        let reasons = printerStates[id]?.stateReasons
+            ?? printers.first(where: { $0.id == id })?.stateReasons
+            ?? []
+        return reasons.contains { reason in
+            let lower = reason.lowercased()
+            return lower.contains("offline") || lower.contains("connecting") || lower.contains("unreachable")
+        }
     }
+
     /// 0 = fine, 1 = attention (unknown reasons), 2 = offline
     func statusSeverity(_ id: String) -> Int {
         if isOffline(id) { return 2 }
-        let reasons = printerStates[id]?.stateReasons ?? printers.first(where: { $0.id == id })?.stateReasons ?? []
-        let known = ["none", "offline-report"]
-        let unknown = reasons.filter { !known.contains($0.lowercased()) && !$0.contains("offline") }
+        let reasons = printerStates[id]?.stateReasons
+            ?? printers.first(where: { $0.id == id })?.stateReasons
+            ?? []
+        let known: Set<String> = ["none", "offline-report"]
+        let unknown = reasons.filter { !known.contains($0.lowercased()) && !$0.lowercased().contains("offline") }
         return unknown.isEmpty ? 0 : 1
     }
+
     func statusLabel(_ id: String) -> String {
         switch statusSeverity(id) {
-        case 2: return "offline"
-        case 1: return "check printer"
-        default: return printerStates[id]?.state.label.lowercased() ?? printers.first(where: { $0.id == id })?.state.label.lowercased() ?? "unknown"
+        case 2: return T("status.offline")
+        case 1: return T("status.checkPrinter")
+        default:
+            let state = printerStates[id]?.state ?? printers.first(where: { $0.id == id })?.state
+            switch state {
+            case .idle: return T("status.ready")
+            case .processing: return T("status.printing")
+            case .stopped: return T("status.stopped")
+            case .unknown, .none: return T("status.unknown")
+            }
         }
     }
 
     func pickPrinter(_ id: String) {
+        guard id != printerID else {
+            printersOpen = false
+            return
+        }
+        cancelFlow()
         printerID = id
+        store.lastPrinterID = id
+        applyOptions(store.loadOptions(for: id, appDefaultQuality: settings.defaultQuality))
         printersOpen = false
+        showToast("\(T("toast.printer")): \(printerName)")
         Task { await pollStatus() }
-        showToast("Printer: \(printerName)")
     }
 
-    // MARK: page inclusion (select pages in the preview filmstrip)
+    private func startStatusTimer() {
+        stopStatusTimer()
+        statusTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, !self.isPolling else { return }
+                self.isPolling = true
+                await self.pollStatus()
+                await self.pollAllPrinters()
+                self.isPolling = false
+            }
+        }
+    }
+
+    private func stopStatusTimer() {
+        statusTimer?.invalidate()
+        statusTimer = nil
+    }
+
+    // MARK: - Page inclusion (preview filmstrip)
     var includedSet: Set<Int> {
         switch pagesSel {
         case "custom": return Set(PrintMath.parsePageSpec(pageSpec, total: max(docPages, 1)))
@@ -275,163 +378,445 @@ final class AppModel: ObservableObject {
         default: return docPages > 0 ? Set(1...docPages) : []
         }
     }
+
     func togglePageIncluded(_ p: Int) {
         var s = includedSet
         if s.contains(p) { s.remove(p) } else { s.insert(p) }
-        if s.count == docPages && docPages > 0 { pagesSel = "all"; pageSpec = "" }
-        else { pagesSel = "custom"; pageSpec = PrintMath.compressRange(Array(s).sorted()) }
+        if s.count == docPages && docPages > 0 {
+            pagesSel = "all"
+            pageSpec = ""
+        } else {
+            pagesSel = "custom"
+            pageSpec = PrintMath.compressRange(Array(s).sorted())
+        }
         previewPage = min(max(p, 1), max(docPages, 1))
     }
 
-    // MARK: document
+    /// Applies a contiguous range from the pages popover steppers.
+    func applyPageRange(from: Int, to: Int) {
+        guard docPages > 0 else { return }
+        let lo = max(1, min(from, docPages))
+        let hi = max(lo, min(to, docPages))
+        pagesSel = "custom"
+        pageSpec = PrintMath.compressRange(Array(lo...hi))
+        previewPage = lo
+    }
+
+    // MARK: - Documents
+
     func chooseDoc(_ url: URL) {
-        docURL = url
-        docName = url.lastPathComponent
-        if PrintMath.isPhoto(url.lastPathComponent) {
-            docPages = 1
-            previewDoc = Printing.photoToPDF(url)
-        } else if let pdf = PDFDocument(url: url) {
-            docPages = pdf.pageCount
-            previewDoc = pdf
-        } else {
-            docPages = 1
-            previewDoc = nil
+        cancelFlow()
+        docLoadGeneration += 1
+        let generation = docLoadGeneration
+        isPreparingDoc = true
+        Task {
+            let kind = DocumentIngest.kind(of: url)
+            guard kind != .unsupported else {
+                self.isPreparingDoc = false
+                self.showToast(T("toast.unsupportedFile"))
+                return
+            }
+            let outcome: Result<(URL, PDFDocument, Int64), Error>
+            do {
+                let pdfURL: URL
+                if kind == .pdf {
+                    pdfURL = url
+                } else {
+                    pdfURL = try DocumentIngest.makePDF(from: [url])
+                }
+                guard let pdf = PDFDocument(url: pdfURL), pdf.pageCount > 0 else {
+                    throw DocumentIngest.IngestError.unreadable
+                }
+                let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+                let bytes = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
+                outcome = .success((pdfURL, pdf, bytes))
+            } catch {
+                outcome = .failure(error)
+            }
+            guard generation == self.docLoadGeneration else {
+                if case .success(let value) = outcome, value.0 != url {
+                    try? FileManager.default.removeItem(at: value.0.deletingLastPathComponent())
+                }
+                return
+            }
+            switch outcome {
+            case .success(let (pdfURL, pdf, bytes)):
+                self.cleanupIngestedTemp()
+                if pdfURL != url { self.ingestedTempDirectory = pdfURL.deletingLastPathComponent() }
+                self.docURL = url
+                self.docName = url.lastPathComponent
+                self.previewDoc = pdf
+                self.docPages = pdf.pageCount
+                self.docSizeMB = Double(bytes) / 1_048_576
+                self.printableURL = pdfURL
+                self.documentTag = DocumentIngest.formatTag(for: kind)
+                self.pagesSel = "all"
+                self.pageSpec = ""
+                self.customPagesDraft = ""
+                self.previewPage = 1
+                self.selectMode = false
+                self.previewOpen = false
+                self.previewZoom = 1
+                self.isPreparingDoc = false
+            case .failure(let error):
+                self.isPreparingDoc = false
+                let message = (error as? LocalizedError)?.errorDescription
+                    ?? T("toast.conversionFailed")
+                self.showToast(message)
+            }
         }
-        if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-           let size = attrs[.size] as? Int64 {
-            docSizeMB = Double(size) / 1_048_576
-        }
-        previewPage = 1
     }
 
     func removeDoc() {
         cancelFlow()
-        docURL = nil; docName = ""; docPages = 0; previewDoc = nil
+        docLoadGeneration += 1
+        cleanupIngestedTemp()
+        docURL = nil
+        docName = ""
+        docPages = 0
+        docSizeMB = 0
+        previewDoc = nil
+        printableURL = nil
+        ingestReset()
+        documentTag = "PDF"
+        pagesSel = "all"
+        pageSpec = ""
+        previewPage = 1
     }
 
-    func showToast(_ msg: String) {
-        toast = msg
-        Task { try? await Task.sleep(nanoseconds: 1_600_000_000); if self.toast == msg { self.toast = nil } }
+    private func ingestReset() {
+        previewPage = 1
+        selectMode = false
+        previewOpen = false
     }
 
-    // MARK: print flow
+    private func cleanupIngestedTemp() {
+        if let directory = ingestedTempDirectory {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        ingestedTempDirectory = nil
+    }
+
+    // MARK: - Toasts
+
+    func showToast(_ message: String) {
+        toastID += 1
+        let id = toastID
+        toast = message
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 2_400_000_000)
+            guard let self, self.toastID == id else { return }
+            self.toast = nil
+        }
+    }
+
+    // MARK: - Print flow
+
     func startPrint() {
-        guard docURL != nil else { showToast("Drop a document first"); return }
-        cancelFlow()
-        if duplex {
-            let fronts = stride(from: 0, to: selectedPageList.count, by: 2).map { selectedPageList[$0] }
-            runPhase(side: "fronts", pages: fronts, label: "Printing…")
-        } else {
-            runPhase(side: "all", pages: selectedPageList, label: "Printing…")
+        guard flowPhase == .idle else { return }
+        guard docURL != nil, printableURL != nil else {
+            showToast(T("toast.noDocument"))
+            return
         }
-    }
-
-    private func runPhase(side: String, pages: [Int], label: String) {
-        flowSide = side
+        guard !printerID.isEmpty, printer != nil else {
+            showToast(T("toast.noPrinter"))
+            return
+        }
+        let pages = selectedPageList
+        guard !pages.isEmpty else {
+            showToast(T("toast.noPages"))
+            return
+        }
+        if isOffline(printerID) {
+            showToast(T("toast.offlineWarning"))
+        }
+        let plan = PrintMath.frontsAndBacks(pages)
+        flowFronts = plan.fronts
+        flowBacks = duplex ? plan.backs : []
+        flowCopiesTotal = max(copies, 1)
+        flowCopyIndex = 1
+        flowPrinterID = printerID
+        flowJobID = nil
+        flowGeneration += 1
+        let generation = flowGeneration
         flowPhase = .printing
-        flowLabel = label
         flowProgress = 0
-        guard let url = docURL else { return }
-        let range = PrintMath.compressRange(pages)
-        if simulate {
-            let started = Date()
-            flowTimer = Timer.scheduledTimer(withTimeInterval: 0.09, repeats: true) { [weak self] _ in
-                Task { @MainActor in
-                    guard let self else { return }
-                    self.flowProgress += 0.12
-                    // keep the "Printing…" screen visible at least 1.4s
-                    if self.flowProgress >= 1 && Date().timeIntervalSince(started) >= 1.4 {
-                        self.flowTimer?.invalidate(); self.flowTimer = nil
-                        self.advanceAfter(side: side)
-                    } else if self.flowProgress >= 1 {
-                        self.flowProgress = 0.98
-                    }
-                }
-            }
-        } else {
-            let printer = printerID
-            let title = side == "backs" ? "FlipStack — backs" : side == "fronts" ? "FlipStack — fronts" : "FlipStack"
-            Task {
-                let out = Printing.print(file: url, printer: printer, pageRange: range.isEmpty ? nil : range,
-                                         targetDPI: dpi, color: colorMode == "Color" && !inkSave,
-                                         copies: copies, media: media, paper: paper,
-                                         scale: scale, orientation: orientation,
-                                         duplexEdge: duplexEdge, title: title)
-                await MainActor.run { self.flowProgress = 0.4 }
-                // lp exiting only means spooled. Find OUR job by its title, then
-                // wait until CUPS reports it completed — only then advance (flip).
-                var jobID = Printing.parseJobID(out)
-                if jobID == nil {
-                    jobID = await Printing.findJob(title: title, printer: printer)
-                }
-                var ok = !out.contains("error")
-                if let jobID {
-                    Printing.currentJobID = jobID
-                    // animate progress while the printer works
-                    let anim = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { _ in
-                        Task { @MainActor in
-                            if self.flowPhase == .printing && self.flowProgress < 0.95 {
-                                self.flowProgress = min(0.95, self.flowProgress + 0.02)
-                            }
-                        }
-                    }
-                    ok = await Printing.waitForJob(jobID, printer: printer, timeout: 300)
-                    anim.invalidate()
-                    await MainActor.run { Printing.currentJobID = nil }
-                }
-                let okFinal = ok
-                await MainActor.run {
-                    guard self.flowPhase == .printing else { return } // cancelled meanwhile
-                    self.flowProgress = 1
-                    if out.contains("error") || !okFinal { self.showToast("Print failed or cancelled"); self.flowPhase = .idle }
-                    else { self.advanceAfter(side: side) }
-                }
+        flowLabel = duplex ? T("flow.printingFronts") : T("flow.printing")
+        let simulate = self.simulate
+        flowTask?.cancel()
+        flowTask = Task {
+            if simulate {
+                await self.runSimulatedFlow(generation: generation)
+            } else {
+                await self.runRealFlow(generation: generation)
             }
         }
     }
 
-    private func advanceAfter(side: String) {
-        if side == "fronts" && duplex {
-            let backs = stride(from: 1, to: selectedPageList.count, by: 2).map { selectedPageList[$0] }
-            if backs.isEmpty { finishFlow() } else { flowPhase = .flip }
-        } else {
-            finishFlow()
+    private func isFlowCurrent(_ generation: Int) -> Bool {
+        generation == flowGeneration
+            && !Task.isCancelled
+            && (flowPhase == .printing || flowPhase == .flip)
+    }
+
+    private func runRealFlow(generation: Int) async {
+        let copiesTotal = max(flowCopiesTotal, 1)
+        for copy in 1...copiesTotal {
+            guard isFlowCurrent(generation) else { return }
+            flowCopyIndex = copy
+            guard await performPass(pages: flowFronts, side: "fronts", generation: generation) else { return }
+            if duplex && !flowBacks.isEmpty {
+                flowPhase = .flip
+                flowProgress = 1
+                flowLabel = ""
+                onNeedsAttention?()
+                let confirmed = await waitForFlipConfirmation(generation: generation)
+                guard confirmed, isFlowCurrent(generation) else { return }
+                flowPhase = .printing
+                flowProgress = 0
+                flowLabel = T("flow.printingBacks")
+                guard await performPass(pages: flowBacks, side: "backs", generation: generation) else { return }
+            }
         }
+        finishFlow(generation: generation)
+    }
+
+    private func performPass(pages: [Int], side: String, generation: Int) async -> Bool {
+        guard let file = printableURL else {
+            showToast(T("toast.noDocument"))
+            flowPhase = .idle
+            return false
+        }
+        guard isFlowCurrent(generation) else { return false }
+        let isBacks = side == "backs"
+        let frontsOrientation = PrintMath.orientationRequested(orientation: orientation, pageSize: printPageSize)
+        let passOrientation = isBacks
+            ? PrintMath.backsOrientationRequested(fronts: frontsOrientation, shortEdge: duplexEdge == "short")
+            : frontsOrientation
+        let passScale = PrintMath.effectiveScale(paper: paper, pageSize: printPageSize, userScale: scale)
+        let passColor = colorMode == "Color" && !inkSave
+        let printer = flowPrinterID
+        let title = "FlipStack \(side) \(Int(Date().timeIntervalSince1970))"
+        let range = PrintMath.compressRange(pages)
+        let paperName = paper
+        let mediaName = media
+        let trayName = tray
+        let targetDPI = dpi
+
+        let result = await Task.detached(priority: .userInitiated) {
+            Printing.submit(
+                file: file,
+                printer: printer,
+                pageRange: range.isEmpty ? nil : range,
+                paper: paperName,
+                orientationRequested: passOrientation,
+                scale: passScale,
+                color: passColor,
+                copies: 1,
+                media: mediaName,
+                tray: trayName,
+                title: title,
+                targetDPI: targetDPI
+            )
+        }.value
+
+        // A cancel can arrive while `lp` is still spooling (submit is blocking).
+        // The detached submission cannot be interrupted, but once it returns we
+        // must cancel the job it created so a cancelled flow never prints.
+        guard isFlowCurrent(generation) else {
+            if let jobID = result.jobID {
+                Task { await Printing.cancel(jobID: jobID, printer: printer) }
+            }
+            return false
+        }
+        guard result.succeeded else {
+            showToast(result.message.isEmpty ? T("toast.printFailed") : result.message)
+            flowPhase = .idle
+            flowProgress = 0
+            flowJobID = nil
+            return false
+        }
+        flowJobID = result.jobID
+        flowProgress = 0.35
+        let outcome: JobOutcome
+        if let jobID = result.jobID {
+            startProgressTicker(generation: generation)
+            outcome = await Printing.waitForJob(jobID, printer: printer, timeout: 240)
+            stopProgressTicker()
+        } else {
+            // Spooled but the id could not be parsed — let the user check.
+            outcome = .unknown
+        }
+        guard isFlowCurrent(generation) else { return false }
+        switch outcome {
+        case .completed:
+            flowProgress = 1
+            flowJobID = nil
+            return true
+        case .failed(let message):
+            showToast(message.isEmpty ? T("toast.printFailed") : message)
+            flowPhase = .idle
+            flowProgress = 0
+            flowJobID = nil
+            return false
+        case .timedOut, .unknown:
+            showToast(T("toast.cannotConfirm"))
+            flowPhase = .idle
+            flowProgress = 0
+            flowJobID = nil
+            return false
+        }
+    }
+
+    private func waitForFlipConfirmation(generation: Int) async -> Bool {
+        await withCheckedContinuation { continuation in
+            if !isFlowCurrent(generation) {
+                continuation.resume(returning: false)
+                return
+            }
+            flipContinuation = continuation
+        }
+    }
+
+    private func finishFlow(generation: Int) {
+        guard generation == flowGeneration, !Task.isCancelled else { return }
+        flowPhase = .done
+        flowProgress = 1
+        flowLabel = ""
+        flowJobID = nil
+        let sheetText = L10n.sheets(sheets)
+        let pageText = L10n.pages(selectedPages)
+        let time = Date().formatted(date: .omitted, time: .shortened)
+        lastPrint = "\(sheetText) · \(pageText) → \(printerName) · \(time)"
+        showToast(T("toast.printed"))
+        onNeedsAttention?()
+    }
+
+    private func runSimulatedFlow(generation: Int) async {
+        let copiesTotal = max(flowCopiesTotal, 1)
+        for copy in 1...copiesTotal {
+            guard isFlowCurrent(generation) else { return }
+            flowCopyIndex = copy
+            guard await simulatePass(label: T("flow.printingFronts"), generation: generation) else { return }
+            if duplex && !flowBacks.isEmpty {
+                flowPhase = .flip
+                flowProgress = 1
+                flowLabel = ""
+                onNeedsAttention?()
+                let confirmed = await waitForFlipConfirmation(generation: generation)
+                guard confirmed, isFlowCurrent(generation) else { return }
+                flowPhase = .printing
+                flowProgress = 0
+                guard await simulatePass(label: T("flow.printingBacks"), generation: generation) else { return }
+            }
+        }
+        finishFlow(generation: generation)
+    }
+
+    private func simulatePass(label: String, generation: Int) async -> Bool {
+        flowLabel = label
+        for step in 1...12 {
+            guard isFlowCurrent(generation) else { return false }
+            try? await Task.sleep(nanoseconds: 80_000_000)
+            guard isFlowCurrent(generation) else { return false }
+            flowProgress = min(0.95, Double(step) / 12.0)
+        }
+        flowProgress = 1
+        return isFlowCurrent(generation)
     }
 
     func confirmFlip() {
         if flowPhase == .flip {
-            let backs = stride(from: 1, to: selectedPageList.count, by: 2).map { selectedPageList[$0] }
-            runPhase(side: "backs", pages: backs, label: "Printing…")
+            let continuation = flipContinuation
+            flipContinuation = nil
+            continuation?.resume(returning: true)
         } else if flowPhase == .done {
             flowPhase = .idle
+            flowProgress = 0
+            flowLabel = ""
         }
     }
 
-    func finishFlow() {
-        flowPhase = .done
-        lastPrint = "\(sheets) sheet\(sheets == 1 ? "" : "s") · \(selectedPages) pg → \(printerName) at \(Date().formatted(date: .omitted, time: .shortened))"
-        showToast("Printed ✓")
-    }
-
     func cancelFlow() {
-        flowTimer?.invalidate(); flowTimer = nil
-        Printing.cancelCurrent()
+        flowGeneration += 1
+        flowTask?.cancel()
+        flowTask = nil
+        if let continuation = flipContinuation {
+            flipContinuation = nil
+            continuation.resume(returning: false)
+        }
+        stopProgressTicker()
+        let job = flowJobID
+        let printer = flowPrinterID
+        flowJobID = nil
+        if job != nil || !printer.isEmpty {
+            Task { await Printing.cancel(jobID: job, printer: printer) }
+        }
         flowPhase = .idle
         flowProgress = 0
+        flowLabel = ""
+        flowCopyIndex = 1
     }
 
+    /// Kept for the old flow bar; restarts the whole job safely.
     func retryPhase() {
         guard flowPhase == .printing else { return }
-        flowTimer?.invalidate(); flowTimer = nil
-        Printing.cancelCurrent()
-        let list = selectedPageList
-        let pages = flowSide == "backs"
-            ? stride(from: 1, to: list.count, by: 2).map { list[$0] }
-            : (flowSide == "fronts"
-                ? stride(from: 0, to: list.count, by: 2).map { list[$0] }
-                : list)
-        flowProgress = 0
-        runPhase(side: flowSide, pages: pages, label: flowLabel)
+        cancelFlow()
+        startPrint()
+    }
+
+    private func startProgressTicker(generation: Int) {
+        stopProgressTicker()
+        progressTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self,
+                      self.flowGeneration == generation,
+                      self.flowPhase == .printing else { return }
+                if self.flowProgress < 0.95 {
+                    self.flowProgress = min(0.95, self.flowProgress + 0.01)
+                }
+            }
+        }
+    }
+
+    private func stopProgressTicker() {
+        progressTimer?.invalidate()
+        progressTimer = nil
+    }
+
+    // MARK: - Calibration
+
+    func printCalibration() {
+        guard !printerID.isEmpty, printer != nil else {
+            showToast(T("toast.noPrinter"))
+            return
+        }
+        guard let pdf = Printing.calibrationPDF() else {
+            showToast(T("toast.printFailed"))
+            return
+        }
+        let printer = printerID
+        showToast(T("toast.calibrationSent"))
+        Task {
+            let result = await Task.detached(priority: .userInitiated) {
+                Printing.submit(
+                    file: pdf,
+                    printer: printer,
+                    pageRange: nil,
+                    paper: "A4",
+                    orientationRequested: 3,
+                    scale: 100,
+                    color: false,
+                    copies: 1,
+                    media: "Plain",
+                    tray: "auto",
+                    title: "FlipStack — calibration",
+                    targetDPI: 600
+                )
+            }.value
+            if !result.succeeded {
+                self.showToast(result.message.isEmpty ? T("toast.printFailed") : result.message)
+            }
+        }
     }
 }

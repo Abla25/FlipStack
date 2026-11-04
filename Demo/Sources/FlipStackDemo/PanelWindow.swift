@@ -17,6 +17,11 @@ final class ReceiptPanel: NSPanel {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
+        // Audit fix: pin the light receipt look. The panel floats over arbitrary dark-mode
+        // apps; without this, system-drawn SwiftUI controls (text fields, menus) flip to
+        // dark-on-dark inside the white receipt.
+        panel.appearance = NSAppearance(named: .aqua)
+        panel.contentView?.appearance = NSAppearance(named: .aqua)
         panel.level = .statusBar
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         panel.isFloatingPanel = true

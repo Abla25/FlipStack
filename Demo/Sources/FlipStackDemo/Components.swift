@@ -88,6 +88,10 @@ struct LineItem: View {
             }
         }
         .animation(.easeOut(duration: 0.15), value: value)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label), \(value)")
+        .accessibilityAddTraits(tappable ? .isButton : [])
+        .help(tappable ? T("common.clickToChange") : "")
     }
 }
 
@@ -118,12 +122,12 @@ struct SupplyBars: View {
     var body: some View {
         if supplies.isEmpty {
             HStack(spacing: 6) {
-                Text("INK").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(muted)
-                Text("levels unavailable").font(.system(size: 8.5, design: .monospaced)).foregroundStyle(muted)
+                Text(T("header.ink")).font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(muted)
+                Text(T("header.inkUnavailable")).font(.system(size: 8.5, design: .monospaced)).foregroundStyle(muted)
             }
         } else {
             HStack(spacing: 7) {
-                Text("INK").font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(muted)
+                Text(T("header.ink")).font(.system(size: 9, weight: .heavy, design: .monospaced)).foregroundStyle(muted)
                 ForEach(supplies.prefix(8)) { s in
                     VStack(spacing: 2) {
                         Text("\(Self.short(s)) \(s.levelPercent.map { "\($0)%" } ?? "—")")
@@ -146,13 +150,19 @@ struct SupplyBars: View {
     }
 }
 
-/// generic popover menu for receipt line items
+/// generic popover menu for receipt line items.
+/// Hit targets: every option row is full-width (unconditional Spacer + fixed checkmark
+/// gutter; expansion BEFORE `.contentShape`), min 28 pt tall — audit fix A2.
 struct PopMenu: View {
     let title: String
     let options: [String]
     let current: String
     let onPick: (String) -> Void
     let onClose: () -> Void
+    /// Optional display mapping (e.g. "Color" -> localized label); the value passed to
+    /// `onPick` is always the canonical option string.
+    var label: (String) -> String = { $0 }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title.uppercased())
@@ -162,26 +172,46 @@ struct PopMenu: View {
                 Button {
                     onPick(o)
                 } label: {
-                    HStack {
-                        Text(o).font(.system(size: 12, design: .monospaced))
-                        if o == current { Spacer(); Text("✓").foregroundStyle(accent) }
+                    HStack(spacing: 8) {
+                        Text(label(o)).font(.system(size: 12, design: .monospaced))
+                            .lineLimit(2).minimumScaleFactor(0.8)
+                        Spacer(minLength: 8)
+                        Text(o == current ? "✓" : " ")
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(accent)
+                            .frame(width: 16, alignment: .trailing)   // stable gutter, no shift on select
+                            .accessibilityHidden(true)
                     }
-                    .padding(.horizontal, 10).padding(.vertical, 6)
-                    .contentShape(Rectangle())
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)  // expand FIRST
+                    .contentShape(Rectangle())                                      // hit shape = full row
                 }
                 .buttonStyle(.plain)
                 .hoverTint()
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(o == current ? [.isButton, .isSelected] : .isButton)
+                .help(label(o))
             }
             Divider()
-            Button("Cancel", role: .cancel) { onClose() }
-                .buttonStyle(.plain).padding(.horizontal, 10).padding(.vertical, 6)
-                .font(.system(size: 11, design: .monospaced)).foregroundStyle(muted)
+            Button { onClose() } label: {
+                Text(T("common.cancel"))
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(muted)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity, minHeight: 28, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(T("common.cancel"))
         }
         .frame(width: 190)
         .background(.white)
         .clipShape(RoundedRectangle(cornerRadius: 10))
         .shadow(color: .black.opacity(0.3), radius: 18, y: 8)
         .transition(.scale(scale: 0.92).combined(with: .opacity))
+        .preferredColorScheme(.light)
     }
 }
 
@@ -240,21 +270,31 @@ struct EmbeddedPreview: View {
             }
             .frame(height: 148)
             .clipped()
+            .contentShape(Rectangle())
             .onTapGesture { model.previewOpen = true }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(T("a11y.previewDocument"))
+            .accessibilityAddTraits(.isButton)
+            .help(T("preview.openHelp"))
 
             HStack(spacing: 6) {
-                Text("PAGES").font(.system(size: 8.5, weight: .heavy, design: .monospaced)).foregroundStyle(muted)
-                Text("\(model.selectedPages) selected").font(.system(size: 8.5, design: .monospaced)).foregroundStyle(muted)
+                Text(T("pages.title")).font(.system(size: 8.5, weight: .heavy, design: .monospaced)).foregroundStyle(muted)
+                Text(T("pages.selectedCount", model.selectedPages)).font(.system(size: 8.5, design: .monospaced)).foregroundStyle(muted)
                 Spacer()
                 Button {
                     withAnimation(.spring(response: 0.3)) { model.selectMode.toggle() }
                 } label: {
-                    Text(model.selectMode ? "✓ Selecting" : "Select…")
+                    Text(model.selectMode ? T("pages.selecting") : T("pages.select"))
                         .font(.system(size: 8.5, weight: .bold, design: .monospaced))
                         .foregroundStyle(model.selectMode ? .white : accent)
-                        .padding(.horizontal, 7).padding(.vertical, 3)
+                        .padding(.horizontal, 7).padding(.vertical, 4)
+                        .frame(minHeight: 22)
                         .background(model.selectMode ? accent : accent.opacity(0.1), in: Capsule())
-                }.buttonStyle(PressScale())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(PressScale())
+                .accessibilityLabel(T("pages.select"))
+                .help(T("pages.select"))
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 5) {
@@ -295,12 +335,19 @@ struct EmbeddedPreview: View {
     }
 }
 
+/// `PDFView` that never consumes mouse events, so the surrounding SwiftUI
+/// `.onTapGesture` (click-to-enlarge preview) still fires with a real PDF loaded.
+/// Audit fix A4.
+final class PassthroughPDFView: PDFView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
 /// PDF page scaled to FIT a fixed frame (zoom multiplies the fit).
 struct FitPDFView: NSViewRepresentable {
     let page: PDFPage
     @Binding var zoom: CGFloat
     func makeNSView(context: Context) -> PDFView {
-        let v = PDFView()
+        let v = PassthroughPDFView()
         v.displayMode = .singlePage
         v.autoScales = false
         v.backgroundColor = .clear
