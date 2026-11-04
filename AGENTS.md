@@ -1,6 +1,6 @@
 # AGENTS.md — FlipStack handoff (LOCAL ONLY, do not push without review)
 
-State snapshot: **2026-11-04**, v1.0.2 (build 13) released and installed. Main repo HEAD = `d6bbeaf` (tag `v1.0.2`) plus one docs commit on top, GitHub release `v1.0.2` published with stable assets `FlipStack.dmg` + `FlipStack.dmg.sha256` (sha256 `e9e72ed29025d9a3b4bb9a7966aeb23ddf51109055f6f9fd21a7ff2ce8c8f40c`), website repo HEAD = `31a82c8` (mobile-responsive deploy at <https://abla25.github.io/flipstack-website/>), installed app `/Applications/FlipStack.app` = v1.0.2 / build 13 (same bytes as the release DMG).
+State snapshot: **2026-11-04**, v1.0.3 (build 14) released and installed. Main repo HEAD = `d6bbeaf` (tag `v1.0.2`) plus one docs commit on top, GitHub release `v1.0.2` published with stable assets `FlipStack.dmg` + `FlipStack.dmg.sha256` (sha256 `e9e72ed29025d9a3b4bb9a7966aeb23ddf51109055f6f9fd21a7ff2ce8c8f40c`), website repo HEAD = `31a82c8` (mobile-responsive deploy at <https://abla25.github.io/flipstack-website/>), installed app `/Applications/FlipStack.app` = v1.0.3 / build 14 (same bytes as the release DMG).
 This file describes the *actual* current state; older snapshots in git history
 are stale (they said HEAD `67a102b`, installed build 11, site HEAD `d52fc2d`).
 
@@ -27,7 +27,7 @@ root `Sources/FlipStack` app.
   (never change it — see Persistence below), `LSUIElement` menu-bar app,
   `LSMinimumSystemVersion 14.0`, **arm64-only**, ad-hoc signed, **not notarized**.
 - Version: single source of truth [`Demo/version.env`](Demo/version.env)
-  (`MARKETING_VERSION=1.0.2`, `BUILD_NUMBER=13`). The bundle's `Info.plist` is
+  (`MARKETING_VERSION=1.0.3`, `BUILD_NUMBER=14`). The bundle's `Info.plist` is
   rendered from [`Demo/Resources/Info.plist`](Demo/Resources/Info.plist) by the
   bundle script (placeholders `__VERSION__` / `__BUILD__`); the in-app version
   label reads it back from the bundle, so **no source edit is needed to bump**.

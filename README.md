@@ -36,7 +36,7 @@ app.
 
 | Path | What it is |
 | --- | --- |
-| `Demo/` | **The shipped app** (receipt UI, v1.0.2 / build 13). Standalone SwiftPM package depending on the root `FlipStackCore`. `Scripts/bundle-demo.sh` builds `dist-demo/FlipStack.app`, the DMG and the sha256. |
+| `Demo/` | **The shipped app** (receipt UI, v1.0.3 / build 14). Standalone SwiftPM package depending on the root `FlipStackCore`. `Scripts/bundle-demo.sh` builds `dist-demo/FlipStack.app`, the DMG and the sha256. |
 | `Sources/FlipStackCore` | The shared print engine: CUPS client, duplex orchestration, PPD parsing, page extraction/scaling, photo/document ingest. Used by the Demo (and by the root app). |
 | `Sources/FlipStack` | The earlier minimal root app. Built, tested and bundled in CI, but **not** the shipped product. |
 | `Advanced/` | The previous feature-rich version, preserved in full as a standalone package. Not shipped. |

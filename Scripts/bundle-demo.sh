@@ -49,7 +49,6 @@ EXECUTABLE_NAME="FlipStack"
 TEMPLATE="$ROOT/Demo/Resources/Info.plist"
 ICON="$ROOT/Demo/Assets/AppIcon.icns"
 MENU_ICON="$ROOT/Demo/Assets/icon.iconset/menuicon.png"
-MENU_TEMPLATE_ICON="$ROOT/Demo/Assets/icon.iconset/menuicon-template.png"
 VERSION_ENV="$ROOT/Demo/version.env"
 
 MAKE_DMG=0
@@ -129,7 +128,6 @@ done
 [[ -f "$TEMPLATE" ]] || die "missing Info.plist template: $TEMPLATE"
 [[ -f "$ICON" ]] || die "missing icon: $ICON"
 [[ -f "$MENU_ICON" ]] || die "missing menu icon: $MENU_ICON"
-[[ -f "$MENU_TEMPLATE_ICON" ]] || die "missing template menu icon: $MENU_TEMPLATE_ICON"
 
 mkdir -p "$OUT_DIR"
 
@@ -201,7 +199,6 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 install -m 0755 "$BINARY_PATH" "$APP/Contents/MacOS/$EXECUTABLE_NAME"
 cp "$ICON" "$APP/Contents/Resources/AppIcon.icns"
 cp "$MENU_ICON" "$APP/Contents/Resources/menuicon.png"
-cp "$MENU_TEMPLATE_ICON" "$APP/Contents/Resources/menuicon-template.png"
 
 render_plist() {
     local destination="$1"

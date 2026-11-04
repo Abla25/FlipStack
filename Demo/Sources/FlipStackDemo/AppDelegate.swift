@@ -173,23 +173,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         guard let button = statusItem?.button else { return }
-        // The toolbar icon is a monochrome template of the FlipStack receipt
-        // logo: macOS tints it white on dark menu bars and black on light ones,
-        // so it never looks like a colored sticker in the menu bar. The colored
-        // brand logo (menuicon.png / AppIcon.icns) is unchanged everywhere else.
-        if let url = Bundle.main.url(forResource: "menuicon-template", withExtension: "png"),
-           let template = NSImage(contentsOf: url) {
-            template.size = NSSize(width: 18, height: 18)
-            template.isTemplate = true
-            button.image = template
-        } else if let url = Bundle.main.url(forResource: "menuicon", withExtension: "png"),
-                  let image = NSImage(contentsOf: url) {
+        // Toolbar icon: the original colored FlipStack logo (same as v1.0.1).
+        // The menu icon is the shipped `menuicon.png`; unbundled dev runs fall
+        // back to a programmatic copy of the same artwork.
+        if let url = Bundle.main.url(forResource: "menuicon", withExtension: "png"),
+           let image = NSImage(contentsOf: url) {
             image.size = NSSize(width: 18, height: 18)
             button.image = image
         } else {
-            let fallback = Self.menuBarTemplateImage()
-            fallback.isTemplate = true
-            button.image = fallback
+            button.image = Self.logoImage()
         }
         button.toolTip = T("app.tooltip")
         button.setAccessibilityLabel(T("app.tooltip"))
@@ -210,39 +202,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusMenu.addItem(quit)
     }
 
-    /// Fallback for unbundled dev runs: the monochrome, template version of the
-    /// receipt + flip-arrow motif (same shape as the shipped toolbar asset).
-    static func menuBarTemplateImage() -> NSImage {
+    /// Fallback for unbundled dev runs: a programmatic copy of the shipped
+    /// colored `menuicon.png` (coral tile, white document, coral flip arrow).
+    static func logoImage() -> NSImage {
         let size = NSSize(width: 18, height: 18)
         let image = NSImage(size: size)
         image.lockFocus()
-        let page = NSBezierPath(roundedRect: NSRect(x: 4.4, y: 4.2, width: 8.0, height: 10.2),
-                                xRadius: 1.4, yRadius: 1.4)
-        page.lineWidth = 1.3
-        NSColor.black.withAlphaComponent(0.95).setStroke()
-        page.stroke()
-        NSColor.black.withAlphaComponent(0.8).setStroke()
-        for y in [11.3, 9.7] as [CGFloat] {
-            let line = NSBezierPath()
-            line.move(to: NSPoint(x: 6.2, y: y))
-            line.line(to: NSPoint(x: 10.6, y: y))
-            line.lineWidth = 1.1
-            line.lineCapStyle = .round
-            line.stroke()
-        }
+        let rect = NSRect(origin: .zero, size: size)
+        let coral = NSColor(red: 235 / 255, green: 79 / 255, blue: 49 / 255, alpha: 1)
+        coral.setFill()
+        NSBezierPath(roundedRect: rect, xRadius: 5, yRadius: 5).fill()
+
+        NSColor.white.setFill()
+        NSBezierPath(roundedRect: NSRect(x: 4.4, y: 4.6, width: 8.2, height: 10.2),
+                     xRadius: 1.3, yRadius: 1.3).fill()
+
+        coral.withAlphaComponent(0.35).setFill()
+        NSBezierPath(roundedRect: NSRect(x: 6.1, y: 11.5, width: 4.8, height: 0.8),
+                     xRadius: 0.4, yRadius: 0.4).fill()
+        NSBezierPath(roundedRect: NSRect(x: 6.1, y: 10.0, width: 4.8, height: 0.8),
+                     xRadius: 0.4, yRadius: 0.4).fill()
+
         let arc = NSBezierPath()
-        arc.appendArc(withCenter: NSPoint(x: 11.9, y: 6.6), radius: 2.5,
-                      startAngle: 35, endAngle: 300, clockwise: false)
-        arc.lineWidth = 1.35
+        arc.appendArc(withCenter: NSPoint(x: 10.8, y: 7.0), radius: 2.3,
+                      startAngle: 30, endAngle: 300, clockwise: false)
+        arc.lineWidth = 1.1
         arc.lineCapStyle = .round
-        NSColor.black.withAlphaComponent(0.95).setStroke()
+        coral.setStroke()
         arc.stroke()
         let head = NSBezierPath()
-        head.move(to: NSPoint(x: 13.2, y: 8.9))
-        head.line(to: NSPoint(x: 11.9, y: 9.4))
-        head.line(to: NSPoint(x: 12.1, y: 7.9))
+        head.move(to: NSPoint(x: 12.2, y: 9.1))
+        head.line(to: NSPoint(x: 10.9, y: 9.6))
+        head.line(to: NSPoint(x: 11.1, y: 8.0))
         head.close()
-        NSColor.black.withAlphaComponent(0.95).setFill()
+        coral.setFill()
         head.fill()
         image.unlockFocus()
         return image
