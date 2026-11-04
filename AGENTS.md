@@ -1,6 +1,6 @@
 # AGENTS.md — FlipStack handoff (LOCAL ONLY, do not push without review)
 
-State snapshot: **2026-11-04**, v1.0.2 (build 13) release published — tag `v1.0.2`, GitHub release assets `FlipStack.dmg` + `FlipStack.dmg.sha256`, website updated.
+State snapshot: **2026-11-04**, v1.0.2 (build 13) released and installed. Main repo HEAD = `d6bbeaf` (tag `v1.0.2`), GitHub release `v1.0.2` published with stable assets `FlipStack.dmg` + `FlipStack.dmg.sha256` (sha256 `e9e72ed29025d9a3b4bb9a7966aeb23ddf51109055f6f9fd21a7ff2ce8c8f40c`), website repo HEAD = `31a82c8` (mobile-responsive deploy at <https://abla25.github.io/flipstack-website/>), installed app `/Applications/FlipStack.app` = v1.0.2 / build 13 (same bytes as the release DMG).
 This file describes the *actual* current state; older snapshots in git history
 are stale (they said HEAD `67a102b`, installed build 11, site HEAD `d52fc2d`).
 
@@ -15,9 +15,10 @@ are stale (they said HEAD `67a102b`, installed build 11, site HEAD `d52fc2d`).
   https://github.com/Abla25/flipstack-website.git`.
   - Pages: <https://abla25.github.io/flipstack-website/> — built from `main`,
     repository root, legacy build type; push = automatic redeploy (~1 min).
-- **Installed app:** `/Applications/FlipStack.app` — at snapshot time the
-  **v1.0.1 build 12** receipt Demo (ad-hoc signed, arm64). It is replaced only
-  during a release install.
+- **Installed app:** `/Applications/FlipStack.app` — **v1.0.2 build 13** receipt
+  Demo (ad-hoc signed, arm64), installed from the published release DMG.
+  Previous build backed up at `/tmp/FlipStack-backup-v1.0.1-build12.app`
+  (temporary; move it somewhere safe if a rollback is ever needed).
 
 ## What actually ships
 
