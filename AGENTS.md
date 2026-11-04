@@ -1,6 +1,6 @@
 # AGENTS.md — FlipStack handoff (LOCAL ONLY, do not push without review)
 
-State snapshot: **2026-11-04**, v1.0.2 (build 13) released and installed. Main repo HEAD = `d6bbeaf` (tag `v1.0.2`), GitHub release `v1.0.2` published with stable assets `FlipStack.dmg` + `FlipStack.dmg.sha256` (sha256 `e9e72ed29025d9a3b4bb9a7966aeb23ddf51109055f6f9fd21a7ff2ce8c8f40c`), website repo HEAD = `31a82c8` (mobile-responsive deploy at <https://abla25.github.io/flipstack-website/>), installed app `/Applications/FlipStack.app` = v1.0.2 / build 13 (same bytes as the release DMG).
+State snapshot: **2026-11-04**, v1.0.2 (build 13) released and installed. Main repo HEAD = `d6bbeaf` (tag `v1.0.2`) plus one docs commit on top, GitHub release `v1.0.2` published with stable assets `FlipStack.dmg` + `FlipStack.dmg.sha256` (sha256 `e9e72ed29025d9a3b4bb9a7966aeb23ddf51109055f6f9fd21a7ff2ce8c8f40c`), website repo HEAD = `31a82c8` (mobile-responsive deploy at <https://abla25.github.io/flipstack-website/>), installed app `/Applications/FlipStack.app` = v1.0.2 / build 13 (same bytes as the release DMG).
 This file describes the *actual* current state; older snapshots in git history
 are stale (they said HEAD `67a102b`, installed build 11, site HEAD `d52fc2d`).
 
@@ -9,10 +9,8 @@ are stale (they said HEAD `67a102b`, installed build 11, site HEAD `d52fc2d`).
 - **Main repo:** `~/Documents/Antigravity/FlipStack` → `github.com/Abla25/FlipStack`
   (PUBLIC, branch `main`). Last pushed commit: the v1.0.2 release commit on `main` (tag `v1.0.2`). v1.0.2 was prepared with `Scripts/bundle-demo.sh`; DMG sha256 `e9e72ed29025d9a3b4bb9a7966aeb23ddf51109055f6f9fd21a7ff2ce8c8f40c`.
 - **Website repo:** `~/Desktop/flipstack-site` → `github.com/Abla25/flipstack-website`
-  (PRIVATE). Local git remote still points at the pre-rename
-  `https://github.com/Abla25/Abla25.github.io.git` — it works via GitHub's
-  rename redirect, but fix it with `git remote set-url origin
-  https://github.com/Abla25/flipstack-website.git`.
+  (PRIVATE; the stale `Abla25.github.io` remote was corrected during the v1.0.2
+  deploy). Remote: `https://github.com/Abla25/flipstack-website.git`.
   - Pages: <https://abla25.github.io/flipstack-website/> — built from `main`,
     repository root, legacy build type; push = automatic redeploy (~1 min).
 - **Installed app:** `/Applications/FlipStack.app` — **v1.0.2 build 13** receipt
@@ -136,9 +134,9 @@ lock and queue behind each other — avoid parallel Demo builds.
 - Old tags are lightweight: `v1.0.0` → `bab9490`, `v1.0.1` → `67a102b`; the
   v1.0.1 tag predates `Demo/`, so that release is not reproducible from its tag.
   v1.0.2+ is reproducible via `Demo/version.env` + `Scripts/bundle-demo.sh`.
-- Site repo: `.DS_Store` is still tracked and there is no `.gitignore`; the
-  deploy-prep files/commands for the v1.0.2 fix live in
-  `/tmp/website-prep/` (apply + untrack in the same commit).
+- Site repo: v1.0.2 added `.gitignore`, untracked `.DS_Store`, fixed the sha
+  lookup in `assets/app.js` and shipped the mobile-responsive `assets/style.css`.
+  The v1.0.2 deploy commit is `31a82c8`; Pages builds from `main`.
 - Do not rely on `spctl` accepting the app: ad-hoc signed apps are "rejected"
   by design; use `codesign --verify` and the sha256 instead.
 
