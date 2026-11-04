@@ -16,7 +16,7 @@ Privacy & Security → **Open Anyway**).
 
 ## What ships
 
-The app released as `FlipStack.app` (current release **v1.0.2, build 13**) is the
+The app released as `FlipStack.app` (current release **v1.0.3, build 14**) is the
 receipt-style menu-bar app in [`Demo/`](Demo/). It is the product users download;
 everything else in the repository is the engine, history or the unshipped root
 app.
