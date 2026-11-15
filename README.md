@@ -52,7 +52,7 @@ The Demo (shipped app) — macOS 14+, Xcode command line tools:
 ```sh
 cd Demo
 swift build -c release
-swift test                       # 96 tests
+swift test                       # 112 tests
 ```
 
 Root package (engine + root app):
