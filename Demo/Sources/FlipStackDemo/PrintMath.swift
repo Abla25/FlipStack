@@ -151,6 +151,23 @@ enum PrintMath {
     /// Positions 0, 2, 4… go on the first pass (fronts), 1, 3, 5… on the
     /// second (backs). This is independent of long/short edge: the edge only
     /// changes the rotation of the second pass and the instructions to the user.
+    /// Explicit back-sheet sequence for a two-pass manual duplex job.
+    ///
+    /// - standard output order: CUPS page-ranges in document order (no blanks).
+    /// - alternate output order (printers whose flipped stack feeds last-sheet-first,
+    ///   e.g. face-up output): reverse sheet order and insert `nil` (blank page)
+    ///   for the unpaired last side of an odd selection, so the final blank stays
+    ///   the last side instead of landing in the middle of the document.
+    static func backsSequence(fronts: [Int], backs: [Int], alternate: Bool) -> [Int?] {
+        guard !fronts.isEmpty else { return [] }
+        if !alternate { return backs.map { Optional($0) } }
+        var sequence: [Int?] = []
+        for index in stride(from: fronts.count - 1, through: 0, by: -1) {
+            sequence.append(index < backs.count ? backs[index] : nil)
+        }
+        return sequence
+    }
+
     static func frontsAndBacks(_ pages: [Int]) -> (fronts: [Int], backs: [Int]) {
         var fronts: [Int] = []
         var backs: [Int] = []

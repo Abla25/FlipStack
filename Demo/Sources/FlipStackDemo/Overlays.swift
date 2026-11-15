@@ -167,6 +167,31 @@ struct SettingsOverlay: View {
                     else { model.settings.defaultQuality = "high" }
                 }
                 DashedRule()
+                sectionTitle(T("settings.duplexOrder"))
+                HStack(spacing: 5) {
+                    ForEach(["standard", "alternate"], id: \.self) { order in
+                        Button {
+                            model.settings.duplexBackOrder = order
+                        } label: {
+                            Text(order == "alternate" ? T("option.duplexOrder.alternate") : T("option.duplexOrder.standard"))
+                                .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                                .lineLimit(1).minimumScaleFactor(0.7)
+                                .frame(maxWidth: .infinity, minHeight: 28)
+                                .padding(.vertical, 6)
+                                .background(model.settings.duplexBackOrder == order ? accent : .white)
+                                .foregroundStyle(model.settings.duplexBackOrder == order ? .white : ink)
+                                .overlay(Rectangle().stroke(model.settings.duplexBackOrder == order ? accent : Color.black.opacity(0.15), lineWidth: 1))
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(PressScale())
+                        .hoverTint()
+                        .accessibilityAddTraits(model.settings.duplexBackOrder == order ? [.isButton, .isSelected] : .isButton)
+                    }
+                }
+                Text(T("settings.duplexOrderHint"))
+                    .font(.system(size: 9, design: .monospaced)).foregroundStyle(muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                DashedRule()
                 sectionTitle(T("settings.printerCalibration"))
                 settingRow(T("settings.defaultPrinter"), model.printerName) {
                     model.printersOpen = true
@@ -332,41 +357,51 @@ struct FlowBar: View {
         VStack(spacing: 8) {
             switch model.flowPhase {
             case .printing:
-                Text(model.flowLabel).font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundStyle(ink)
-                GeometryReader { g in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Color.gray.opacity(0.2))
-                        Capsule().fill(accent).frame(width: g.size.width * model.flowProgress)
-                            .animation(.linear(duration: 0.1), value: model.flowProgress)
+                if let error = model.flowError {
+                    errorBlock(error)
+                } else {
+                    Text(model.flowLabel).font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundStyle(ink)
+                    GeometryReader { g in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color.gray.opacity(0.2))
+                            Capsule().fill(accent).frame(width: g.size.width * model.flowProgress)
+                                .animation(.linear(duration: 0.1), value: model.flowProgress)
+                        }
+                    }.frame(height: 6)
+                    if !model.flowStatusHint.isEmpty {
+                        Text(model.flowStatusHint)
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundStyle(muted)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                }.frame(height: 6)
-                if model.flowCanContinue {
-                    Text(T("flow.continueHint"))
-                        .font(.system(size: 9, design: .monospaced))
-                        .foregroundStyle(muted)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                HStack(spacing: 8) {
-                    flowButton(T("common.cancel"), sec: true) { model.cancelFlow() }
-                    if model.flowCanContinue {
-                        flowButton(T("flow.continue"), sec: false) { model.continueAfterFronts() }
+                    HStack(spacing: 8) {
+                        flowButton(T("common.cancel"), sec: true) { model.cancelFlow() }
                     }
                 }
             case .flip:
-                Image(systemName: "arrow.uturn.backward")
-                    .font(.system(size: 24)).foregroundStyle(accent)
-                    .scaleEffect(pulse ? 1.15 : 1)
-                    .onAppear {
-                        withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) { pulse = true }
+                if let error = model.flowError {
+                    errorBlock(error)
+                } else {
+                    Image(systemName: "arrow.uturn.backward")
+                        .font(.system(size: 24)).foregroundStyle(accent)
+                        .scaleEffect(pulse ? 1.15 : 1)
+                        .onAppear {
+                            withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) { pulse = true }
+                        }
+                    Text(T("flow.flipTitle")).font(.system(size: 12.5, weight: .heavy, design: .monospaced)).foregroundStyle(ink)
+                    Text(T("flow.flipInstructions", T(model.duplexEdge == "long" ? "option.edge.long" : "option.edge.short")))
+                        .font(.system(size: 10, design: .monospaced)).foregroundStyle(muted).multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(model.flowStatusHint.isEmpty ? T("flow.frontsChecking") : model.flowStatusHint)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(model.flowStatusHint == T("flow.frontsReady") ? accent : muted)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 8) {
+                        flowButton(T("common.cancel"), sec: true) { model.cancelFlow() }
+                        flowButton(T("flow.reinserted"), sec: false) { model.confirmFlip() }
                     }
-                Text(T("flow.flipTitle")).font(.system(size: 12.5, weight: .heavy, design: .monospaced)).foregroundStyle(ink)
-                Text(T("flow.flipInstructions", T(model.duplexEdge == "long" ? "option.edge.long" : "option.edge.short")))
-                    .font(.system(size: 10, design: .monospaced)).foregroundStyle(muted).multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 8) {
-                    flowButton(T("common.cancel"), sec: true) { model.cancelFlow() }
-                    flowButton(T("flow.reinserted"), sec: false) { model.confirmFlip() }
                 }
             case .done:
                 Text(T("flow.printed")).font(.system(size: 12.5, weight: .heavy, design: .monospaced)).foregroundStyle(ink)
@@ -385,6 +420,22 @@ struct FlowBar: View {
         .preferredColorScheme(.light)
         .zIndex(20)
     }
+
+    func errorBlock(_ error: String) -> some View {
+        VStack(spacing: 6) {
+            Text(T("error.title")).font(.system(size: 12, weight: .heavy, design: .monospaced)).foregroundStyle(accent)
+            Text(error)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(ink)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                flowButton(T("common.cancel"), sec: true) { model.cancelFlow() }
+                flowButton(T("common.retry"), sec: false) { model.retryAfterError() }
+            }
+        }
+    }
+
     func flowButton(_ label: String, sec: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label).font(.system(size: 12, weight: .heavy))

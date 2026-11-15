@@ -32,12 +32,43 @@ private enum DemoStoreSchema {
 struct DemoAppSettings: Codable, Equatable {
     static let allowedQualities = ["draft", "normal", "high"]
     static let fallbackQuality = "high"
+    static let allowedBackOrders = ["standard", "alternate"]
+    static let fallbackBackOrder = "alternate"
 
     var schemaVersion: Int = 1
     var language: AppLanguage = .en
     var defaultQuality: String = "high"
+    /// Output order of the flipped stack for manual duplex:
+    /// - "standard": CUPS page-ranges in document order (page 1 sheet first);
+    /// - "alternate": reverse sheet order with a blank for the unpaired odd side
+    ///   (needed by printers that feed the flipped stack last-sheet-first).
+    var duplexBackOrder: String = DemoAppSettings.fallbackBackOrder
 
     static let standard = DemoAppSettings()
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion, language, defaultQuality, duplexBackOrder
+    }
+
+    init(schemaVersion: Int = 1,
+         language: AppLanguage = .en,
+         defaultQuality: String = "high",
+         duplexBackOrder: String = fallbackBackOrder) {
+        self.schemaVersion = schemaVersion
+        self.language = language
+        self.defaultQuality = defaultQuality
+        self.duplexBackOrder = duplexBackOrder
+    }
+
+    /// Old payloads (v1 without `duplexBackOrder`) decode with the default order.
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try values.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        language = try values.decodeIfPresent(AppLanguage.self, forKey: .language) ?? .en
+        defaultQuality = try values.decodeIfPresent(String.self, forKey: .defaultQuality) ?? "high"
+        duplexBackOrder = try values.decodeIfPresent(String.self, forKey: .duplexBackOrder)
+            ?? DemoAppSettings.fallbackBackOrder
+    }
 
     /// Clamp persisted values to the supported set. Decoding is deliberately
     /// permissive; unknown strings that still decoded are normalised here.
@@ -46,6 +77,9 @@ struct DemoAppSettings: Codable, Equatable {
         value.schemaVersion = DemoStoreSchema.current
         if !DemoAppSettings.allowedQualities.contains(value.defaultQuality) {
             value.defaultQuality = DemoAppSettings.fallbackQuality
+        }
+        if !DemoAppSettings.allowedBackOrders.contains(value.duplexBackOrder) {
+            value.duplexBackOrder = DemoAppSettings.fallbackBackOrder
         }
         return value
     }

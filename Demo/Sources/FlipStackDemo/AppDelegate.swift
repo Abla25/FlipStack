@@ -57,7 +57,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     switch self.flags.state {
                     case "preview": self.model.previewOpen = true
                     case "flip": self.model.jumpToFlip()
-                    case "flowdone": self.model.jumpToDone()
+                    case "printerror":
+            if model.docURL == nil { model.chooseDoc(samplePDF()) }
+            model.flowPhase = .printing
+            model.flowProgress = 0.6
+            model.flowLabel = T("flow.printingFronts")
+            model.flowError = T("error.paperOut")
+        case "flowdone": self.model.jumpToDone()
                     default: break
                     }
                 }
@@ -79,7 +85,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                 started = true
                                 return
                             }
-                            if self.model.flowCanContinue { self.model.continueAfterFronts() }
                             if self.model.flowPhase == .flip { self.model.confirmFlip() }
                             if self.model.flowPhase == .done || self.model.flowPhase == .idle {
                                 timer.invalidate()
@@ -159,7 +164,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             model.flowPhase = .printing
             model.flowProgress = 0.45
             model.flowLabel = T("flow.printingFronts")
-            model.flowCanContinue = true
+            model.flowStatusHint = T("flow.frontsChecking")
+        case "printerror":
+            if model.docURL == nil { model.chooseDoc(samplePDF()) }
+            model.flowPhase = .printing
+            model.flowProgress = 0.6
+            model.flowLabel = T("flow.printingFronts")
+            model.flowError = T("error.paperOut")
         case "flowdone":
             if model.docURL == nil { model.chooseDoc(samplePDF()) }
         case "select":

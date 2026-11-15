@@ -3,9 +3,10 @@ import PDFKit
 import FlipStackCore
 @testable import FlipStackDemo
 
-/// End-to-end tests of the manual-duplex state machine using the env-gated
-/// fake print engine in `Printing` (FLIPSTACK_FAKE_PRINT / FLIPSTACK_FAKE_HANG).
-/// They reproduce the real flow without sending a physical print job.
+/// End-to-end tests of the new manual-duplex flow:
+/// fronts are spooled → the flip prompt appears immediately (ONE tap) → backs
+/// are submitted → the app completes automatically. The fake print engine
+/// (FLIPSTACK_FAKE_PRINT) exercises the real state machine without paper.
 @MainActor
 final class FlowTests: XCTestCase {
     private var suiteName = ""
@@ -14,7 +15,7 @@ final class FlowTests: XCTestCase {
     override func setUp() async throws {
         try await super.setUp()
         setenv("FLIPSTACK_FAKE_PRINT", "1", 1)
-        setenv("FLIPSTACK_FAKE_HANG", "1", 1)
+        setenv("FLIPSTACK_FAKE_HANG", "0", 1)
         Printing.resetQAFakeCounters()
         suiteName = "FlipStackFlowTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -22,10 +23,10 @@ final class FlowTests: XCTestCase {
         model = AppModel(store: DemoSettingsStore(defaults: defaults, debounce: 0))
         model.printers = [Printer(id: "QA_QUEUE", name: "QA Queue", state: .idle, isDefault: true)]
         model.printerID = "QA_QUEUE"
+        model.printerStates = ["QA_QUEUE": PrinterStatus(printerID: "QA_QUEUE", state: .idle, stateReasons: [])]
         model.duplex = true
         model.copies = 1
-        let url = try Self.makePDF(pages: 4)
-        model.chooseDoc(url)
+        model.chooseDoc(try Self.makePDF(pages: 4))
         try await waitUntil(3.0) { self.model.canPrint }
     }
 
@@ -39,50 +40,67 @@ final class FlowTests: XCTestCase {
         try await super.tearDown()
     }
 
-    /// Reproduces the reported bug: after the fronts, pressing "Continua" must
-    /// show the flip step, and confirming it must send the backs.
-    func testManualContinueAfterFrontsAdvancesToFlipThenPrintsBacks() async throws {
+    /// The reported flow: one tap after the fronts must start the backs and the
+    /// app must finish on its own (no second confirmation).
+    func testSingleTapAfterFrontsStartsBacksAndFinishes() async throws {
         model.startPrint()
-        try await waitUntil(3.0) { self.model.flowCanContinue }
-        XCTAssertEqual(model.flowPhase, .printing)
+        try await waitUntil(3.0) { self.model.flowPhase == .flip }
         XCTAssertEqual(Printing.qaSubmissionCount, 1, "fronts submitted once")
 
-        model.continueAfterFronts()
-        try await waitUntil(3.0) { self.model.flowPhase == .flip }
-
         model.confirmFlip()
-        try await waitUntil(3.0) { self.model.flowCanContinue }
-        model.continueAfterFronts()
-        try await waitUntil(5.0) { self.model.flowPhase == .done }
-
-        XCTAssertEqual(Printing.qaSubmissionCount, 2, "fronts + backs submitted")
+        try await waitUntil(6.0) { self.model.flowPhase == .done }
+        XCTAssertEqual(Printing.qaSubmissionCount, 2, "fronts + backs submitted exactly once each")
         XCTAssertEqual(model.flowProgress, 1)
     }
 
-    /// Manual-only contract: even if CUPS would report completion, the flow
-    /// must NOT advance without the user's explicit Continue.
-    func testNoAutoAdvanceWithoutUserConfirmation() async throws {
-        setenv("FLIPSTACK_FAKE_HANG", "0", 1)
+    func testCancelAtFlipStopsWithoutBacks() async throws {
         model.startPrint()
-        try await waitUntil(3.0) { self.model.flowCanContinue }
-        try await Task.sleep(nanoseconds: 700_000_000)
-        XCTAssertEqual(model.flowPhase, .printing, "must wait for the user")
-        model.continueAfterFronts()
         try await waitUntil(3.0) { self.model.flowPhase == .flip }
-        model.confirmFlip()
-        try await waitUntil(3.0) { self.model.flowCanContinue }
-        model.continueAfterFronts()
-        try await waitUntil(5.0) { self.model.flowPhase == .done }
-        XCTAssertEqual(Printing.qaSubmissionCount, 2)
-    }
-
-    /// Cancel during the fronts must not run the backs and must reset the flow.
-    func testCancelDuringFrontsStopsFlow() async throws {
-        model.startPrint()
-        try await waitUntil(3.0) { self.model.flowCanContinue }
         model.cancelFlow()
         try await waitUntil(2.0) { self.model.flowPhase == .idle }
-        XCTAssertEqual(Printing.qaSubmissionCount, 1)
+        XCTAssertEqual(Printing.qaSubmissionCount, 1, "backs must not be sent after cancel")
+    }
+
+    func testCopiesTwoSubmitsFourPasses() async throws {
+        model.copies = 2
+        model.startPrint()
+        // copy 1
+        try await waitUntil(3.0) { self.model.flowPhase == .flip }
+        model.confirmFlip()
+        // copy 2
+        try await waitUntil(5.0) { self.model.flowPhase == .flip && self.model.flowCopyIndex == 2 }
+        model.confirmFlip()
+        try await waitUntil(6.0) { self.model.flowPhase == .done }
+        XCTAssertEqual(Printing.qaSubmissionCount, 4, "two copies × fronts+backs")
+    }
+
+    func testDocumentSwapAtFlipCancelsSafely() async throws {
+        model.startPrint()
+        try await waitUntil(3.0) { self.model.flowPhase == .flip }
+        model.chooseDoc(try Self.makePDF(pages: 2))
+        try await waitUntil(3.0) { self.model.flowPhase == .idle }
+        XCTAssertEqual(Printing.qaSubmissionCount, 1, "no backs after document change")
+    }
+
+    /// Paper-out / jam / offline must be surfaced and must not submit the next pass.
+    func testPrinterErrorBlocksThePassAndRetryWorksAfterFixing() async throws {
+        setenv("FLIPSTACK_QA_PRINTER_ISSUES", "1", 1)
+        defer { unsetenv("FLIPSTACK_QA_PRINTER_ISSUES") }
+        model.printerStates["QA_QUEUE"] = PrinterStatus(
+            printerID: "QA_QUEUE",
+            state: .stopped,
+            stateReasons: ["media-empty-error"]
+        )
+        model.startPrint()
+        try await waitUntil(3.0) { self.model.flowError != nil }
+        XCTAssertEqual(Printing.qaSubmissionCount, 0, "nothing sent while out of paper")
+
+        model.printerStates["QA_QUEUE"] = PrinterStatus(printerID: "QA_QUEUE", state: .idle, stateReasons: [])
+        model.retryAfterError()
+        try await waitUntil(3.0) { self.model.flowPhase == .flip }
+        model.confirmFlip()
+        try await waitUntil(6.0) { self.model.flowPhase == .done }
+        XCTAssertEqual(Printing.qaSubmissionCount, 2)
     }
 
     // MARK: - Helpers
@@ -102,7 +120,7 @@ final class FlowTests: XCTestCase {
         throw NSError(domain: "FlowTests", code: 1)
     }
 
-    private static func makePDF(pages: Int) throws -> URL {
+    static func makePDF(pages: Int) throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("flipstack-flowtest-\(UUID().uuidString).pdf")
         guard let sourceURL = Printing.calibrationPDF(),
@@ -116,9 +134,24 @@ final class FlowTests: XCTestCase {
                   let page = copyDoc.page(at: 0) else { continue }
             output.insert(page, at: output.pageCount)
         }
-        guard output.write(to: url) else {
-            throw NSError(domain: "FlowTests", code: 3)
-        }
+        guard output.write(to: url) else { throw NSError(domain: "FlowTests", code: 3) }
         return url
+    }
+}
+
+final class BackOrderPlanningTests: XCTestCase {
+    func testStandardOrderKeepsDocumentOrder() {
+        XCTAssertEqual(PrintMath.backsSequence(fronts: [1, 3], backs: [2, 4], alternate: false), [2, 4])
+        XCTAssertEqual(PrintMath.backsSequence(fronts: [1, 3, 5], backs: [2, 4], alternate: false), [2, 4])
+    }
+
+    func testAlternateOrderReversesSheetsAndPairsOddLastSideWithBlank() {
+        // 4 pages: sheets [1,3] with backs [2,4] → printed 4 then 2.
+        XCTAssertEqual(PrintMath.backsSequence(fronts: [1, 3], backs: [2, 4], alternate: true), [4, 2])
+        // 5 pages: sheets [1,3,5]; page 2 pairs sheet 1, page 4 sheet 2, the last
+        // sheet's back is a blank → printed blank, 4, 2 (blank stays last).
+        XCTAssertEqual(PrintMath.backsSequence(fronts: [1, 3, 5], backs: [2, 4], alternate: true), [nil, 4, 2])
+        // 3 pages: one back (2) must end on sheet 1; sheet 2's back is blank.
+        XCTAssertEqual(PrintMath.backsSequence(fronts: [1, 3], backs: [2], alternate: true), [nil, 2])
     }
 }

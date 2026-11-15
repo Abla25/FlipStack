@@ -98,9 +98,10 @@ final class AppModel: ObservableObject {
     @Published var lastPrint: String?
     @Published var flowCopyIndex = 1
     @Published var flowCopiesTotal = 1
-    /// True while the fronts are spooled and the user may confirm "fronts printed"
-    /// manually (the CUPS completion probe can be unreliable on some drivers).
-    @Published var flowCanContinue = false
+    /// Live hint shown while the fronts are printing / ready ("checking…", "ready…").
+    @Published var flowStatusHint = ""
+    /// Localized printer problem shown instead of advancing (paper out, jam…).
+    @Published var flowError: String?
 
     /// Called when the flow needs the user (flip prompt / done) so the app can
     /// present the panel even if the user closed it.
@@ -123,8 +124,9 @@ final class AppModel: ObservableObject {
     private var flowFronts: [Int] = []
     private var flowBacks: [Int] = []
     private var flipContinuation: CheckedContinuation<Bool, Never>?
-    /// Set by the "Continua" button; the pass-completion loop consumes it.
-    private var manualContinueRequested = false
+    private var flowCurrentSide = "fronts"
+    private var flowRetrySide: String?
+    private var statusMonitorTask: Task<Void, Never>?
 
     // MARK: - Init / persistence
 
@@ -542,14 +544,15 @@ final class AppModel: ObservableObject {
         flowCopyIndex = 1
         flowPrinterID = printerID
         flowJobID = nil
-        flowCanContinue = false
-        manualContinueRequested = false
+        flowError = nil
+        flowStatusHint = ""
+        flowRetrySide = nil
         flowGeneration += 1
         let generation = flowGeneration
         flowPhase = .printing
         flowProgress = 0
         flowLabel = duplex ? T("flow.printingFronts") : T("flow.printing")
-        FlowLog.write("flow started: \(pages.count) pages, duplex=\(duplex), copies=\(copies), printer=\(printerID)")
+        FlowLog.write("flow started: \(pages.count) pages, duplex=\(duplex), copies=\(copies), printer=\(printerID), backOrder=\(settings.duplexBackOrder)")
         let simulate = self.simulate
         flowTask?.cancel()
         flowTask = Task {
@@ -572,31 +575,52 @@ final class AppModel: ObservableObject {
         for copy in 1...copiesTotal {
             guard isFlowCurrent(generation) else { return }
             flowCopyIndex = copy
+            flowPhase = .printing
+            flowProgress = 0
+            flowLabel = T("flow.printingFronts")
+            flowStatusHint = ""
             guard await performPass(pages: flowFronts, side: "fronts", generation: generation) else { return }
+
             if duplex && !flowBacks.isEmpty {
+                // ONE user action: wait for the sheets, flip the stack and press
+                // Reinserted — that immediately starts the backs pass.
                 flowPhase = .flip
                 flowProgress = 1
                 flowLabel = ""
-                FlowLog.write("fronts done → flip prompt")
+                flowStatusHint = T("flow.frontsChecking")
+                FlowLog.write("fronts submitted → flip prompt (single tap starts the backs)")
                 onNeedsAttention?()
+                startFrontsStatusMonitor(generation: generation)
                 let confirmed = await waitForFlipConfirmation(generation: generation)
-                guard confirmed, isFlowCurrent(generation) else { return }
+                stopStatusMonitor()
+                guard confirmed, isFlowCurrent(generation), flowError == nil else { return }
+
                 flowPhase = .printing
                 flowProgress = 0
                 flowLabel = T("flow.printingBacks")
-                guard await performPass(pages: flowBacks, side: "backs", generation: generation) else { return }
+                flowStatusHint = ""
+                let backsFile = backsPDFIfNeeded(fronts: flowFronts, backs: flowBacks)
+                guard await performPass(pages: flowBacks, side: "backs", fileOverride: backsFile, generation: generation) else { return }
+                guard await waitForBacksCompletion(generation: generation) else { return }
             }
         }
         finishFlow(generation: generation)
     }
 
-    private func performPass(pages: [Int], side: String, generation: Int) async -> Bool {
-        guard let file = printableURL else {
-            showToast(T("toast.noDocument"))
-            flowPhase = .idle
+    /// One print pass. Returns as soon as the pass is spooled — manual duplex is
+    /// driven by the user, never by a timeout.
+    private func performPass(pages: [Int], side: String, fileOverride: URL? = nil, generation: Int) async -> Bool {
+        guard isFlowCurrent(generation) else { return false }
+        if let issue = currentPrinterIssue() {
+            flowError = issue
+            flowRetrySide = side
+            FlowLog.write("pass \(side): blocked by printer issue: \(issue)")
             return false
         }
-        guard isFlowCurrent(generation) else { return false }
+        guard let file = fileOverride ?? printableURL else {
+            showToast(T("toast.noDocument"))
+            return false
+        }
         let isBacks = side == "backs"
         let frontsOrientation = PrintMath.orientationRequested(orientation: orientation, pageSize: printPageSize)
         let passOrientation = isBacks
@@ -606,7 +630,7 @@ final class AppModel: ObservableObject {
         let passColor = colorMode == "Color" && !inkSave
         let printer = flowPrinterID
         let title = "FlipStack \(side) \(Int(Date().timeIntervalSince1970))"
-        let range = PrintMath.compressRange(pages)
+        let range = fileOverride == nil ? PrintMath.compressRange(pages) : ""
         let paperName = paper
         let mediaName = media
         let trayName = tray
@@ -629,9 +653,6 @@ final class AppModel: ObservableObject {
             )
         }.value
 
-        // A cancel can arrive while `lp` is still spooling (submit is blocking).
-        // The detached submission cannot be interrupted, but once it returns we
-        // must cancel the job it created so a cancelled flow never prints.
         guard isFlowCurrent(generation) else {
             if let jobID = result.jobID {
                 Task { await Printing.cancel(jobID: jobID, printer: printer) }
@@ -639,77 +660,174 @@ final class AppModel: ObservableObject {
             return false
         }
         guard result.succeeded else {
-            showToast(result.message.isEmpty ? T("toast.printFailed") : result.message)
-            flowPhase = .idle
-            flowProgress = 0
-            flowJobID = nil
+            flowError = result.message.isEmpty ? T("error.printFailed") : result.message
+            flowRetrySide = side
+            FlowLog.write("pass \(side) failed: \(result.message)")
             return false
         }
         flowJobID = result.jobID
-        flowProgress = 0.92
-        // Manual duplex is manual: as soon as the pass is spooled we hand control
-        // to the user ("Continua"). No CUPS auto-advance: some drivers/backends
-        // report canceled/aborted jobs as completed (localized lpstat without
-        // status lines), which would print the backs on unprinted fronts.
-        manualContinueRequested = false
-        flowCanContinue = true
-        flowLabel = isBacks ? T("flow.waitingBacks") : T("flow.waitingFronts")
-        FlowLog.write("pass \(side): submitted job=\(result.jobID.map(String.init) ?? "nil") — waiting for user Continua")
-        startProgressTicker(generation: generation)
-        let outcome = await waitForPassCompletion(
-            jobID: result.jobID,
-            printer: printer,
-            generation: generation
-        )
-        stopProgressTicker()
-        flowCanContinue = false
-        guard isFlowCurrent(generation) else { return false }
-        switch outcome {
-        case .completed:
-            flowProgress = 1
-            flowJobID = nil
-            return true
-        default:
-            // Cancelled/superseded while waiting for the user.
-            flowJobID = nil
-            return false
+        flowCurrentSide = side
+        flowProgress = 1
+        FlowLog.write("pass \(side): submitted job=\(result.jobID.map(String.init) ?? "nil")")
+        return true
+    }
+
+    // MARK: Printer problems
+
+    private func currentPrinterIssue() -> String? {
+        // QA fake engine: never let the real queue state block a simulated job
+        // (unless the test explicitly asks to exercise the error path).
+        if Printing.qaFakePrintEnabled && !Printing.qaAllowPrinterIssues { return nil }
+        guard let status = printerStates[printerID] else { return nil }
+        let reasons = status.stateReasons.map { $0.lowercased() }
+        if reasons.contains(where: { $0.contains("media-empty") || $0.contains("media-needed") }) {
+            return T("error.paperOut")
+        }
+        if reasons.contains(where: { $0.contains("jam") }) {
+            return T("error.paperJam")
+        }
+        if reasons.contains(where: { $0.contains("cover-open") || $0.contains("door-open") || $0.contains("interlock") }) {
+            return T("error.coverOpen")
+        }
+        if reasons.contains(where: { $0.contains("marker-supply-empty") }) {
+            return T("error.inkEmpty")
+        }
+        // Offline/paused are not blockers: the queue often resumes by itself and
+        // stale status would otherwise prevent a legitimate print.
+        return nil
+    }
+
+    private func localizedIssue(from jobReason: String) -> String {
+        let lower = jobReason.lowercased()
+        if lower.contains("cancel") || lower.contains("abort") { return T("error.canceled") }
+        return T("error.printFailed")
+    }
+
+    /// Live status for the flip screen: refreshes the printer state and turns a
+    /// CUPS terminal state into a hint or a clear error. It never advances the
+    /// flow — the user's single confirmation is authoritative.
+    private func startFrontsStatusMonitor(generation: Int) {
+        stopStatusMonitor()
+        statusMonitorTask = Task { [weak self] in
+            guard let self else { return }
+            while self.isFlowCurrent(generation), self.flowPhase == .flip {
+                await self.pollStatus()
+                if let issue = self.currentPrinterIssue() {
+                    self.flowError = issue
+                    self.flowRetrySide = "fronts"
+                    self.flowStatusHint = ""
+                    break
+                }
+                if let jobID = self.flowJobID,
+                   let outcome = await Printing.jobOutcome(jobID, printer: self.flowPrinterID) {
+                    switch outcome {
+                    case .completed:
+                        self.flowStatusHint = T("flow.frontsReady")
+                    case .failed(let reason):
+                        self.flowError = self.localizedIssue(from: reason)
+                        self.flowRetrySide = "fronts"
+                        self.flowStatusHint = ""
+                        break
+                    default:
+                        break
+                    }
+                }
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
         }
     }
 
-    /// Waits until the user explicitly confirms the pass is physically printed.
-    ///
-    /// Deliberately **manual-only**: CUPS history parsing cannot reliably tell
-    /// completed from canceled/aborted jobs on every driver/backend/locale, and
-    /// auto-advancing would risk printing the backs on unprinted fronts (losing
-    /// paper). The Continue button is therefore the single source of truth; the
-    /// loop has no timeout and exits only on Continue or cancellation.
-    private func waitForPassCompletion(jobID: Int?, printer: String, generation: Int) async -> JobOutcome {
-        let _ = printer
-        let _ = jobID
-        while true {
-            guard isFlowCurrent(generation) else { return .unknown }
-            if manualContinueRequested {
-                manualContinueRequested = false
-                FlowLog.write("manual continue accepted")
-                return .completed
-            }
-            try? await Task.sleep(nanoseconds: 200_000_000)
-            guard isFlowCurrent(generation) else { return .unknown }
-            if manualContinueRequested {
-                manualContinueRequested = false
-                FlowLog.write("manual continue accepted")
-                return .completed
-            }
-        }
+    private func stopStatusMonitor() {
+        statusMonitorTask?.cancel()
+        statusMonitorTask = nil
     }
 
-    /// User confirmed the pass is physically printed: the wait loop consumes this
-    /// flag and advances (fronts → flip, backs → finish).
-    func continueAfterFronts() {
-        guard flowCanContinue, flowPhase == .printing else { return }
-        flowCanContinue = false
-        manualContinueRequested = true
-        FlowLog.write("user tapped Continua (phase=\(flowPhase))")
+    /// After the backs are spooled: wait for completion/errors, but never require
+    /// another user press. Falls back to "sent" after 60 s if detection fails.
+    private func waitForBacksCompletion(generation: Int) async -> Bool {
+        let deadline = Date().addingTimeInterval(60)
+        while isFlowCurrent(generation) {
+            await pollStatus()
+            if let issue = currentPrinterIssue() {
+                flowError = issue
+                flowRetrySide = "backs"
+                FlowLog.write("backs: printer issue: \(issue)")
+                return false
+            }
+            if let jobID = flowJobID,
+               let outcome = await Printing.jobOutcome(jobID, printer: flowPrinterID) {
+                switch outcome {
+                case .completed:
+                    flowProgress = 1
+                    FlowLog.write("backs completed")
+                    return true
+                case .failed(let reason):
+                    flowError = localizedIssue(from: reason)
+                    flowRetrySide = "backs"
+                    FlowLog.write("backs failed: \(reason)")
+                    return false
+                default:
+                    break
+                }
+            }
+            if Date() >= deadline {
+                flowProgress = 1
+                FlowLog.write("backs: completion not reported after 60s — assuming sent")
+                return true
+            }
+            try? await Task.sleep(nanoseconds: 700_000_000)
+        }
+        return false
+    }
+
+    // MARK: Odd-page / back-order planning
+
+    /// For "alternate" output order the backs must be printed explicitly in
+    /// reverse sheet order, with a blank page for the unpaired last side of an
+    /// odd selection. Returns nil for the standard mode (CUPS page-ranges).
+    private func backsPDFIfNeeded(fronts: [Int], backs: [Int]) -> URL? {
+        guard settings.duplexBackOrder == "alternate", !backs.isEmpty else { return nil }
+        let sequence = PrintMath.backsSequence(fronts: fronts, backs: backs, alternate: true)
+        guard !sequence.isEmpty else { return nil }
+        return makeBacksPDF(sequence: sequence)
+    }
+
+    private func makeBacksPDF(sequence: [Int?]) -> URL? {
+        guard let sourceURL = printableURL,
+              let source = PDFDocument(url: sourceURL),
+              let sourceData = source.dataRepresentation() else { return nil }
+        let output = PDFDocument()
+        for entry in sequence {
+            if let pageNumber = entry,
+               pageNumber >= 1, pageNumber <= source.pageCount {
+                guard let copy = PDFDocument(data: sourceData),
+                      let page = copy.page(at: pageNumber - 1) else { continue }
+                output.insert(page, at: output.pageCount)
+            } else if let blank = makeBlankPage() {
+                output.insert(blank, at: output.pageCount)
+            }
+        }
+        guard output.pageCount > 0 else { return nil }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("flipstack-backs-\(UUID().uuidString).pdf")
+        guard output.write(to: url) else { return nil }
+        FlowLog.write("backs PDF built: \(sequence.map { $0.map(String.init) ?? "blank" }.joined(separator: ","))")
+        return url
+    }
+
+    private func makeBlankPage() -> PDFPage? {
+        let size = printPageSize.map { CGSize(width: $0.width, height: $0.height) }
+            ?? CGSize(width: 595, height: 842)
+        let data = NSMutableData()
+        var box = CGRect(origin: .zero, size: size)
+        guard let consumer = CGDataConsumer(data: data as CFMutableData),
+              let context = CGContext(consumer: consumer, mediaBox: &box, nil) else { return nil }
+        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(box)
+        context.endPage()
+        context.closePDF()
+        guard let document = PDFDocument(data: data as Data) else { return nil }
+        return document.page(at: 0)
     }
 
     private func waitForFlipConfirmation(generation: Int) async -> Bool {
@@ -722,13 +840,87 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Single user confirmation for the manual fallback: the fronts are out and
+    /// the stack has been flipped; the backs pass starts immediately.
+    func confirmFlip() {
+        if flowPhase == .flip {
+            let continuation = flipContinuation
+            flipContinuation = nil
+            FlowLog.write("user confirmed flip — starting backs")
+            continuation?.resume(returning: true)
+        } else if flowPhase == .done {
+            flowPhase = .idle
+            flowProgress = 0
+            flowLabel = ""
+        }
+    }
+
+    func cancelFlow() {
+        flowGeneration += 1
+        flowTask?.cancel()
+        flowTask = nil
+        if let continuation = flipContinuation {
+            flipContinuation = nil
+            continuation.resume(returning: false)
+        }
+        stopStatusMonitor()
+        let job = flowJobID
+        let printer = flowPrinterID
+        flowJobID = nil
+        if job != nil || !printer.isEmpty {
+            Task { await Printing.cancel(jobID: job, printer: printer) }
+        }
+        flowPhase = .idle
+        flowProgress = 0
+        flowLabel = ""
+        flowCopyIndex = 1
+        flowStatusHint = ""
+        flowError = nil
+        flowRetrySide = nil
+    }
+
+    /// Retry after a printer error. Backs errors resubmit only the backs (never
+    /// reprinting already-printed fronts); fronts errors restart the job.
+    func retryAfterError() {
+        guard flowError != nil else { return }
+        let side = flowRetrySide ?? "fronts"
+        flowError = nil
+        flowStatusHint = ""
+        flowProgress = 0
+        flowGeneration += 1
+        let generation = flowGeneration
+        flowTask?.cancel()
+        if side == "backs" {
+            flowPhase = .printing
+            flowLabel = T("flow.printingBacks")
+            let backsFile = backsPDFIfNeeded(fronts: flowFronts, backs: flowBacks)
+            flowTask = Task { [weak self] in
+                guard let self else { return }
+                if await self.performPass(pages: self.flowBacks, side: "backs", fileOverride: backsFile, generation: generation) {
+                    if await self.waitForBacksCompletion(generation: generation) {
+                        self.finishFlow(generation: generation)
+                    }
+                }
+            }
+        } else {
+            // Restart the fronts pass from scratch (the fronts failed).
+            flowPhase = .printing
+            flowProgress = 0
+            flowLabel = T("flow.printingFronts")
+            flowTask = Task { [weak self] in
+                await self?.runRealFlow(generation: generation)
+            }
+        }
+    }
+
     private func finishFlow(generation: Int) {
         guard generation == flowGeneration, !Task.isCancelled else { return }
         flowPhase = .done
         flowProgress = 1
         flowLabel = ""
         flowJobID = nil
-        FlowLog.write("flow done: \(sheets) sheets, \(selectedPages) pages")
+        flowStatusHint = ""
+        flowError = nil
         let sheetText = L10n.sheets(sheets)
         let pageText = L10n.pages(selectedPages)
         let time = Date().formatted(date: .omitted, time: .shortened)
@@ -747,7 +939,7 @@ final class AppModel: ObservableObject {
                 flowPhase = .flip
                 flowProgress = 1
                 flowLabel = ""
-                FlowLog.write("fronts done → flip prompt")
+                flowStatusHint = T("flow.frontsReady")
                 onNeedsAttention?()
                 let confirmed = await waitForFlipConfirmation(generation: generation)
                 guard confirmed, isFlowCurrent(generation) else { return }
@@ -769,67 +961,6 @@ final class AppModel: ObservableObject {
         }
         flowProgress = 1
         return isFlowCurrent(generation)
-    }
-
-    func confirmFlip() {
-        if flowPhase == .flip {
-            let continuation = flipContinuation
-            flipContinuation = nil
-            continuation?.resume(returning: true)
-        } else if flowPhase == .done {
-            flowPhase = .idle
-            flowProgress = 0
-            flowLabel = ""
-        }
-    }
-
-    func cancelFlow() {
-        flowGeneration += 1
-        flowTask?.cancel()
-        flowTask = nil
-        if let continuation = flipContinuation {
-            flipContinuation = nil
-            continuation.resume(returning: false)
-        }
-        flowCanContinue = false
-        manualContinueRequested = false
-        stopProgressTicker()
-        let job = flowJobID
-        let printer = flowPrinterID
-        flowJobID = nil
-        if job != nil || !printer.isEmpty {
-            Task { await Printing.cancel(jobID: job, printer: printer) }
-        }
-        flowPhase = .idle
-        flowProgress = 0
-        flowLabel = ""
-        flowCopyIndex = 1
-    }
-
-    /// Kept for the old flow bar; restarts the whole job safely.
-    func retryPhase() {
-        guard flowPhase == .printing else { return }
-        cancelFlow()
-        startPrint()
-    }
-
-    private func startProgressTicker(generation: Int) {
-        stopProgressTicker()
-        progressTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                guard let self,
-                      self.flowGeneration == generation,
-                      self.flowPhase == .printing else { return }
-                if self.flowProgress < 0.95 {
-                    self.flowProgress = min(0.95, self.flowProgress + 0.01)
-                }
-            }
-        }
-    }
-
-    private func stopProgressTicker() {
-        progressTimer?.invalidate()
-        progressTimer = nil
     }
 
     // MARK: - Calibration

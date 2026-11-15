@@ -73,6 +73,12 @@ enum Printing {
         ProcessInfo.processInfo.environment["FLIPSTACK_FAKE_PRINT"] == "1"
     }
 
+    /// Test/QA only: let simulated runs observe the real queue state so the
+    /// printer-error path can be exercised without touching a real printer.
+    static var qaAllowPrinterIssues: Bool {
+        ProcessInfo.processInfo.environment["FLIPSTACK_QA_PRINTER_ISSUES"] == "1"
+    }
+
     static var qaFakeJobHangs: Bool {
         ProcessInfo.processInfo.environment["FLIPSTACK_FAKE_HANG"] == "1"
     }
