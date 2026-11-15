@@ -62,7 +62,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
                 if self.flags.autoFlow {
-                    self.model.simulate = true
+                    if ProcessInfo.processInfo.environment["FLIPSTACK_FAKE_PRINT"] != "1" {
+                        self.model.simulate = true
+                    }
                     var started = false
                     Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] timer in
                         Task { @MainActor in

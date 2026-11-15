@@ -59,6 +59,36 @@ enum JobOutcome: Equatable {
 enum Printing {
     static let processTimeout: TimeInterval = 20
 
+    // MARK: - QA simulation hooks (env-gated; never active by default)
+    //
+    // Used by the automated flow tests and the headless harness to exercise the
+    // *real* manual-duplex state machine without sending physical print jobs.
+    // FLIPSTACK_FAKE_PRINT=1     -> submit() succeeds instantly with a fake job id.
+    // FLIPSTACK_FAKE_HANG=1      -> waitForJob() never reports completion (so the
+    //                               test can drive the manual "Continua" path).
+    private static let qaCounterLock = NSLock()
+    private static var qaSubmissions = 0
+
+    static var qaFakePrintEnabled: Bool {
+        ProcessInfo.processInfo.environment["FLIPSTACK_FAKE_PRINT"] == "1"
+    }
+
+    static var qaFakeJobHangs: Bool {
+        ProcessInfo.processInfo.environment["FLIPSTACK_FAKE_HANG"] == "1"
+    }
+
+    static var qaSubmissionCount: Int {
+        qaCounterLock.lock()
+        defer { qaCounterLock.unlock() }
+        return qaSubmissions
+    }
+
+    static func resetQAFakeCounters() {
+        qaCounterLock.lock()
+        qaSubmissions = 0
+        qaCounterLock.unlock()
+    }
+
     private static let lpPath = "/usr/bin/lp"
     private static let lpoptionsPath = "/usr/bin/lpoptions"
 
@@ -118,6 +148,13 @@ enum Printing {
         title: String,
         targetDPI: Int?
     ) -> PrintSubmissionResult {
+        if qaFakePrintEnabled {
+            qaCounterLock.lock()
+            qaSubmissions += 1
+            let number = qaSubmissions
+            qaCounterLock.unlock()
+            return PrintSubmissionResult(jobID: 9000 + number, succeeded: true, message: "qa")
+        }
         guard !printer.isEmpty else {
             return .failure("Print failed: no printer selected.")
         }
@@ -185,6 +222,21 @@ enum Printing {
     /// Honours Task cancellation: a cancelled wait returns `.unknown`
     /// immediately so a superseded flow cannot flip UI state later.
     static func waitForJob(_ jobID: Int, printer: String, timeout: TimeInterval) async -> JobOutcome {
+        if qaFakePrintEnabled {
+            if qaFakeJobHangs {
+                // Simulate a queue that never reports a terminal state. The
+                // surrounding task group cancels this when the user presses
+                // "Continua", so this must be cancellation-aware.
+                do {
+                    try await Task.sleep(nanoseconds: 300_000_000_000)
+                } catch {
+                    return .unknown
+                }
+                return .timedOut
+            }
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            return .completed
+        }
         guard jobID > 0, !printer.isEmpty else { return .unknown }
         let client = CUPSClient()
         let deadline = Date().addingTimeInterval(max(timeout, 0.5))
@@ -207,6 +259,22 @@ enum Printing {
             if Date() >= deadline { return .timedOut }
             try? await Task.sleep(nanoseconds: 500_000_000)
         }
+    }
+
+    /// One-shot probe used by the model's manual-duplex loop.
+    /// Returns nil while the job is still running / unknown (caller should keep
+    /// polling and keep the manual "Continua" option available).
+    static func jobOutcome(_ jobID: Int, printer: String) async -> JobOutcome? {
+        if qaFakePrintEnabled {
+            if qaFakeJobHangs { return nil }
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            return .completed
+        }
+        guard jobID > 0, !printer.isEmpty else { return nil }
+        guard let job = try? await CUPSClient().job(id: jobID, printerID: printer) else {
+            return nil
+        }
+        return outcome(for: job)
     }
 
     /// Maps one CUPS job snapshot to an outcome. `nil` means "keep waiting".
@@ -233,6 +301,7 @@ enum Printing {
     /// Cancel a spooled CUPS job. Idempotent; a job that already finished is
     /// treated as successfully canceled.
     static func cancel(jobID: Int?, printer: String) async {
+        if qaFakePrintEnabled { return }
         guard let jobID, jobID > 0, !printer.isEmpty else { return }
         try? await CUPSClient().cancel(jobID: jobID, printerID: printer)
     }

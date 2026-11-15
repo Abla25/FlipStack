@@ -15,7 +15,10 @@ let package = Package(
         ),
         .testTarget(
             name: "FlipStackDemoTests",
-            dependencies: ["FlipStackDemo"],
+            dependencies: [
+                "FlipStackDemo",
+                .product(name: "FlipStackCore", package: "FlipStack")
+            ],
             path: "Tests/FlipStackDemoTests"
         ),
     ]
