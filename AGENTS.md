@@ -1,19 +1,19 @@
 # AGENTS.md — FlipStack handoff (LOCAL ONLY, do not push without review)
 
-State snapshot: **2026-11-15**, v1.0.5 (build 16) released and installed. Main repo HEAD = `3bd6ffd` (tag `v1.0.5`) plus one docs commit on top, GitHub release `v1.0.5` published with stable assets `FlipStack.dmg` + `FlipStack.dmg.sha256` (sha256 `efad3779f2748b56d9395ba5625e1fac80f6bcc63a7d68337094d0e1a940e0cd`), website repo HEAD = `faea064`, installed app `/Applications/FlipStack.app` = v1.0.5 / build 16 (same bytes as the release DMG). Only this app exists on the Mac (no old versions/backups/DMGs).
+State snapshot: **2026-11-15**, v1.0.6 (build 17) released and installed. Main repo HEAD = `7723a56` (tag `v1.0.6`) plus one docs commit on top, GitHub release `v1.0.6` published with stable assets `FlipStack.dmg` + `FlipStack.dmg.sha256` (sha256 `778884f310a3217d64ba0aa88bbc6579b948b2c8e88a10b7837e8e7cef84b44d`), website repo HEAD = `742a468`, installed app `/Applications/FlipStack.app` = v1.0.6 / build 17 (same bytes as the release DMG). Only this app exists on the Mac (no old versions/backups/DMGs).
 This file describes the *actual* current state; older snapshots in git history
 are stale (they said HEAD `67a102b`, installed build 11, site HEAD `d52fc2d`).
 
 ## Repos & where things live
 
 - **Main repo:** `~/Documents/Antigravity/FlipStack` → `github.com/Abla25/FlipStack`
-  (PUBLIC, branch `main`). Last pushed commit: the v1.0.5 release commit on `main` (tag `v1.0.5`). v1.0.5 was prepared with `Scripts/bundle-demo.sh`; DMG sha256 `efad3779f2748b56d9395ba5625e1fac80f6bcc63a7d68337094d0e1a940e0cd`.
+  (PUBLIC, branch `main`). Last pushed commit: the v1.0.6 release commit on `main` (tag `v1.0.6`). v1.0.6 was prepared with `Scripts/bundle-demo.sh`; DMG sha256 `778884f310a3217d64ba0aa88bbc6579b948b2c8e88a10b7837e8e7cef84b44d`.
 - **Website repo:** `~/Desktop/flipstack-site` → `github.com/Abla25/flipstack-website`
   (PRIVATE; the stale `Abla25.github.io` remote was corrected during the v1.0.2
   deploy). Remote: `https://github.com/Abla25/flipstack-website.git`.
   - Pages: <https://abla25.github.io/flipstack-website/> — built from `main`,
     repository root, legacy build type; push = automatic redeploy (~1 min).
-- **Installed app:** `/Applications/FlipStack.app` — **v1.0.5 build 16** receipt
+- **Installed app:** `/Applications/FlipStack.app` — **v1.0.6 build 17** receipt
   Demo (ad-hoc signed, arm64), installed from the published release DMG.
   Original colored menu-bar icon; only this app exists on the Mac.
 
@@ -26,7 +26,7 @@ root `Sources/FlipStack` app.
   (never change it — see Persistence below), `LSUIElement` menu-bar app,
   `LSMinimumSystemVersion 14.0`, **arm64-only**, ad-hoc signed, **not notarized**.
 - Version: single source of truth [`Demo/version.env`](Demo/version.env)
-  (`MARKETING_VERSION=1.0.5`, `BUILD_NUMBER=16`). The bundle's `Info.plist` is
+  (`MARKETING_VERSION=1.0.6`, `BUILD_NUMBER=17`). The bundle's `Info.plist` is
   rendered from [`Demo/Resources/Info.plist`](Demo/Resources/Info.plist) by the
   bundle script (placeholders `__VERSION__` / `__BUILD__`); the in-app version
   label reads it back from the bundle, so **no source edit is needed to bump**.
@@ -36,7 +36,7 @@ root `Sources/FlipStack` app.
   `NSLocalNetworkUsageDescription` for the printer probes.
 - Languages: English + Italiano (in-app switch in Settings; tables in
   `Demo/Sources/FlipStackDemo/Localization.swift`).
-- Tests: Demo 112 (`cd Demo && swift test`), root/engine 250 (1 live-CUPS test
+- Tests: Demo 108 (`cd Demo && swift test`), root/engine 250 (1 live-CUPS test
   skipped without a reachable printer), `Advanced/` 248.
 
 ## Build / package / test commands
@@ -50,7 +50,7 @@ Scripts/bundle-demo.sh --dmg      # → + dist-demo/FlipStack.dmg + .sha256
 #          OUT_DIR, SWIFT_BUILD_FLAGS, DMG_ENGINE=auto|hdiutil|hybrid
 
 # app build/test directly:
-cd Demo && swift build -c release && swift test      # 112 tests
+cd Demo && swift build -c release && swift test      # 108 tests
 
 # root engine + root app; advanced:
 swift build && swift test                            # 250 tests
@@ -135,21 +135,24 @@ lock and queue behind each other — avoid parallel Demo builds.
   v1.0.2+ is reproducible via `Demo/version.env` + `Scripts/bundle-demo.sh`.
 - Site repo: v1.0.2 added `.gitignore`, untracked `.DS_Store`, fixed the sha
   lookup in `assets/app.js` and shipped the mobile-responsive `assets/style.css`.
-  The mobile deploy is `31a82c8`; version bumps: `e2d4d2f` (v1.0.3), `edf9c8c` (v1.0.4), `faea064` (v1.0.5); Pages builds from `main`.
+  The mobile deploy is `31a82c8`; version bumps: `e2d4d2f` (v1.0.3), `edf9c8c` (v1.0.4), `faea064` (v1.0.5), `742a468` (v1.0.6); Pages builds from `main`.
 - Do not rely on `spctl` accepting the app: ad-hoc signed apps are "rejected"
   by design; use `codesign --verify` and the sha256 instead.
 
 ## Open threads
 
-- **v1.0.5 deployed**: installed app = release asset (same bytes), site points at
-  v1.0.5 (build 16) at <https://abla25.github.io/flipstack-website/>. The
-  manual-duplex flow is **manual-only**: after each pass the bar shows
-  "Fronts/Backs sent — press Continue…" and waits indefinitely for the user
-  (no CUPS auto-advance, no timeout, no lost Continua taps); panel no longer
-  auto-hides on outside clicks. Diagnostics: `~/Library/Logs/FlipStack.log`
-  (env overrides `FLIPSTACK_LOG_PATH` / `FLIPSTACK_LOG_STDOUT`). QA-only fake
-  engine: `FLIPSTACK_FAKE_PRINT` / `FLIPSTACK_FAKE_HANG`. `v1.0.6+` follows the
-  same script + checklist.
+- **v1.0.6 deployed**: installed app = release asset (same bytes), site points at
+  v1.0.6 (build 17) at <https://abla25.github.io/flipstack-website/>. One-tap
+  manual duplex: fronts → flip screen immediately; a single "Reinserted" tap
+  starts the backs; backs finish automatically (60 s completion fallback) → done.
+  Odd page counts use an explicit reverse-sheet backs PDF so the unpaired blank
+  is the **last** side (3p → blank,2; 5p → blank,4,2); Settings "Back side order:
+  Inverted (default) / Standard" switches pairing for printers that feed the
+  flipped stack differently. Printer errors (paper out/jam/cover/ink/cancelled
+  job) show Retry/Cancel; retrying backs never reprints the fronts. Diagnostics:
+  `~/Library/Logs/FlipStack.log`; QA fake engine: `FLIPSTACK_FAKE_PRINT`,
+  `FLIPSTACK_FAKE_HANG`, `FLIPSTACK_QA_PRINTER_ISSUES`. Panel no longer
+  auto-hides on outside clicks. `v1.0.7+` follows the same script + checklist.
 - Intel support: default build is arm64-only; `--universal` exists but the
   website says Apple silicon. Decide whether v1.0.3+ ships universal.
 - Notarization requires a paid Apple Developer account; until then the app
