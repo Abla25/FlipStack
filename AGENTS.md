@@ -1,22 +1,22 @@
 # AGENTS.md — FlipStack handoff (LOCAL ONLY, do not push without review)
 
-State snapshot: **2026-11-04**, v1.0.3 (build 14) released and installed. Main repo HEAD = `3f9aeff` (tag `v1.0.3`) plus one docs commit on top, GitHub release `v1.0.3` published with stable assets `FlipStack.dmg` + `FlipStack.dmg.sha256` (sha256 `3af3e0f323d9b0596b88f6bdd96fe3bc5e8fadbef4b3f5dba5450f172a9b6857`), website repo HEAD = `e2d4d2f` (v1.0.3 bump on the mobile-responsive deploy at <https://abla25.github.io/flipstack-website/>), installed app `/Applications/FlipStack.app` = v1.0.3 / build 14 (same bytes as the release DMG). No other `FlipStack.app` copies or old backups remain on this Mac: the only older file is the user's own `/Users/andrea/Downloads/FlipStack-1.0.0.dmg` (deliberately untouched).
+State snapshot: **2026-11-15**, v1.0.4 (build 15) released and installed. Main repo HEAD = `13c01de` (tag `v1.0.4`) plus one docs commit on top, GitHub release `v1.0.4` published with stable assets `FlipStack.dmg` + `FlipStack.dmg.sha256` (sha256 `0def58eca9d13db9dd41a7678996cacf18f7dce1626840dfceed0eb1857a4f83`), website repo HEAD = `edf9c8c`, installed app `/Applications/FlipStack.app` = v1.0.4 / build 15 (same bytes as the release DMG). No other `FlipStack.app` copies or old backups/DMGs remain on this Mac (the user's old `Downloads/FlipStack-1.0.0.dmg` was removed on request).
 This file describes the *actual* current state; older snapshots in git history
 are stale (they said HEAD `67a102b`, installed build 11, site HEAD `d52fc2d`).
 
 ## Repos & where things live
 
 - **Main repo:** `~/Documents/Antigravity/FlipStack` → `github.com/Abla25/FlipStack`
-  (PUBLIC, branch `main`). Last pushed commit: the v1.0.3 release commit on `main` (tag `v1.0.3`). v1.0.3 was prepared with `Scripts/bundle-demo.sh`; DMG sha256 `3af3e0f323d9b0596b88f6bdd96fe3bc5e8fadbef4b3f5dba5450f172a9b6857`.
+  (PUBLIC, branch `main`). Last pushed commit: the v1.0.4 release commit on `main` (tag `v1.0.4`). v1.0.4 was prepared with `Scripts/bundle-demo.sh`; DMG sha256 `0def58eca9d13db9dd41a7678996cacf18f7dce1626840dfceed0eb1857a4f83`.
 - **Website repo:** `~/Desktop/flipstack-site` → `github.com/Abla25/flipstack-website`
   (PRIVATE; the stale `Abla25.github.io` remote was corrected during the v1.0.2
   deploy). Remote: `https://github.com/Abla25/flipstack-website.git`.
   - Pages: <https://abla25.github.io/flipstack-website/> — built from `main`,
     repository root, legacy build type; push = automatic redeploy (~1 min).
-- **Installed app:** `/Applications/FlipStack.app` — **v1.0.3 build 14** receipt
+- **Installed app:** `/Applications/FlipStack.app` — **v1.0.4 build 15** receipt
   Demo (ad-hoc signed, arm64), installed from the published release DMG.
-  The menu-bar icon is the original colored FlipStack logo again. Older builds
-  and temporary copies were uninstalled and cleaned; only this app remains.
+  Original colored menu-bar icon; only this app exists on the Mac (old versions,
+  backups and old DMGs were removed).
 
 ## What actually ships
 
@@ -27,7 +27,7 @@ root `Sources/FlipStack` app.
   (never change it — see Persistence below), `LSUIElement` menu-bar app,
   `LSMinimumSystemVersion 14.0`, **arm64-only**, ad-hoc signed, **not notarized**.
 - Version: single source of truth [`Demo/version.env`](Demo/version.env)
-  (`MARKETING_VERSION=1.0.3`, `BUILD_NUMBER=14`). The bundle's `Info.plist` is
+  (`MARKETING_VERSION=1.0.4`, `BUILD_NUMBER=15`). The bundle's `Info.plist` is
   rendered from [`Demo/Resources/Info.plist`](Demo/Resources/Info.plist) by the
   bundle script (placeholders `__VERSION__` / `__BUILD__`); the in-app version
   label reads it back from the bundle, so **no source edit is needed to bump**.
@@ -136,16 +136,17 @@ lock and queue behind each other — avoid parallel Demo builds.
   v1.0.2+ is reproducible via `Demo/version.env` + `Scripts/bundle-demo.sh`.
 - Site repo: v1.0.2 added `.gitignore`, untracked `.DS_Store`, fixed the sha
   lookup in `assets/app.js` and shipped the mobile-responsive `assets/style.css`.
-  The v1.0.2 deploy commit is `31a82c8`; the v1.0.3 version bump is `e2d4d2f`; Pages builds from `main`.
+  The mobile deploy is `31a82c8`; version bumps: `e2d4d2f` (v1.0.3), `edf9c8c` (v1.0.4); Pages builds from `main`.
 - Do not rely on `spctl` accepting the app: ad-hoc signed apps are "rejected"
   by design; use `codesign --verify` and the sha256 instead.
 
 ## Open threads
 
-- **v1.0.3 deployed** from this commit: installed app `/Applications/FlipStack.app`
-  = release asset (same bytes), site points at v1.0.3 (build 14) at
-  <https://abla25.github.io/flipstack-website/>. `v1.0.4+` follows the same
-  script + checklist. v1.0.3 restored the original colored toolbar icon.
+- **v1.0.4 deployed**: installed app = release asset (same bytes), site points at
+  v1.0.4 (build 15) at <https://abla25.github.io/flipstack-website/>. This
+  release fixed the manual-duplex "stuck on Printing" flow (new **Continua**
+  button + non-fatal completion fallback) and removed the outside-click
+  auto-hide of the panel. `v1.0.5+` follows the same script + checklist.
 - Intel support: default build is arm64-only; `--universal` exists but the
   website says Apple silicon. Decide whether v1.0.3+ ships universal.
 - Notarization requires a paid Apple Developer account; until then the app
