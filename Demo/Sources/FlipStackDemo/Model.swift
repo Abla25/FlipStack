@@ -98,6 +98,9 @@ final class AppModel: ObservableObject {
     @Published var lastPrint: String?
     @Published var flowCopyIndex = 1
     @Published var flowCopiesTotal = 1
+    /// True while the fronts are spooled and the user may confirm "fronts printed"
+    /// manually (the CUPS completion probe can be unreliable on some drivers).
+    @Published var flowCanContinue = false
 
     /// Called when the flow needs the user (flip prompt / done) so the app can
     /// present the panel even if the user closed it.
@@ -120,6 +123,7 @@ final class AppModel: ObservableObject {
     private var flowFronts: [Int] = []
     private var flowBacks: [Int] = []
     private var flipContinuation: CheckedContinuation<Bool, Never>?
+    private var manualContinueContinuation: CheckedContinuation<Bool, Never>?
 
     // MARK: - Init / persistence
 
@@ -537,6 +541,7 @@ final class AppModel: ObservableObject {
         flowCopyIndex = 1
         flowPrinterID = printerID
         flowJobID = nil
+        flowCanContinue = false
         flowGeneration += 1
         let generation = flowGeneration
         flowPhase = .printing
@@ -638,15 +643,21 @@ final class AppModel: ObservableObject {
         }
         flowJobID = result.jobID
         flowProgress = 0.35
-        let outcome: JobOutcome
-        if let jobID = result.jobID {
-            startProgressTicker(generation: generation)
-            outcome = await Printing.waitForJob(jobID, printer: printer, timeout: 240)
-            stopProgressTicker()
-        } else {
-            // Spooled but the id could not be parsed — let the user check.
-            outcome = .unknown
-        }
+        // Manual duplex always needs the user's eyes on the physical output. Once
+        // the pass is spooled we offer "fronts printed — continue" so a flaky
+        // CUPS completion probe can never leave the flow stuck on "Printing…".
+        // Manual confirmation is available for both passes so a failed CUPS
+        // completion probe can never dead-end the workflow (fronts → flip,
+        // backs → finished).
+        flowCanContinue = true
+        startProgressTicker(generation: generation)
+        let outcome = await waitForPassCompletion(
+            jobID: result.jobID,
+            printer: printer,
+            generation: generation
+        )
+        stopProgressTicker()
+        flowCanContinue = false
         guard isFlowCurrent(generation) else { return false }
         switch outcome {
         case .completed:
@@ -660,12 +671,66 @@ final class AppModel: ObservableObject {
             flowJobID = nil
             return false
         case .timedOut, .unknown:
-            showToast(T("toast.cannotConfirm"))
-            flowPhase = .idle
-            flowProgress = 0
+            // The job was accepted but its completion could not be confirmed
+            // (locale/backend/history quirks). Never dead-end the flow: let the
+            // user verify the sheets and flip (fronts) or finish (backs).
             flowJobID = nil
-            return false
+            flowProgress = 1
+            showToast(isBacks ? T("toast.cannotConfirmBacks") : T("toast.cannotConfirmFronts"))
+            return true
         }
+    }
+
+    /// Waits for either a real CUPS completion or the user pressing
+    /// "fronts printed — continue". Never runs longer than the safety timeout.
+    private func waitForPassCompletion(jobID: Int?, printer: String, generation: Int) async -> JobOutcome {
+        let deadline: TimeInterval = 240
+        let outcome = await withTaskGroup(of: JobOutcome.self) { group -> JobOutcome in
+            if let jobID {
+                group.addTask {
+                    await Printing.waitForJob(jobID, printer: printer, timeout: deadline)
+                }
+            }
+            group.addTask { [weak self] in
+                guard let self else { return .unknown }
+                let ok = await self.waitForManualContinue(generation: generation)
+                return ok ? .completed : .unknown
+            }
+            let first = await group.next() ?? .unknown
+            group.cancelAll()
+            return first
+        }
+        return outcome
+    }
+
+    /// Suspends until `continueAfterFronts()` or cancellation. Returns false when
+    /// the flow was superseded/cancelled.
+    private func waitForManualContinue(generation: Int) async -> Bool {
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+                if !isFlowCurrent(generation) {
+                    continuation.resume(returning: false)
+                    return
+                }
+                manualContinueContinuation = continuation
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let continuation = self.manualContinueContinuation
+                self.manualContinueContinuation = nil
+                continuation?.resume(returning: false)
+            }
+        }
+    }
+
+    /// User confirmed the fronts are physically printed: jump to the flip step
+    /// immediately instead of waiting for CUPS.
+    func continueAfterFronts() {
+        flowCanContinue = false
+        let continuation = manualContinueContinuation
+        manualContinueContinuation = nil
+        continuation?.resume(returning: true)
     }
 
     private func waitForFlipConfirmation(generation: Int) async -> Bool {
@@ -745,6 +810,11 @@ final class AppModel: ObservableObject {
             flipContinuation = nil
             continuation.resume(returning: false)
         }
+        if let continuation = manualContinueContinuation {
+            manualContinueContinuation = nil
+            continuation.resume(returning: false)
+        }
+        flowCanContinue = false
         stopProgressTicker()
         let job = flowJobID
         let printer = flowPrinterID

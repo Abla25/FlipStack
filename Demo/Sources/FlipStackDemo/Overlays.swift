@@ -340,10 +340,18 @@ struct FlowBar: View {
                             .animation(.linear(duration: 0.1), value: model.flowProgress)
                     }
                 }.frame(height: 6)
+                if model.flowCanContinue {
+                    Text(T("flow.continueHint"))
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundStyle(muted)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 HStack(spacing: 8) {
-                    // v1.0.2: no Retry while printing — failures stop the flow with a toast;
-                    // the PRINT button is the retry path (Lead decision).
                     flowButton(T("common.cancel"), sec: true) { model.cancelFlow() }
+                    if model.flowCanContinue {
+                        flowButton(T("flow.continue"), sec: false) { model.continueAfterFronts() }
+                    }
                 }
             case .flip:
                 Image(systemName: "arrow.uturn.backward")

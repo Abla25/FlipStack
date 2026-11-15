@@ -7,7 +7,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var panel: ReceiptPanel?
     var hosting: NSHostingView<ReceiptView>?
     var statusItem: NSStatusItem?
-    private var globalClickMonitor: Any?
     private var localKeyMonitor: Any?
     private var flags = Flags()
     private let statusMenu = NSMenu()
@@ -64,13 +63,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 if self.flags.autoFlow {
                     self.model.simulate = true
-                    self.model.startPrint()
+                    var started = false
                     Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] timer in
                         Task { @MainActor in
                             guard let self else {
                                 timer.invalidate()
                                 return
                             }
+                            // Wait until the async document load finished.
+                            if !started {
+                                guard self.model.canPrint else { return }
+                                self.model.startPrint()
+                                started = true
+                                return
+                            }
+                            if self.model.flowCanContinue { self.model.continueAfterFronts() }
                             if self.model.flowPhase == .flip { self.model.confirmFlip() }
                             if self.model.flowPhase == .done || self.model.flowPhase == .idle {
                                 timer.invalidate()
@@ -145,6 +152,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if model.docURL == nil { model.chooseDoc(samplePDF()) }
         case "printers":
             model.printersOpen = true
+        case "printing":
+            if model.docURL == nil { model.chooseDoc(samplePDF()) }
+            model.flowPhase = .printing
+            model.flowProgress = 0.45
+            model.flowLabel = T("flow.printingFronts")
+            model.flowCanContinue = true
         case "flowdone":
             if model.docURL == nil { model.chooseDoc(samplePDF()) }
         case "select":
@@ -321,12 +334,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func installEventMonitors() {
         removeEventMonitors()
-        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            Task { @MainActor in
-                guard let self, self.panel?.isVisible == true else { return }
-                self.hidePanel()
-            }
-        }
+        // Deliberately no global click-outside monitor: the panel must stay open
+        // while the user interacts with other windows (printer dialogs, Finder…).
+        // It hides only from the status-item toggle, Esc/close, or app quit.
         localKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self else { return event }
             if event.keyCode == 53 { // Escape
@@ -337,10 +347,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func removeEventMonitors() {
-        if let monitor = globalClickMonitor {
-            NSEvent.removeMonitor(monitor)
-            globalClickMonitor = nil
-        }
         if let monitor = localKeyMonitor {
             NSEvent.removeMonitor(monitor)
             localKeyMonitor = nil

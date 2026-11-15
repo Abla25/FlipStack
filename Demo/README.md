@@ -1,7 +1,7 @@
 # FlipStack Demo (receipt UI) — the app that ships
 
 This folder is the receipt-style menu-bar app that is released as
-`FlipStack.app` (v1.0.3, build 14). It is a standalone SwiftPM package that
+`FlipStack.app` (v1.0.4, build 15). It is a standalone SwiftPM package that
 depends on the root `FlipStackCore` through `.package(path: "..")`.
 
 - **Bundle:** `dist-demo/FlipStack.app` — bundle id `app.flipstack.FlipStack`,
